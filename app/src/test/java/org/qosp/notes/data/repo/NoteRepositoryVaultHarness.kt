@@ -74,7 +74,7 @@ class NoteRepositoryVaultHarness(
     val noteDao: NoteDao = db.noteDao
     val idMappingDao: IdMappingDao = db.idMappingDao
     private val reminderDao: ReminderDao = db.reminderDao
-    private val notebookDao = mockk<NotebookDao>(relaxed = true)
+    val notebookDao: NotebookDao = db.notebookDao
     private val prefs = mockk<PreferenceRepository>(relaxed = true)
     private val vaultSyncCoordinator = VaultSyncCoordinator(prefs)
     private val vaultTreeAccess = mockk<VaultTreeAccess>(relaxed = true)
@@ -102,7 +102,6 @@ class NoteRepositoryVaultHarness(
         every { Log.w(any<String>(), any<String>()) } returns 0
         every { Log.e(any<String>(), any<String>()) } returns 0
         every { Log.i(any<String>(), any<String>()) } returns 0
-        coEvery { notebookDao.getById(any()) } returns flowOf(null)
         coEvery { prefs.getEncryptedString(PreferenceRepository.STORAGE_LOCATION) } returns flowOf("content://vault")
         coEvery { prefs.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT) } returns flowOf("1")
         coEvery { prefs.getEncryptedString(any()) } returns flowOf("1")
