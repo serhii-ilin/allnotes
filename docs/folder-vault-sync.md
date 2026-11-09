@@ -2,7 +2,7 @@
 
 **Branch:** `cursor/folder-vault-sync-04d8`  
 **PR:** https://github.com/serhii-ilin/quillpad/pull/1  
-**Status:** Phase 2 (review fixes) implemented — device manual validation still required.
+**Status:** Phase 3 (independent review critical fixes) — logic/tests in CI; device/SAF validation still required.
 
 ## Goals
 
@@ -77,7 +77,7 @@ Unsupported round-trip: Quillpad reminders, `screenAlwaysOn`, compact preview, w
 
 ### Dirty local edits vs attachment refresh (`refreshVaultAttachmentIndex`)
 
-When `VaultSyncImport.isLocallyDirty` (local hash ≠ `IdMapping.extras`):
+When `VaultSyncImport.isLocallyDirty` (canonical file hash ≠ baseline in `VaultMappingExtras`, or pending non-`vaultrel` media exists):
 
 - **Do not** overwrite body or portable metadata from disk.
 - **May** update attachment list from remote body links only.
@@ -117,6 +117,12 @@ Vault-backed attachments use `path` prefix `vaultrel:` + normalized relative pat
 - [x] `VaultLinkResolver` + Markwon/Coil note-scoped context
 - [x] `VaultTreeAccess` + attachment URI resolution
 - [x] Task-list row Markwon (`TaskViewHolder`) uses parent-note `VaultMarkwonContext` (list preview + checked rows)
+- [x] Canonical hash aligned with disk write (notebook + preserved YAML); pending private media counts as dirty
+- [x] Dirty attachment refresh merges (does not replace) local pending/`vaultrel` rows
+- [x] Idempotent vault conflict copies (`VaultMappingExtras`)
+- [x] Safer `writeRaw` (in-place truncate when possible, staging verify, no delete-before-write)
+- [x] Reject legacy `content://` mappings; abort scan on null/empty suspicious index; no export without cutoff
+- [x] Atomic vault folder change (`SettingsViewModel.applyVaultFolderChange`)
 - [ ] Instrumented SAF provider test (environment-dependent)
 - [ ] Manual: Syncthing + Obsidian checklist (below)
 

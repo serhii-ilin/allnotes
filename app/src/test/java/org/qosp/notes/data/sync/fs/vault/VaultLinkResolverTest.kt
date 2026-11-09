@@ -43,6 +43,19 @@ class VaultLinkResolverTest {
     }
 
     @Test
+    fun plusSign_notDecodedAsSpace() {
+        assertEquals(
+            "Work/photo+1.jpg",
+            VaultLinkResolver.resolve("Work/Note.md", "photo+1.jpg"),
+        )
+    }
+
+    @Test
+    fun invalidPercentEscape_returnsNull() {
+        assertNull(VaultLinkResolver.resolve("Work/Note.md", "100%.jpg"))
+    }
+
+    @Test
     fun unicodePathSegments() {
         assertEquals(
             "日本/写真.jpg",

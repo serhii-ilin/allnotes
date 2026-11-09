@@ -3,13 +3,17 @@ package org.qosp.notes.data.repo
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.msoul.datastore.defaultOf
 import org.qosp.notes.data.dao.IdMappingDao
 import org.qosp.notes.data.dao.NoteDao
+import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.dao.ReminderDao
+import org.qosp.notes.data.sync.fs.vault.VaultMappingExtras
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.model.NoteEntity
@@ -51,6 +55,8 @@ class NoteRepositoryImpl(
     private val toaster: Toaster,
     private val preferenceRepository: PreferenceRepository,
     private val vaultPortableMetadata: VaultPortableMetadata,
+    private val notebookDao: NotebookDao,
+    private val vaultTreeAccess: VaultTreeAccess,
 ) : NoteRepository {
 
     private val tag = NoteRepositoryImpl::class.java.simpleName
@@ -85,6 +91,15 @@ class NoteRepositoryImpl(
         }
 
         return syncMutex.withLock {
+            if (syncProvider.type == CloudService.FILE_STORAGE) {
+                val legacy = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
+                    .any { it.storageUri?.contains("://") == true }
+                if (legacy) {
+                    val msg = "Vault index uses legacy file URIs. Re-select the vault folder in sync settings."
+                    Log.w(tag, msg)
+                    return@withLock GenericError(msg)
+                }
+            }
             val syncMethod = when (syncProvider.type) {
                 CloudService.FILE_STORAGE -> SyncMethod.MAPPING
                 CloudService.NEXTCLOUD ->
@@ -97,13 +112,32 @@ class NoteRepositoryImpl(
                 val localNotes = getAll().first().filterNot { it.isLocalOnly || it.isDeleted }
 
                 // Get all remote notes and convert to metadata
-                val allRemoteNotes =
-                    syncProvider.getAll() ?: return@withLock GenericError("Failed to fetch remote notes")
+                val mappedVaultCount = if (syncProvider.type == CloudService.FILE_STORAGE) {
+                    idMappingDao.getCountByCloudService(CloudService.FILE_STORAGE)
+                } else {
+                    0
+                }
+                val scanResult = syncProvider.getAll()
+                val remoteScanSucceeded = when {
+                    scanResult == null -> false
+                    syncProvider.type == CloudService.FILE_STORAGE &&
+                        scanResult.isEmpty() && mappedVaultCount > 0 -> false
+                    else -> true
+                }
+                if (!remoteScanSucceeded) {
+                    val msg = "Vault scan incomplete; local notes were not changed."
+                    Log.w(tag, msg)
+                    return@withLock GenericError(msg)
+                }
+                val allRemoteNotes = scanResult!!
                 val vaultCutoff = if (syncProvider.type == CloudService.FILE_STORAGE) {
                     preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT)
                         .first().toLongOrNull()
                 } else {
                     null
+                }
+                if (syncProvider.type == CloudService.FILE_STORAGE) {
+                    vaultTreeAccess.warmFrom(preferenceRepository)
                 }
                 Log.d(
                     tag, "syncNotes: Syncing by $syncMethod. " +
@@ -117,7 +151,7 @@ class NoteRepositoryImpl(
                         allRemoteNotes,
                         service = syncProvider.type,
                         syncMethod,
-                        remoteScanSucceeded = true,
+                        remoteScanSucceeded = remoteScanSucceeded,
                         vaultExportCutoffEpoch = vaultCutoff,
                     )
                 Log.d(
@@ -350,7 +384,23 @@ class NoteRepositoryImpl(
     ) {
         val backend = syncProvider as? StorageBackend ?: return
         for (conflict in conflicts) {
-            backend.createConflictCopy(conflict.remote)
+            val mapping = idMappingDao.getByLocalIdAndProvider(conflict.local.id, CloudService.FILE_STORAGE)
+                ?: continue
+            val remoteHash = conflict.remote.extra.orEmpty()
+            val parsed = VaultMappingExtras.parse(mapping.extras)
+            if (parsed.conflictRemoteHash == remoteHash && !parsed.conflictCopyPath.isNullOrEmpty()) {
+                continue
+            }
+            val conflictPath = backend.createConflictCopy(conflict.remote) ?: continue
+            idMappingDao.update(
+                mapping.copy(
+                    extras = VaultMappingExtras.withConflict(
+                        parsed.baselineHash ?: mapping.extras,
+                        remoteHash,
+                        conflictPath,
+                    ),
+                ),
+            )
             toaster.showLong("Edit conflict for ${conflict.local.title}; a copy was saved in the vault.")
         }
     }
@@ -366,11 +416,19 @@ class NoteRepositoryImpl(
             val path = mapping.storageUri ?: continue
             val remote = syncProvider.getNote(mapping) ?: continue
             val local = getById(mapping.localNoteId).first() ?: continue
-            val dirty = VaultSyncImport.isLocallyDirty(local, path, mapping.extras)
+            val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+            val dirty = VaultSyncImport.isLocallyDirty(
+                local,
+                path,
+                mapping.extras,
+                notebookName,
+                remote.content,
+            )
             if (dirty) {
                 val remoteAttachments = VaultSyncImport.attachmentsFromRemote(remote)
-                if (remoteAttachments != local.attachments) {
-                    updateNote(local.copy(attachments = remoteAttachments), sync = false)
+                val merged = VaultSyncImport.mergeAttachmentsWhenDirty(local.attachments, remoteAttachments)
+                if (merged != local.attachments) {
+                    updateNote(local.copy(attachments = merged), sync = false)
                 }
             } else {
                 val imported = VaultSyncImport.noteFromRemote(remote, local)

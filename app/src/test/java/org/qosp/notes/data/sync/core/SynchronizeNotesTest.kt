@@ -8,7 +8,9 @@ import io.mockk.impl.annotations.InjectMockKs
 import io.mockk.impl.annotations.MockK
 import io.mockk.junit4.MockKRule
 import io.mockk.mockkStatic
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import org.qosp.notes.data.dao.NotebookDao
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
@@ -26,6 +28,9 @@ class SynchronizeNotesTest {
     @MockK
     private lateinit var idMappingRepository: IdMappingRepository
 
+    @MockK
+    private lateinit var notebookDao: NotebookDao
+
     @InjectMockKs
     private lateinit var synchronizeNotes: SynchronizeNotes
 
@@ -33,6 +38,7 @@ class SynchronizeNotesTest {
     fun setup() {
         mockkStatic(Log::class)
         every { Log.d(any(), any()) } returns 0
+        coEvery { notebookDao.getById(any()) } returns flowOf(null)
     }
 
     @Test
@@ -197,6 +203,19 @@ class SynchronizeNotesTest {
         assertEquals(localNote.title, action.remoteNote.title)
         assertEquals(localNote.modifiedDate, action.remoteNote.lastModified)
         assertEquals(localNote.content, action.remoteNote.content)
+    }
+
+    @Test
+    fun `vault does not export when cutoff unset`() = runTest {
+        val localNote = Note(id = 2L, title = "New", creationDate = 500L, modifiedDate = 500L)
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns emptyList()
+        val result = synchronizeNotes(
+            listOf(localNote),
+            emptyList(),
+            CloudService.FILE_STORAGE,
+            vaultExportCutoffEpoch = null,
+        )
+        assertEquals(0, result.remoteUpdates.size)
     }
 
     @Test

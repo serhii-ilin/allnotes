@@ -10,7 +10,7 @@ object VaultAttachments {
         val found = linkedMapOf<String, Attachment>()
         fun ingest(target: String) {
             if (target.contains("://")) return
-            val vaultPath = VaultLinkResolver.resolve(noteRelativePath, target) ?: return
+            val vaultPath = runCatching { VaultLinkResolver.resolve(noteRelativePath, target) }.getOrNull() ?: return
             val stored = VaultPaths.vaultRelative(vaultPath)
             if (stored in found) return
             val type = guessType(vaultPath)
@@ -25,7 +25,7 @@ object VaultAttachments {
         val att = VaultPaths.normalize(attachmentVaultPath)
         val parent = VaultPaths.parentPath(noteRelativePath)
         return if (parent.isEmpty()) {
-            att.substringAfterLast('/')
+            att
         } else if (att.startsWith("$parent/")) {
             att.removePrefix("$parent/")
         } else {

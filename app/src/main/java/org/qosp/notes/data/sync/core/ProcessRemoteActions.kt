@@ -137,7 +137,10 @@ class ProcessRemoteActions(
         if (syncProvider.type != CloudService.FILE_STORAGE) return
         val mapping = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type) ?: return
         val remote = syncProvider.getNote(mapping) ?: return
-        val patched = VaultSyncImport.noteFromRemote(remote, note)
+        val patched = VaultSyncImport.mergeNoteAfterPush(
+            note,
+            VaultSyncImport.noteFromRemote(remote, note),
+        )
         noteDao.update(patched.toEntity())
         noteDao.updateLastModified(note.id, remote.lastModified)
         idMappingDao.update(

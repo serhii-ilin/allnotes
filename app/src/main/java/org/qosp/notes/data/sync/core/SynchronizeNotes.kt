@@ -1,15 +1,21 @@
 package org.qosp.notes.data.sync.core
 
 import android.util.Log
+import kotlinx.coroutines.flow.firstOrNull
+import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.repo.IdMappingRepository
+import org.qosp.notes.data.sync.fs.vault.VaultMappingExtras
 import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.preferences.CloudService
 import kotlin.math.abs
 
-class SynchronizeNotes(private val idMappingRepository: IdMappingRepository) {
+class SynchronizeNotes(
+    private val idMappingRepository: IdMappingRepository,
+    private val notebookDao: NotebookDao,
+) {
     private val tag = SynchronizeNotes::class.java.simpleName
 
     private fun logDebug(message: String) = Log.d(tag, message)
@@ -59,19 +65,39 @@ class SynchronizeNotes(private val idMappingRepository: IdMappingRepository) {
                         if (remoteNote != null) {
                             val vaultPath = mapping.storageUri.orEmpty()
                             if (service == CloudService.FILE_STORAGE) {
-                                val baseline = mapping.extras.orEmpty()
+                                val parsedExtras = VaultMappingExtras.parse(mapping.extras)
+                                val baseline = parsedExtras.baselineHash.orEmpty()
                                 val remoteHash = remoteNote.extra.orEmpty()
-                                val localHash = VaultSyncImport.localContentHash(localNote, vaultPath)
+                                val notebookName = localNote.notebookId?.let {
+                                    notebookDao.getById(it).firstOrNull()?.name
+                                }
+                                val localHash = VaultSyncImport.canonicalFileHash(
+                                    localNote,
+                                    vaultPath,
+                                    notebookName,
+                                    remoteNote.content,
+                                )
+                                val dirty = VaultSyncImport.isLocallyDirty(
+                                    localNote,
+                                    vaultPath,
+                                    mapping.extras,
+                                    notebookName,
+                                    remoteNote.content,
+                                )
                                 val divergent = baseline.isNotEmpty() &&
                                     remoteHash.isNotEmpty() &&
                                     localHash != baseline &&
                                     remoteHash != baseline &&
                                     remoteHash != localHash
                                 if (divergent) {
-                                    logDebug("Vault conflict: ${localNote.title} at $vaultPath")
-                                    vaultConflicts.add(VaultSyncConflict(localNote, remoteNote))
+                                    if (parsedExtras.conflictRemoteHash == remoteHash) {
+                                        logDebug("Vault conflict already recorded for ${localNote.title}")
+                                    } else {
+                                        logDebug("Vault conflict: ${localNote.title} at $vaultPath")
+                                        vaultConflicts.add(VaultSyncConflict(localNote, remoteNote))
+                                    }
                                 } else {
-                                    val hashChanged = remoteHash.isNotEmpty() && remoteHash != baseline
+                                    val hashChanged = remoteHash.isNotEmpty() && remoteHash != baseline && !dirty
                                     val mtimeChanged = abs(localNote.modifiedDate - remoteNote.lastModified) > 1
                                     when {
                                         hashChanged && (mtimeChanged || localHash == baseline) -> {
@@ -117,6 +143,8 @@ class SynchronizeNotes(private val idMappingRepository: IdMappingRepository) {
                         vaultExportCutoffEpoch != null && localNote.creationDate < vaultExportCutoffEpoch
                     ) {
                         logDebug("Legacy local note (not auto-exported): ${localNote.title}")
+                    } else if (service == CloudService.FILE_STORAGE && vaultExportCutoffEpoch == null) {
+                        logDebug("Skip vault export until folder is configured: ${localNote.title}")
                     } else if (service == CloudService.FILE_STORAGE) {
                         val remoteNoteMetaData = SyncNote(
                             id = 0,

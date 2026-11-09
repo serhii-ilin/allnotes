@@ -87,15 +87,6 @@ class StorageBackend(
         val path = mapping.storageUri ?: return false
         val file = VaultDocumentTree.findByRelativePath(root, path) ?: return false
         val deleted = DocumentsContract.deleteDocument(context.contentResolver, file.uri)
-        if (deleted) {
-            val assetDir = VaultPaths.assetDirectoryForNote(path)
-            VaultDocumentTree.findByRelativePath(root, assetDir)?.takeIf { it.isDirectory }?.let { dir ->
-                dir.listFiles().forEach { child ->
-                    DocumentsContract.deleteDocument(context.contentResolver, child.uri)
-                }
-                DocumentsContract.deleteDocument(context.contentResolver, dir.uri)
-            }
-        }
         return deleted
     }
 
@@ -110,14 +101,14 @@ class StorageBackend(
         val root = getRootDocumentFile() ?: return null
         if (!root.canRead()) return null
         return try {
-            VaultDocumentTree.indexNotes(root).map { (rel, file) ->
-                fileToSyncNote(file, rel) ?: SyncNote(
-                    id = 0,
-                    idStr = rel,
-                    content = null,
-                    title = VaultPaths.noteBaseName(rel),
-                    lastModified = 0,
-                )
+            val indexed = VaultDocumentTree.indexNotes(root)
+            if (indexed.isEmpty() && root.listFiles().isNotEmpty()) {
+                Log.w(TAG, "getAll: note index empty but root has children; treating scan as failed")
+                return null
+            }
+            indexed.map { (rel, file) ->
+                fileToSyncNote(file, rel)
+                    ?: throw IOException("Cannot read note file: $rel")
             }
         } catch (e: Exception) {
             Log.e(TAG, "getAll: scan failed", e)
@@ -163,6 +154,7 @@ class StorageBackend(
             note.copy(attachments = vaultAttachments),
             path,
             assignedNotebookName = notebookName,
+            exportNotebookExplicitly = true,
         )
         doc = VaultNoteDocument.mergePreservedFromDisk(existingRaw, doc)
         val bodyWithLinks = VaultAttachments.mergeAttachmentLinks(doc.body, path, vaultAttachments)
@@ -190,20 +182,29 @@ class StorageBackend(
         val names = mutableSetOf<String>()
         VaultDocumentTree.ensureDirectory(root, VaultPaths.assetDirectoryForNote(noteRelativePath))
             .listFiles().mapNotNull { it.name }.toCollection(names)
-        return attachments.mapNotNull { att ->
+        return attachments.map { att ->
             if (VaultPaths.isVaultRelativeAttachment(att.path)) {
                 att
             } else {
                 runCatching {
                     VaultMediaWriter.copyAttachmentToVault(context, root, noteRelativePath, att, names)
-                }.onFailure { Log.w(TAG, "materializeAttachments: skip ${att.path}", it) }
-                    .getOrNull()
+                }.onFailure { Log.w(TAG, "materializeAttachments: keeping local ${att.path}", it) }
+                    .getOrDefault(att)
             }
         }
     }
 
     private fun writeRaw(root: DocumentFile, relativePath: String, text: String) {
         val path = VaultPaths.normalizeNotePath(relativePath)
+        val bytes = text.encodeToByteArray()
+        val existing = VaultDocumentTree.findByRelativePath(root, path)
+        if (existing != null && existing.isFile) {
+            context.contentResolver.openOutputStream(existing.uri, "wt")?.use { out ->
+                out.write(bytes)
+            } ?: throw IOException("Cannot write $path")
+            verifyOnDisk(root, path, text)
+            return
+        }
         val stagingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.STAGING_DIR)
         val stagingName = "w_${VaultContentHash.ofText(path).take(12)}.tmp"
         val mimeType = if (path.endsWith(".txt", ignoreCase = true)) "text/plain" else "text/markdown"
@@ -213,23 +214,36 @@ class StorageBackend(
         val staging = stagingDir.createFile(mimeType, stagingName)
             ?: throw IOException("Cannot create staging file")
         context.contentResolver.openOutputStream(staging.uri)?.use { out ->
-            out.write(text.encodeToByteArray())
+            out.write(bytes)
         } ?: throw IOException("Cannot write staging")
+        val stagingBody = readFileContent(staging) ?: throw IOException("Cannot read staging")
+        if (VaultContentHash.ofText(stagingBody) != VaultContentHash.ofText(text)) {
+            throw IOException("Staging content verify failed")
+        }
         val targetParent = VaultPaths.parentPath(path)
         val parent = if (targetParent.isEmpty()) root else VaultDocumentTree.ensureDirectory(root, targetParent)
         val fileName = VaultPaths.fileName(path)
-        parent.findFile(fileName)?.let { existing ->
-            DocumentsContract.deleteDocument(context.contentResolver, existing.uri)
-        }
-        val finalFile = parent.createFile(mimeType, fileName.substringBeforeLast('.'))
+        val finalFile = parent.findFile(fileName)
+            ?: parent.createFile(mimeType, fileName.substringBeforeLast('.'))
             ?: throw IOException("Cannot create $fileName")
         context.contentResolver.openInputStream(staging.uri)?.use { input ->
             context.contentResolver.openOutputStream(finalFile.uri, "wt")?.use { output ->
-                input.copyTo(output)
-            }
-        }
+                val copied = input.copyTo(output)
+                if (copied <= 0) throw IOException("Empty copy for $fileName")
+            } ?: throw IOException("Cannot open output for $fileName")
+        } ?: throw IOException("Cannot read staging for $fileName")
+        verifyOnDisk(root, path, text)
         DocumentsContract.deleteDocument(context.contentResolver, staging.uri)
         if (finalFile.name != fileName) finalFile.renameTo(fileName)
+    }
+
+    private fun verifyOnDisk(root: DocumentFile, relativePath: String, expected: String) {
+        val file = VaultDocumentTree.findByRelativePath(root, relativePath)
+            ?: throw IOException("Missing after write: $relativePath")
+        val read = readFileContent(file) ?: throw IOException("Unreadable after write: $relativePath")
+        if (VaultContentHash.ofText(read) != VaultContentHash.ofText(expected)) {
+            throw IOException("Content verify failed: $relativePath")
+        }
     }
 
     private fun fileToSyncNote(file: DocumentFile, relativePath: String): SyncNote? {

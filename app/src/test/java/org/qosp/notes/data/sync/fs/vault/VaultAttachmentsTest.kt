@@ -15,6 +15,12 @@ class VaultAttachmentsTest {
     }
 
     @Test
+    fun relativeLinkFromNote_rootNote_keepsAssetDirectorySegment() {
+        val rel = VaultAttachments.relativeLinkFromNote("Note.md", "Note/photo.jpg")
+        assertEquals("Note/photo.jpg", rel)
+    }
+
+    @Test
     fun rejectsRemoteUrls() {
         val body = "![](https://example.com/x.png)"
         assertTrue(VaultAttachments.parseFromBody(body, "a.md").isEmpty())

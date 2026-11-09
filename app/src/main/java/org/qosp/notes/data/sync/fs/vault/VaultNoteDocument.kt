@@ -66,25 +66,29 @@ data class VaultNoteDocument(
             note: Note,
             noteRelativePath: String,
             assignedNotebookName: String? = null,
+            exportNotebookExplicitly: Boolean = false,
         ): VaultNoteDocument {
             val titleFromPath = VaultPaths.noteBaseName(noteRelativePath)
             val pathNotebook = VaultPaths.parentPath(noteRelativePath)
                 .takeIf { it.isNotBlank() }
                 ?.substringAfterLast('/')
-            val notebookForYaml = assignedNotebookName
-                ?: pathNotebook?.takeIf { note.notebookId == null }
+            val notebookForYaml = when {
+                exportNotebookExplicitly -> assignedNotebookName ?: ""
+                note.notebookId != null -> assignedNotebookName
+                else -> pathNotebook?.takeIf { note.notebookId == null }
+            }
             val fm = VaultFrontMatter(
                 title = note.title.ifBlank { titleFromPath }.takeIf { it != titleFromPath },
                 pinned = note.isPinned,
-                archived = note.isArchived.takeIf { it },
-                hidden = note.isHidden.takeIf { it },
-                color = note.color.takeIf { it != NoteColor.Default },
+                archived = note.isArchived,
+                hidden = note.isHidden,
+                color = note.color,
                 tags = note.tags.map { it.name }.ifEmpty { emptyList() },
                 notebook = notebookForYaml,
-                isList = note.isList.takeIf { it },
+                isList = note.isList,
                 created = note.creationDate,
                 modified = note.modifiedDate,
-                markdown = note.isMarkdownEnabled.takeIf { !it },
+                markdown = note.isMarkdownEnabled,
             )
             val body = if (note.isList) note.taskListToMd() else note.content
             return VaultNoteDocument(fm, body)
@@ -236,13 +240,13 @@ data class VaultNoteDocument(
 
         private fun buildFrontMatterYaml(fm: VaultFrontMatter): String = buildString {
             fm.title?.let { append("title: \"${escape(it)}\"\n") }
-            if (fm.pinned != null) append("pinned: ${fm.pinned}\n")
-            fm.archived?.let { append("archived: $it\n") }
-            fm.hidden?.let { append("hidden: $it\n") }
-            fm.isList?.let { append("isList: $it\n") }
-            fm.markdown?.let { append("markdown: $it\n") }
-            fm.color?.let { append("color: \"${it.name}\"\n") }
-            fm.notebook?.let { append("notebook: \"${escape(it)}\"\n") }
+            append("pinned: ${fm.pinned ?: false}\n")
+            append("archived: ${fm.archived ?: false}\n")
+            append("hidden: ${fm.hidden ?: false}\n")
+            append("isList: ${fm.isList ?: false}\n")
+            append("markdown: ${fm.markdown ?: true}\n")
+            append("color: \"${(fm.color ?: NoteColor.Default).name}\"\n")
+            if (fm.notebook != null) append("notebook: \"${escape(fm.notebook)}\"\n")
             val tagList = fm.tags
             if (tagList != null) {
                 if (tagList.isEmpty()) {

@@ -8,7 +8,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.msoul.datastore.EnumPreference
+import android.net.Uri
 import org.qosp.notes.data.repo.NoteRepository
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.data.sync.nextcloud.NextcloudConfig
 import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.preferences.PreferenceRepository
@@ -17,7 +19,8 @@ import java.time.Instant
 
 class SettingsViewModel(
     private val preferenceRepository: PreferenceRepository,
-    private val noteRepository: NoteRepository
+    private val noteRepository: NoteRepository,
+    private val vaultTreeAccess: VaultTreeAccess,
 ) : ViewModel() {
 
     val appPreferences = preferenceRepository.getAll()
@@ -63,24 +66,25 @@ class SettingsViewModel(
      * @param newLocation The new storage location URI as a string
      * @param previousLocation The previous storage location URI as a string
      */
-    fun setVaultConfiguredAtNow() = viewModelScope.launch {
-        preferenceRepository.putEncryptedStrings(
-            PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
-        )
-    }
-
     fun rebuildVaultIndex() = viewModelScope.launch(Dispatchers.IO) {
         noteRepository.syncNotes()
     }
 
-    fun removeFileStorageIdMappingsIfNeeded(newLocation: String, previousLocation: String) {
-        if (newLocation != previousLocation) {
-            viewModelScope.launch(Dispatchers.IO) {
-                val currentCloudService = preferenceRepository.getAll().first().cloudService
-                if (currentCloudService == CloudService.FILE_STORAGE) {
-                    noteRepository.deleteIdMappingsForCloudService(CloudService.FILE_STORAGE)
-                }
+    /**
+     * Atomically switch vault folder: URI, cutoff, mapping wipe, and tree cache warm-up.
+     */
+    fun applyVaultFolderChange(newLocation: String, previousLocation: String) {
+        if (newLocation == previousLocation) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentCloudService = preferenceRepository.getAll().first().cloudService
+            preferenceRepository.putEncryptedStrings(
+                PreferenceRepository.STORAGE_LOCATION to newLocation,
+                PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
+            )
+            if (currentCloudService == CloudService.FILE_STORAGE) {
+                noteRepository.deleteIdMappingsForCloudService(CloudService.FILE_STORAGE)
             }
+            vaultTreeAccess.warmFrom(Uri.parse(newLocation))
         }
     }
 }

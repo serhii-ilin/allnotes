@@ -191,7 +191,10 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
                         recyclerAdapter.notifyItemRangeChanged(
                             0,
                             recyclerAdapter.itemCount,
-                            setOf(NoteRecyclerAdapter.Payload.ContentChanged),
+                            setOf(
+                                NoteRecyclerAdapter.Payload.ContentChanged,
+                                NoteRecyclerAdapter.Payload.TasksChanged,
+                            ),
                         )
                     }
                 }

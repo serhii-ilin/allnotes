@@ -318,6 +318,16 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
                     tasksAdapter.notifyItemRangeChanged(0, tasksAdapter.itemCount)
                 }
             }
+            val note = data.note
+            if (note != null && note.isMarkdownEnabled && !note.isList && note.content.isNotBlank()) {
+                binding.textViewContentPreview.post {
+                    val vaultContext = path?.let { org.qosp.notes.ui.utils.vault.VaultMarkwonContext(it) }
+                    markwon.applyTo(binding.textViewContentPreview, note.content, vaultContext) {
+                        tableReplacement = { Code(getString(R.string.message_cannot_preview_table)) }
+                        maximumTableColumns = 15
+                    }
+                }
+            }
         }
         observeData()
         setupEditTexts()

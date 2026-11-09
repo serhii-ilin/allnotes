@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import org.qosp.notes.preferences.PreferenceRepository
 
 /**
@@ -42,11 +41,19 @@ class VaultTreeAccess(
     root = null
   }
 
-  private fun loadTreeUri(): Uri? {
-    val s = runBlocking {
-      preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
+  suspend fun warmFrom(preferenceRepository: PreferenceRepository) {
+    val s = preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
+    if (s.isBlank()) {
+      invalidate()
+      return
     }
-    if (s.isBlank()) return null
-    return Uri.parse(s)
+    warmFrom(Uri.parse(s))
   }
+
+  fun warmFrom(uri: Uri) {
+    treeUri = uri
+    root = DocumentFile.fromTreeUri(context, uri)
+  }
+
+  private fun loadTreeUri(): Uri? = treeUri
 }

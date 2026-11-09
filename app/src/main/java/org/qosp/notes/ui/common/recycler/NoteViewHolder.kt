@@ -189,7 +189,10 @@ class NoteViewHolder(
                 setTasks(note, useDiff = true)
             }
         }
-        if (NoteRecyclerAdapter.Payload.TasksChanged in payloads) setTasks(note, useDiff = true)
+        if (NoteRecyclerAdapter.Payload.TasksChanged in payloads) {
+            tasksAdapter.vaultRelativePath = vaultRelativePath
+            setTasks(note, useDiff = true)
+        }
         if (NoteRecyclerAdapter.Payload.ColorChanged in payloads) updateBackgroundColor(note.color)
         if (NoteRecyclerAdapter.Payload.TagsChanged in payloads) updateTags(note.tags)
         if (NoteRecyclerAdapter.Payload.AttachmentsChanged in payloads) setupAttachments(note)
