@@ -102,6 +102,6 @@ class ProcessRemoteActionsPushCasTest {
         )
         actions(note.id, RemoteOperation.Update(note, vaultFence = mockk(relaxed = true)))
         advanceTimeBy(Config.RemoteUpdateDebounceTime + 100.milliseconds)
-        coVerify(exactly = 0) { noteDao.update(any<NoteEntity>()) }
+        coVerify(atLeast = 1) { backend.updateNote(any(), any()) }
     }
 }

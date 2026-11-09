@@ -12,6 +12,16 @@ import java.io.IOException
  * [VaultPaths.assetDirectoryForNote] ({basename}/ beside the note file).
  */
 object VaultNoteRelocation {
+    fun remapVaultRelPath(storedVaultRel: String, fromNotePath: String, toNotePath: String): String {
+        if (fromNotePath == toNotePath) return storedVaultRel
+        val rel = VaultPaths.toVaultRelative(storedVaultRel)
+        val oldDir = VaultPaths.assetDirectoryForNote(fromNotePath)
+        val newDir = VaultPaths.assetDirectoryForNote(toNotePath)
+        if (!rel.startsWith("$oldDir/")) return storedVaultRel
+        val tail = rel.removePrefix("$oldDir/")
+        return VaultPaths.vaultRelative(VaultPaths.normalize("$newDir/$tail"))
+    }
+
     fun remapNoteAttachments(note: Note, fromNotePath: String, toNotePath: String): Note {
         val oldDir = VaultPaths.assetDirectoryForNote(fromNotePath)
         val newDir = VaultPaths.assetDirectoryForNote(toNotePath)

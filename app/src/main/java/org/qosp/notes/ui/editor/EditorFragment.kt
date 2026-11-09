@@ -443,10 +443,6 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
                     if (note.isHidden) activityModel.showNotes(note) else activityModel.hideNotes(note)
                 }
 
-                R.id.action_do_not_sync -> {
-                    if (note.isLocalOnly) activityModel.makeNotesSyncable(note) else activityModel.makeNotesLocal(note)
-                }
-
                 R.id.action_change_color -> {
                     showColorChangeDialog()
                 }
@@ -782,11 +778,6 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
         findItem(R.id.action_hide_note)?.apply {
             isChecked = note.isHidden
-            isVisible = !note.isDeleted
-        }
-
-        findItem(R.id.action_do_not_sync)?.apply {
-            isChecked = note.isLocalOnly
             isVisible = !note.isDeleted
         }
 

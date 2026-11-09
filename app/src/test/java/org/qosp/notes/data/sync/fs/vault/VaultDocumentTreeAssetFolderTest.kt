@@ -16,9 +16,14 @@ class VaultDocumentTreeAssetFolderTest {
     )
 
     @Test
-    fun assetFolderNote_notIndexedAsTopLevel() {
-        assertTrue(VaultDocumentTree.isUnderNoteAssetFolder("Ttt/Ttt/extra.md", paths))
+    fun markdownInAssetFolder_isIndexed() {
+        assertFalse(VaultDocumentTree.isUnderNoteAssetFolder("Ttt/Ttt/extra.md", paths))
         assertFalse(VaultDocumentTree.isUnderNoteAssetFolder("Ttt/Ttt.md", paths))
+    }
+
+    @Test
+    fun bitmapInAssetFolder_isSkipped() {
+        assertTrue(VaultDocumentTree.isUnderNoteAssetFolder("Work/photo.jpg", paths))
     }
 
     @Test

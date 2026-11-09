@@ -93,14 +93,48 @@ class StorageBackend(
         } else {
             currentPath
         }
-        val mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
+        var mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
         val oldRaw = VaultDocumentTree.findByRelativePath(root, currentPath)?.let { readFileContent(it) }
+        val notebookNameForCheck = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        if (mappingState != null && !oldRaw.isNullOrBlank() &&
+            mappingState.baselineHash.isNotEmpty()
+        ) {
+            val diskFile = VaultDocumentTree.findByRelativePath(root, currentPath)
+            val diskSync = diskFile?.let { fileToSyncNote(it, currentPath) }
+            if (diskSync != null) {
+                val diskHash = VaultSyncImport.logicalHashFromRemoteFile(
+                    diskSync,
+                    note,
+                    currentPath,
+                    notebookNameForCheck,
+                )
+                if (diskHash != mappingState.baselineHash) {
+                    val conflictPath = createConflictCopy(diskSync)
+                    mappingState = mappingState.copy(
+                        conflictRemoteHash = diskHash,
+                        conflictCopyPath = conflictPath ?: mappingState.conflictCopyPath,
+                    )
+                }
+            }
+        }
         val noteForWrite = if (targetPath != currentPath) {
             VaultNoteRelocation.remapNoteAttachments(note, currentPath, targetPath)
         } else {
             note
         }
-        if (targetPath != currentPath) {
+        if (targetPath != currentPath && mappingState != null) {
+            val remappedPaths = mappingState.vaultAttachmentPaths.map {
+                VaultNoteRelocation.remapVaultRelPath(it, currentPath, targetPath)
+            }
+            mappingState = mappingState.copy(vaultAttachmentPaths = remappedPaths)
+            VaultNoteRelocation.relocateOwnedAssets(
+                context,
+                root,
+                currentPath,
+                targetPath,
+                remappedPaths.toSet(),
+            )
+        } else if (targetPath != currentPath) {
             VaultNoteRelocation.relocateOwnedAssets(
                 context,
                 root,
@@ -109,7 +143,10 @@ class StorageBackend(
                 mappingState?.vaultAttachmentPathSet.orEmpty(),
             )
         }
-        val syncNote = writeNoteAt(root, targetPath, noteForWrite, mapping, preservedDiskRaw = oldRaw)
+        val mappingForWrite = mappingState?.let {
+            mapping.copy(extras = VaultMappingState.encode(it))
+        } ?: mapping
+        val syncNote = writeNoteAt(root, targetPath, noteForWrite, mappingForWrite, preservedDiskRaw = oldRaw)
         if (targetPath != currentPath) {
             VaultDocumentTree.findByRelativePath(root, currentPath)?.let { old ->
                 DocumentsContract.deleteDocument(context.contentResolver, old.uri)

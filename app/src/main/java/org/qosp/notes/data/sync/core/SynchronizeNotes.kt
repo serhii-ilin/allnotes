@@ -8,6 +8,8 @@ import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.repo.IdMappingRepository
 import org.qosp.notes.data.sync.fs.vault.VaultMappingExtras
 import org.qosp.notes.data.sync.fs.vault.VaultMappingState
+import org.qosp.notes.data.sync.fs.vault.VaultNoteLinker
+import org.qosp.notes.data.sync.fs.vault.VaultPaths
 import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.preferences.CloudService
@@ -47,13 +49,23 @@ class SynchronizeNotes(
 
                 // Maps for local note ID to remote note ID and vice versa
                 val localToRemoteMap = allMappings.associateBy { it.localNoteId }
-                val remoteToLocalMap = allMappings.associateBy { it.storageUri ?: "" }.filterKeys { it.isNotEmpty() }
+                val remoteToLocalMap = allMappings
+                    .filterNot { it.isDeletedLocally }
+                    .associateBy { it.storageUri ?: "" }
+                    .filterKeys { it.isNotEmpty() }
+                val claimedLocalIds = mutableSetOf<Long>()
+                val claimedRemotePaths = allMappings
+                    .filterNot { it.isDeletedLocally }
+                    .mapNotNull { it.storageUri }
+                    .map { VaultPaths.normalizeNotePath(it) }
+                    .toMutableSet()
 
                 // Process local notes
                 for (localNote in localNotes) {
                     val mapping = localToRemoteMap[localNote.id]
 
                     if (mapping != null) {
+                        if (mapping.isDeletedLocally) continue
                         // Local note has a mapping to a remote note
                         val remoteNote = mapping.storageUri?.let { remoteNotesMap[it] }
 
@@ -163,15 +175,30 @@ class SynchronizeNotes(
                     } else if (service == CloudService.FILE_STORAGE && vaultExportCutoffEpoch == null) {
                         logDebug("Skip vault export until folder is configured: ${localNote.title}")
                     } else if (service == CloudService.FILE_STORAGE) {
-                        val remoteNoteMetaData = SyncNote(
-                            id = 0,
-                            idStr = "",
-                            content = localNote.content,
-                            title = localNote.title,
-                            lastModified = localNote.modifiedDate,
+                        val notebookName = localNote.notebookId?.let {
+                            notebookDao.getById(it).firstOrNull()?.name
+                        }
+                        val linked = VaultNoteLinker.linkLocalExportToRemote(
+                            localNote,
+                            remoteNotes,
+                            remoteToLocalMap.keys,
+                            claimedRemotePaths,
+                            notebookName,
                         )
-                        logDebug("Export or new vault-backed local note: ${localNote.title}")
-                        remoteUpdates.add(NoteAction.Create(localNote, remoteNoteMetaData))
+                        if (linked != null) {
+                            logDebug("Link local export to existing file: ${linked.idStr}")
+                            mappingUpdates.add(linked.getMapping(localNote.id, service))
+                        } else {
+                            val remoteNoteMetaData = SyncNote(
+                                id = 0,
+                                idStr = "",
+                                content = localNote.content,
+                                title = localNote.title,
+                                lastModified = localNote.modifiedDate,
+                            )
+                            logDebug("Export or new vault-backed local note: ${localNote.title}")
+                            remoteUpdates.add(NoteAction.Create(localNote, remoteNoteMetaData))
+                        }
                     }
                 }
 
@@ -182,20 +209,34 @@ class SynchronizeNotes(
                         // Remote note has a mapping to a local note
                         val localNote = localNotesMap[mapping.localNoteId]
 
-                        if (localNote == null || mapping.isDeletedLocally) {
-                            // Local note doesn't exist anymore, delete the remote note
-                            val dummyLocalNote = Note(id = mapping.localNoteId)
-                            logDebug("Local note deleted. Deleting remotely: ${remoteNote.title}")
-                            remoteUpdates.add(NoteAction.Delete(dummyLocalNote, remoteNote))
+                        when {
+                            localNote == null -> {
+                                val dummyLocalNote = Note(id = mapping.localNoteId)
+                                logDebug("Local note deleted. Deleting remotely: ${remoteNote.title}")
+                                remoteUpdates.add(NoteAction.Delete(dummyLocalNote, remoteNote))
+                            }
+                            mapping.isDeletedLocally -> {
+                                logDebug("Remote note ignored for binned local: ${remoteNote.title}")
+                            }
                         }
                         // If the local note exists, it was already handled in the local notes loop
                     } else {
-                        // Remote note has no mapping, create a new local note
-                        val newLocalNote = Note(
-                            title = remoteNote.title, modifiedDate = remoteNote.lastModified
+                        val linked = VaultNoteLinker.linkRemoteImportToLocal(
+                            remoteNote,
+                            localNotes,
+                            localToRemoteMap,
+                            claimedLocalIds,
                         )
-                        logDebug("New Remote note: ${remoteNote.title}")
-                        localUpdates.add(NoteAction.Create(newLocalNote, remoteNote))
+                        if (linked != null) {
+                            logDebug("Link remote import to local: ${linked.title}")
+                            mappingUpdates.add(remoteNote.getMapping(linked.id, service))
+                        } else {
+                            val newLocalNote = Note(
+                                title = remoteNote.title, modifiedDate = remoteNote.lastModified
+                            )
+                            logDebug("New Remote note: ${remoteNote.title}")
+                            localUpdates.add(NoteAction.Create(newLocalNote, remoteNote))
+                        }
                     }
                 }
             }

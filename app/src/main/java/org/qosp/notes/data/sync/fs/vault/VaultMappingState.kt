@@ -16,6 +16,8 @@ data class VaultMappingState(
     val conflictRemoteHash: String? = null,
     val conflictCopyPath: String? = null,
     val pendingRecoveryPath: String? = null,
+    /** Vault path when the note file was removed for bin; [org.qosp.notes.data.model.IdMapping.storageUri] is cleared. */
+    val binnedVaultPath: String? = null,
 ) {
     val vaultAttachmentPathSet: Set<String> = vaultAttachmentPaths.toSet()
 
@@ -66,6 +68,7 @@ data class VaultMappingState(
                 vaultGeneration = vaultGeneration,
                 conflictRemoteHash = existing?.conflictRemoteHash,
                 conflictCopyPath = existing?.conflictCopyPath,
+                binnedVaultPath = existing?.binnedVaultPath,
             )
         }
     }

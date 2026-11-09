@@ -61,6 +61,11 @@ object VaultDocumentTree {
      * `{Name}/` that sits beside an indexed `{Name}.md` at the parent directory level.
      */
     fun isUnderNoteAssetFolder(relativePath: String, indexedNotePaths: Set<String>): Boolean {
+        if (relativePath.endsWith(".md", ignoreCase = true) ||
+            relativePath.endsWith(".txt", ignoreCase = true)
+        ) {
+            return false
+        }
         val parent = VaultPaths.parentPath(relativePath)
         if (parent.isEmpty()) return false
 
@@ -70,24 +75,6 @@ object VaultDocumentTree {
             if (grandparent.isEmpty()) "$dirName.md" else "$grandparent/$dirName.md",
         )
         if (siblingNotePath !in indexedNotePaths) return false
-
-        if ((relativePath.endsWith(".md", ignoreCase = true) ||
-                relativePath.endsWith(".txt", ignoreCase = true)) &&
-            VaultPaths.noteBaseName(relativePath) == dirName
-        ) {
-            return false
-        }
-
-        if (parent.contains('/')) {
-            val innerNote = VaultPaths.normalizeNotePath("$parent.md")
-            if (innerNote in indexedNotePaths) return true
-        }
-
-        if (relativePath.endsWith(".md", ignoreCase = true) ||
-            relativePath.endsWith(".txt", ignoreCase = true)
-        ) {
-            return false
-        }
         return true
     }
 

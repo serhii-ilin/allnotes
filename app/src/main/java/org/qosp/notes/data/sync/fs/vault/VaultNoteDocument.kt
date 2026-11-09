@@ -4,6 +4,7 @@ import org.qosp.notes.data.model.Attachment
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.model.NoteColor
 import org.qosp.notes.data.model.NoteTask
+import org.qosp.notes.data.model.Tag
 
 data class VaultFrontMatter(
     val title: String? = null,
@@ -124,6 +125,10 @@ data class VaultNoteDocument(
                 modifiedDate = fm.modified ?: lastModified,
                 color = fm.color ?: existing?.color ?: NoteColor.Default,
                 attachments = attachments,
+                tags = fm.tags?.map { name ->
+                    existing?.tags?.find { it.name == name }
+                        ?: Tag(id = 0L, name = name)
+                } ?: existing?.tags ?: emptyList(),
             )
         }
 
@@ -189,8 +194,8 @@ data class VaultNoteDocument(
                             }
                             "tags" -> {
                                 tags = if ('[' in trimmed) {
-                                    val rest = trimmed.substringAfter("[").substringBefore("]")
-                                    rest.split(',').map { it.trim().trim('"') }.filter { it.isNotEmpty() }
+                                    val rest = trimmed.substringAfter("[").substringBeforeLast("]")
+                                    VaultYamlTags.parseInlineList(rest)
                                 } else {
                                     val collected = mutableListOf<String>()
                                     i++
