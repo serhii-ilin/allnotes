@@ -155,16 +155,13 @@ class NoteRepositoryImpl(
                     return@sync GenericError(msg)
                 }
             }
-            val syncMethod = when (syncProvider.type) {
-                CloudService.FILE_STORAGE -> SyncMethod.MAPPING
-                CloudService.NEXTCLOUD ->
-                    if (idMappingDao.getCountByCloudService(syncProvider.type) == 0) SyncMethod.TITLE
-                    else SyncMethod.MAPPING
-                else -> SyncMethod.MAPPING
-            }
+            val syncMethod = SyncMethod.MAPPING
             try {
-                // Get all local notes (excluding local-only ones)
-                val localNotes = getAll().first().filterNot { it.isLocalOnly || it.isDeleted }
+                val vaultMappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
+                    .associateBy { it.localNoteId }
+                val localNotes = getAll().first()
+                    .filterNot { it.isDeleted }
+                    .filter { !it.isLocalOnly || vaultMappings[it.id] == null }
 
                 // Get all remote notes and convert to metadata
                 val mappedVaultCount = if (syncProvider.type == CloudService.FILE_STORAGE) {
@@ -222,7 +219,6 @@ class NoteRepositoryImpl(
                         "${syncResult.vaultConflicts.size} conflicts"
                 )
 
-                if (syncMethod == SyncMethod.TITLE) applyMappingChanges(syncResult, syncProvider) // Initial import
                 // Caller holds [vaultSyncCoordinator.withVaultLock]; do not re-enter.
                 applyLocalUpdates(syncResult.localUpdates, syncProvider, vaultLockHeld = true)
                 handleVaultConflicts(syncResult.vaultConflicts, syncProvider)

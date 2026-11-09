@@ -11,7 +11,6 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import coil.ImageLoader
@@ -33,16 +32,19 @@ import org.koin.core.context.startKoin
 import org.qosp.notes.components.workers.BinCleaningWorker
 import org.qosp.notes.components.workers.SyncWorker
 import org.qosp.notes.di.MarkwonModule
-import org.qosp.notes.di.NextcloudModule
+import org.qosp.notes.data.sync.fs.vault.VaultFolderChangeMonitor
 import org.qosp.notes.di.PreferencesModule
 import org.qosp.notes.di.RepositoryModule
 import org.qosp.notes.di.SyncModule
 import org.qosp.notes.di.UIModule
 import org.qosp.notes.di.UtilModule
+import org.koin.android.ext.android.inject
 import org.qosp.notes.ui.utils.coil.AlbumArtFetcher
 import java.util.concurrent.TimeUnit
 
 class App : Application(), ImageLoaderFactory {
+
+    private val vaultFolderChangeMonitor: VaultFolderChangeMonitor by inject()
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(applicationContext)
@@ -77,7 +79,6 @@ class App : Application(), ImageLoaderFactory {
             modules(
                 listOf(
                     MarkwonModule.markwonModule,
-                    NextcloudModule.nextcloudModule,
                     PreferencesModule.prefModule,
                     RepositoryModule.repoModule,
                     UIModule.uiModule,
@@ -89,6 +90,7 @@ class App : Application(), ImageLoaderFactory {
 
         createNotificationChannels()
         enqueueWorkers()
+        vaultFolderChangeMonitor.start()
     }
 
     override fun attachBaseContext(base: Context?) {
@@ -155,9 +157,7 @@ class App : Application(), ImageLoaderFactory {
             "BIN_CLEAN" to PeriodicWorkRequestBuilder<BinCleaningWorker>(5, TimeUnit.HOURS)
                 .build(),
             "SYNC" to PeriodicWorkRequestBuilder<SyncWorker>(1, TimeUnit.HOURS)
-                .setConstraints(
-                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-                )
+                .setConstraints(Constraints.Builder().build())
                 .build(),
         )
 

@@ -28,7 +28,7 @@ class BackupTest {
             idMappings = setOf(
                 IdMapping(
                     33, 44, 12,
-                    CloudService.NEXTCLOUD, null, false, false
+                    CloudService.FILE_STORAGE, null, false, false
                 )
             )
         )

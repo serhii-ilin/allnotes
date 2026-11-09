@@ -9,7 +9,6 @@ import org.koin.core.annotation.KoinExperimentalAPI
 import org.koin.core.context.startKoin
 import org.koin.core.logger.Level
 import org.qosp.notes.di.MarkwonModule
-import org.qosp.notes.di.NextcloudModule
 import org.qosp.notes.di.PreferencesModule
 import org.qosp.notes.di.RepositoryModule
 import org.qosp.notes.di.SyncModule
@@ -38,7 +37,6 @@ class TestApplication : Application() {
             modules(
                 TestUtilModule.module,
                 MarkwonModule.markwonModule,
-                NextcloudModule.nextcloudModule,
                 PreferencesModule.prefModule,
                 RepositoryModule.repoModule,
                 SyncModule.syncModule,

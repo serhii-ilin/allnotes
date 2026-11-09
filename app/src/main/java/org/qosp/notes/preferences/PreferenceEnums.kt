@@ -152,9 +152,11 @@ enum class DefaultEditorMode(
 }
 
 enum class CloudService(override val nameResource: Int) : HasNameResource, EnumPreference by key("cloud_service") {
-    DISABLED(R.string.preferences_cloud_service_disabled) { override val isDefault = true },
+    FILE_STORAGE(R.string.preferences_cloud_service_files) { override val isDefault = true },
+    /** Legacy preference value; migrated to [FILE_STORAGE]. */
+    DISABLED(R.string.preferences_cloud_service_disabled),
+    /** Removed product surface; migrated to [FILE_STORAGE]. */
     NEXTCLOUD(R.string.preferences_cloud_service_nextcloud),
-    FILE_STORAGE(R.string.preferences_cloud_service_files),
 }
 
 enum class SyncMode(override val nameResource: Int) : HasNameResource, EnumPreference by key("sync_mode") {

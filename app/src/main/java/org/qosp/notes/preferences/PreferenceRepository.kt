@@ -49,7 +49,7 @@ class PreferenceRepository(
                     groupNotesWithoutNotebook = prefs.getEnum(),
                     moveCheckedItems = prefs.getEnum(),
                     defaultEditorMode = prefs.getEnum(),
-                    cloudService = prefs.getEnum(),
+                    cloudService = prefs.getEnum<CloudService>().toVaultMode(),
                     syncMode = prefs.getEnum(),
                     backgroundSync = prefs.getEnum(),
                     newNotesSyncable = prefs.getEnum(),

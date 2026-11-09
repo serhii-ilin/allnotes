@@ -29,7 +29,7 @@ import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.fs.vault.VaultRecoverableWrite
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultWriteContext
-import org.qosp.notes.data.sync.nextcloud.BackendValidationResult
+import org.qosp.notes.data.sync.core.BackendValidationResult
 import org.qosp.notes.preferences.CloudService
 import java.io.FileNotFoundException
 import java.io.IOException

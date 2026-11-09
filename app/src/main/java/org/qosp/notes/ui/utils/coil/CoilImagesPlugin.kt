@@ -18,19 +18,14 @@ import io.noties.markwon.image.AsyncDrawableLoader
 import io.noties.markwon.image.AsyncDrawableScheduler
 import io.noties.markwon.image.DrawableUtils
 import io.noties.markwon.image.ImageSpanFactory
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.runBlocking
 import org.commonmark.node.Image
 import org.qosp.notes.R
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
-import org.qosp.notes.data.sync.nextcloud.NextcloudConfig
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.ui.utils.vault.VaultMarkwonContext
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Adds Nextcloud auth headers and vault-relative image resolution for Markwon.
- */
+/** Vault-relative and remote image resolution for Markwon / Coil. */
 class CoilImagesPlugin internal constructor(
     coilStore: CoilStore,
     imageLoader: ImageLoader,
@@ -138,13 +133,6 @@ class CoilImagesPlugin internal constructor(
                             .data(data)
                             .placeholder(R.drawable.ic_file)
                             .error(R.drawable.ic_file)
-                            .apply {
-                                runBlocking {
-                                    NextcloudConfig.fromPreferences(preferenceRepository).firstOrNull()
-                                        ?.authenticationHeaders
-                                        ?.forEach { (key, value) -> addHeader(key, value) }
-                                }
-                            }
                             .build()
                     }
 

@@ -8,9 +8,11 @@ import org.koin.dsl.module
 import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.core.ProcessRemoteActions
 import org.qosp.notes.data.sync.core.SynchronizeNotes
+import org.qosp.notes.data.sync.fs.vault.VaultFolderChangeMonitor
 import org.qosp.notes.data.sync.fs.vault.VaultPortableMetadata
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
+import org.qosp.notes.data.repo.NoteRepository
 
 object SyncModule {
 
@@ -23,6 +25,14 @@ object SyncModule {
         singleOf(::VaultPortableMetadata)
         singleOf(::VaultSyncCoordinator)
         singleOf(::VaultTreeAccess)
+        single {
+            VaultFolderChangeMonitor(
+                context = get(),
+                preferenceRepository = get(),
+                noteRepository = get(),
+                syncScope = get(),
+            )
+        }
     }
 }
 

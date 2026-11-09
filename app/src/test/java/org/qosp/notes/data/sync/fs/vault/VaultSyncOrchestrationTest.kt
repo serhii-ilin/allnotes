@@ -167,7 +167,7 @@ class VaultSyncOrchestrationTest {
     }
 
     @Test
-    fun legacyNoteBeforeCutoff_notExportedAfterFolderSwitch() = runTest {
+    fun legacyNoteBeforeCutoff_exportedWhenFolderConfigured() = runTest {
         val legacy = Note(id = 1L, title = "Old", creationDate = 50L, modifiedDate = 50L)
         coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns emptyList()
         val result = synchronizeNotes(
@@ -176,7 +176,7 @@ class VaultSyncOrchestrationTest {
             CloudService.FILE_STORAGE,
             vaultExportCutoffEpoch = 200L,
         )
-        assertEquals(0, result.remoteUpdates.size)
+        assertEquals(1, result.remoteUpdates.size)
     }
 
     @Test

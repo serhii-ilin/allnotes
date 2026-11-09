@@ -47,9 +47,7 @@ class SynchronizeNotes(
 
                 // Maps for local note ID to remote note ID and vice versa
                 val localToRemoteMap = allMappings.associateBy { it.localNoteId }
-                val remoteToLocalMap = allMappings.associateBy {
-                    if (service == CloudService.NEXTCLOUD) it.remoteNoteId?.toString() ?: "" else it.storageUri ?: ""
-                }.filterKeys { it != "" }
+                val remoteToLocalMap = allMappings.associateBy { it.storageUri ?: "" }.filterKeys { it.isNotEmpty() }
 
                 // Process local notes
                 for (localNote in localNotes) {
@@ -57,11 +55,7 @@ class SynchronizeNotes(
 
                     if (mapping != null) {
                         // Local note has a mapping to a remote note
-                        val remoteNote = when (service) {
-                            CloudService.NEXTCLOUD -> mapping.remoteNoteId.toString()
-                            CloudService.FILE_STORAGE -> mapping.storageUri
-                            else -> null
-                        }?.let { remoteNotesMap[it] }
+                        val remoteNote = mapping.storageUri?.let { remoteNotesMap[it] }
 
                         if (remoteNote != null) {
                             val vaultPath = mapping.storageUri.orEmpty()
@@ -151,14 +145,6 @@ class SynchronizeNotes(
                                         }
                                     }
                                 }
-                            } else if (abs(localNote.modifiedDate - remoteNote.lastModified) <= 1) {
-                                // no action
-                            } else if (localNote.modifiedDate > remoteNote.lastModified) {
-                                logDebug("Local note (${localNote.title}) is newer ${localNote.modifiedDate}, ${remoteNote.lastModified}")
-                                remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
-                            } else if (localNote.modifiedDate < remoteNote.lastModified) {
-                                logDebug("Remote note(${remoteNote.title}) is newer ${remoteNote.lastModified}, ${localNote.modifiedDate}")
-                                localUpdates.add(NoteAction.Update(localNote, remoteNote))
                             }
                         } else if (service == CloudService.FILE_STORAGE && !remoteScanSucceeded) {
                             logDebug("Skipping delete; vault scan incomplete for ${localNote.title}")
@@ -174,10 +160,6 @@ class SynchronizeNotes(
                             localUpdates.add(NoteAction.Delete(localNote, syncNote))
                         }
 
-                    } else if (service == CloudService.FILE_STORAGE &&
-                        vaultExportCutoffEpoch != null && localNote.creationDate < vaultExportCutoffEpoch
-                    ) {
-                        logDebug("Legacy local note (not auto-exported): ${localNote.title}")
                     } else if (service == CloudService.FILE_STORAGE && vaultExportCutoffEpoch == null) {
                         logDebug("Skip vault export until folder is configured: ${localNote.title}")
                     } else if (service == CloudService.FILE_STORAGE) {
@@ -188,15 +170,7 @@ class SynchronizeNotes(
                             title = localNote.title,
                             lastModified = localNote.modifiedDate,
                         )
-                        logDebug("New vault-backed local note: ${localNote.title}")
-                        remoteUpdates.add(NoteAction.Create(localNote, remoteNoteMetaData))
-                    } else {
-                        val remoteNoteMetaData = SyncNote(
-                            id = 0,
-                            idStr = "", content = localNote.content,
-                            title = localNote.title, lastModified = localNote.modifiedDate
-                        )
-                        logDebug("New local note: ${localNote.title}")
+                        logDebug("Export or new vault-backed local note: ${localNote.title}")
                         remoteUpdates.add(NoteAction.Create(localNote, remoteNoteMetaData))
                     }
                 }

@@ -86,10 +86,10 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
             appPreferences = it
 
             with(appPreferences) {
-                val goToSync = when (cloudService) {
-                    CloudService.DISABLED -> getString(R.string.preferences_currently_not_syncing)
-                    else -> getString(R.string.preferences_currently_syncing_with, getString(cloudService.nameResource))
-                }
+                val goToSync = getString(
+                    R.string.preferences_currently_syncing_with,
+                    getString(CloudService.FILE_STORAGE.nameResource),
+                )
                 binding.settingGoToSyncSettings.subText = goToSync
                 binding.settingLayoutMode.setIcon(
                     when (layoutMode) {
