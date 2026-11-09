@@ -28,6 +28,7 @@ import org.qosp.notes.data.sync.core.SyncMethod
 import org.qosp.notes.data.sync.core.SyncNotesResult
 import org.qosp.notes.data.sync.core.SynchronizeNotes
 import org.qosp.notes.data.sync.fs.StorageBackend
+import org.qosp.notes.data.sync.fs.vault.VaultPortableMetadata
 import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.data.sync.toLocalNote
@@ -49,6 +50,7 @@ class NoteRepositoryImpl(
     private val syncingScope: SyncScope,
     private val toaster: Toaster,
     private val preferenceRepository: PreferenceRepository,
+    private val vaultPortableMetadata: VaultPortableMetadata,
 ) : NoteRepository {
 
     private val tag = NoteRepositoryImpl::class.java.simpleName
@@ -151,6 +153,9 @@ class NoteRepositoryImpl(
                         }
                         val noteId = insertNote(imported, sync = false)
                         idMappingDao.insert(syncNote.getMapping(noteId, syncProvider.type))
+                        if (syncProvider.type == CloudService.FILE_STORAGE) {
+                            vaultPortableMetadata.applyFromRemote(noteId, syncNote)
+                        }
                     }
 
                     is NoteAction.Update -> {
@@ -171,6 +176,9 @@ class NoteRepositoryImpl(
                             extras = action.remoteNote.extra
                         )
                         updateNote(note, sync = false)
+                        if (syncProvider.type == CloudService.FILE_STORAGE) {
+                            vaultPortableMetadata.applyFromRemote(action.note.id, action.remoteNote)
+                        }
                     }
 
                     is NoteAction.Delete -> {

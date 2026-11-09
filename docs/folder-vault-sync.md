@@ -96,7 +96,7 @@ Vault-backed attachments use `path` prefix `vaultrel:` + normalized relative pat
 - [x] `vaultrel:` resolution for UI/Coil
 - [x] Sync settings: vault behavior strings + rebuild index action
 - [x] Push path materializes attachments into vault (`ProcessRemoteActions` patches local index)
-- [ ] Notebook/tag front matter round-trip (names only in YAML today)
+- [x] Notebook/tag front matter → Room on import (`VaultPortableMetadata`); export tags + parent-folder notebook name
 - [ ] Instrumented SAF provider test (provider-dependent)
 - [ ] Manual: Syncthing + Obsidian checklist (below)
 

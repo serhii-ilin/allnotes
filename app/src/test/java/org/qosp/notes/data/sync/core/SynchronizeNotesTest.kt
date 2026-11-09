@@ -200,6 +200,44 @@ class SynchronizeNotesTest {
     }
 
     @Test
+    fun `vault does not export legacy local note before cutoff`() = runTest {
+        val localNote = Note(id = 1L, title = "Old", creationDate = 100L, modifiedDate = 100L)
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns emptyList()
+
+        val result = synchronizeNotes(
+            listOf(localNote),
+            emptyList(),
+            CloudService.FILE_STORAGE,
+            vaultExportCutoffEpoch = 200L,
+        )
+
+        assertEquals(0, result.remoteUpdates.size)
+    }
+
+    @Test
+    fun `vault skips bin when remote missing and scan not succeeded`() = runTest {
+        val localNote = Note(id = 1L, title = "Note", modifiedDate = 100L)
+        val mapping = IdMapping(
+            localNoteId = 1L,
+            remoteNoteId = null,
+            provider = CloudService.FILE_STORAGE,
+            extras = "abc",
+            isDeletedLocally = false,
+            storageUri = "Work/Note.md",
+        )
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
+
+        val result = synchronizeNotes(
+            listOf(localNote),
+            emptyList(),
+            CloudService.FILE_STORAGE,
+            remoteScanSucceeded = false,
+        )
+
+        assertEquals(0, result.localUpdates.size)
+    }
+
+    @Test
     fun `file storage service should use storageUri instead of remoteNoteId`() = runTest {
         // Given
         val localNote = Note(id = 1L, title = "Local Note", modifiedDate = 200L)

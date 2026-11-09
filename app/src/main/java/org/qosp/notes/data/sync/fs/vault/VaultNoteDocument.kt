@@ -63,7 +63,9 @@ data class VaultNoteDocument(
                 hidden = note.isHidden.takeIf { it },
                 color = note.color.takeIf { it != NoteColor.Default },
                 tags = note.tags.map { it.name },
-                notebook = null, // notebook name resolved at export time if needed
+                notebook = VaultPaths.parentPath(noteRelativePath)
+                    .takeIf { it.isNotBlank() }
+                    ?.substringAfterLast('/'),
                 isList = note.isList.takeIf { it },
                 created = note.creationDate,
                 modified = note.modifiedDate,
