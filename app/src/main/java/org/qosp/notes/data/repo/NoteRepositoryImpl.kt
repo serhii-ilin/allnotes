@@ -38,6 +38,7 @@ import org.qosp.notes.data.sync.fs.vault.VaultNoteDocument
 import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.core.SyncNote
 import org.qosp.notes.data.sync.fs.vault.VaultPaths
+import org.qosp.notes.data.sync.fs.vault.VaultIo
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.data.sync.toLocalNote
 import org.qosp.notes.data.sync.updateLocalNote
@@ -103,6 +104,7 @@ class NoteRepositoryImpl(
         val local = getById(noteId).first() ?: return
         val gen = vaultSyncCoordinator.currentGeneration()
         val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        val cleared = existing?.copy(conflictRemoteHash = null, conflictCopyPath = null)
         val state = VaultMappingState.fromDiskSync(
             rawContent,
             local,
@@ -110,7 +112,7 @@ class NoteRepositoryImpl(
             VaultSyncImport.vaultPathsFromNote(local),
             gen,
             notebookName,
-            existing,
+            cleared,
         )
         idMappingDao.updateNoteExtras(
             localId = noteId,
@@ -125,13 +127,13 @@ class NoteRepositoryImpl(
         idMappingDao.setNotesToBeDeleted(*n.map { it.id }.toLongArray())
     }
 
-    override suspend fun syncNotes(): BaseResult {
+    override suspend fun syncNotes(): BaseResult = VaultIo.run {
         Log.d(tag, "syncNotes: Starting synchronization")
 
         val syncProvider = backendProvider.syncProvider.value
         if (syncProvider == null || !backendProvider.isSyncing) {
             Log.i(tag, "syncNotes: Sync not available or disabled")
-            return Success
+            return@run Success
         }
 
         // Check backend availability before proceeding
@@ -143,7 +145,7 @@ class NoteRepositoryImpl(
             is AvailabilityStatus.Unavailable -> {
                 Log.w(tag, "syncNotes: Backend unavailable - ${status.reason}")
                 toaster.showLong(status.reason)
-                return GenericError(status.reason)
+                return@run GenericError(status.reason)
             }
         }
 
@@ -167,7 +169,7 @@ class NoteRepositoryImpl(
                     emptyList()
                 }
                 val mappedVaultCount = activeMappings.size
-                val mappedPaths = activeMappings.mapNotNull { it.storageUri }.toSet()
+                val mappedPaths = activeMappings.mapNotNull { VaultPaths.vaultMappingPath(it.storageUri) }.toSet()
                 val scanResult = syncProvider.getAll(mappedPaths)
                 if (syncProvider.type == CloudService.FILE_STORAGE && scanResult != null) {
                     val legacyMappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
@@ -232,7 +234,7 @@ class NoteRepositoryImpl(
         if (lockedResult is Success && pendingRemoteUpdates.isNotEmpty()) {
             applyRemoteUpdates(pendingRemoteUpdates, syncProvider)
         }
-        return lockedResult
+        return@run lockedResult
     }
 
     /**
@@ -422,7 +424,17 @@ class NoteRepositoryImpl(
                         }
                     }
                 }
-                processRemoteActions(n.id, Create(restored, vaultFence = captureVaultFence()))
+                val vaultPath = idMappingDao.getByLocalIdAndProvider(n.id, CloudService.FILE_STORAGE)
+                    ?.let { m ->
+                        VaultPaths.vaultMappingPath(m.storageUri)
+                            ?: VaultMappingState.resolve(m.extras)?.binnedVaultPath?.let(VaultPaths::vaultMappingPath)
+                    }
+                val op = if (!vaultPath.isNullOrBlank()) {
+                    Update(restored, vaultFence = captureVaultFence())
+                } else {
+                    Create(restored, vaultFence = captureVaultFence())
+                }
+                processRemoteActions(n.id, op)
             }
         }
     }
@@ -572,16 +584,17 @@ class NoteRepositoryImpl(
         val linkedIds = mutableSetOf<Long>()
         for (legacy in legacyMappings) {
             val local = localNotes.find { it.id == legacy.localNoteId } ?: continue
-            val desired = VaultPaths.normalizeNotePath(
-                VaultPaths.titleToNotePath(local.title, local.isMarkdownEnabled),
-            )
-            val remote = remoteByPath[desired] ?: continue
+            val remote = remotes.firstOrNull { sync ->
+                val doc = VaultNoteDocument.parse(sync.content.orEmpty())
+                val title = doc.frontMatter.title?.takeIf { it.isNotBlank() }
+                    ?: VaultPaths.noteBaseName(sync.idStr)
+                title.equals(local.title, ignoreCase = true) &&
+                    org.qosp.notes.data.sync.fs.vault.VaultContentHash.ofText(local.content) ==
+                    org.qosp.notes.data.sync.fs.vault.VaultContentHash.ofText(doc.body)
+            } ?: continue
+            val desired = VaultPaths.normalizeNotePath(remote.idStr)
             val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
             val imported = VaultSyncImport.noteFromRemote(remote, local)
-            val preserved = VaultNoteDocument.parse(remote.content.orEmpty()).frontMatter.preservedYaml
-            val localHash = VaultSyncImport.canonicalFileHash(local, desired, notebookName, null)
-            val remoteHash = VaultSyncImport.canonicalFileHash(imported, desired, notebookName, preserved)
-            if (localHash != remoteHash) continue
             val gen = vaultSyncCoordinator.currentGeneration()
             val state = VaultMappingState.fromDiskSync(
                 remote.content.orEmpty(),
@@ -591,15 +604,14 @@ class NoteRepositoryImpl(
                 gen,
                 notebookName,
             )
-            val mapping = remote.getMapping(local.id, CloudService.FILE_STORAGE)
-                .copy(extras = VaultMappingState.encode(state), isDeletedLocally = false)
-            idMappingDao.insert(mapping)
+            val updated = legacy.copy(
+                storageUri = desired,
+                extras = VaultMappingState.encode(state),
+                isDeletedLocally = false,
+            )
+            idMappingDao.update(updated)
             linkedIds.add(local.id)
             Log.i(tag, "Relinked legacy mapping for note ${local.id} → $desired")
-        }
-        val toDrop = legacyMappings.filter { it.localNoteId !in linkedIds }.map { it.localNoteId }.toLongArray()
-        if (toDrop.isNotEmpty()) {
-            idMappingDao.deleteByLocalId(*toDrop)
         }
     }
 

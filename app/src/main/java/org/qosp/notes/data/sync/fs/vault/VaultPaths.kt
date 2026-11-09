@@ -67,6 +67,13 @@ object VaultPaths {
 
     fun isVaultRelativeAttachment(path: String): Boolean = path.startsWith(VAULT_REL_PREFIX)
 
+    /** True when [storageUri] is a vault-relative path, not a SAF `content://` URI. */
+    fun isVaultStoragePath(storageUri: String?): Boolean =
+        !storageUri.isNullOrBlank() && !storageUri.contains("://")
+
+    fun vaultMappingPath(storageUri: String?): String? =
+        storageUri?.takeIf { isVaultStoragePath(it) }?.let { normalizeNotePath(it) }
+
     fun toVaultRelative(storedPath: String): String =
         storedPath.removePrefix(VAULT_REL_PREFIX).let { normalize(it) }
 

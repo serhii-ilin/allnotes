@@ -41,6 +41,13 @@ class VaultFolderHarnessScenariosTest {
         assertFalse(h.vaultFs.isFile("Old/a.png"))
         val state = VaultMappingState.resolve(updated.extras)!!
         assertTrue(state.vaultAttachmentPathSet.all { it.contains("New/") })
+        val written = h.vaultFs.readText("New.md").orEmpty()
+        val body = VaultNoteDocument.parse(written).body
+        assertFalse("Body must not reference old asset dir", body.contains("Old/"))
+        assertTrue(body.contains("New/"))
+        VaultAttachments.parseFromBody(body, "New.md").forEach { att ->
+            assertTrue(att.path.contains("New/"))
+        }
     }
 
     @Test

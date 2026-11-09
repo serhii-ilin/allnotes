@@ -77,17 +77,17 @@ object VaultNoteLinker {
         val desired = VaultPaths.titleToNotePath(local.title, local.isMarkdownEnabled)
         val desiredNorm = VaultPaths.normalizeNotePath(desired)
         if (desiredNorm in mappedPaths || desiredNorm in claimedPaths) return null
-        val localHash = VaultSyncImport.canonicalFileHash(local, desiredNorm, notebookName, null)
+        val localBodyHash = VaultContentHash.ofText(local.content)
         return remotes.firstOrNull { remote ->
             val path = VaultPaths.normalizeNotePath(remote.idStr)
             if (path in mappedPaths || path in claimedPaths) return@firstOrNull false
-            val remoteHash = VaultSyncImport.logicalHashFromRemoteFile(remote, local, path, notebookName)
-            when {
-                path == desiredNorm && remoteHash == localHash -> true
-                remoteHash == localHash &&
-                    VaultPaths.noteBaseName(path) == VaultPaths.noteBaseName(desiredNorm) -> true
-                else -> false
-            }
+            val parsed = VaultNoteDocument.parse(remote.content.orEmpty())
+            val remoteTitle = parsed.frontMatter.title?.takeIf { it.isNotBlank() }
+                ?: VaultPaths.noteBaseName(path)
+            val remoteBodyHash = VaultContentHash.ofText(parsed.body)
+            val titleMatch = local.title.equals(remoteTitle, ignoreCase = true) ||
+                VaultPaths.noteBaseName(path).equals(VaultPaths.noteBaseName(desiredNorm), ignoreCase = true)
+            titleMatch && localBodyHash == remoteBodyHash
         }?.also { claimedPaths.add(VaultPaths.normalizeNotePath(it.idStr)) }
     }
 }

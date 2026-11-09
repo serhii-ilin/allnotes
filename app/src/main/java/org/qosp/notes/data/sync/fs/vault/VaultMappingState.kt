@@ -55,8 +55,10 @@ data class VaultMappingState(
             assignedNotebookName: String? = null,
             existing: VaultMappingState? = null,
         ): VaultMappingState {
-            val preserved = VaultNoteDocument.parse(rawFileContent).frontMatter.preservedYaml
-            val sortedPaths = vaultAttachmentPaths.distinct().sorted()
+            val parsed = VaultNoteDocument.parse(rawFileContent)
+            val preserved = parsed.frontMatter.preservedYaml
+            val fromDisk = VaultAttachments.parseFromBody(parsed.body, relativePath).map { it.path }
+            val sortedPaths = (vaultAttachmentPaths + fromDisk).distinct().sorted()
             val logicalHash = VaultSyncImport.canonicalFileHash(
                 note,
                 relativePath,

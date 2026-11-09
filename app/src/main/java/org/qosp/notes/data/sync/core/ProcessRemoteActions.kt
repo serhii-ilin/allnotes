@@ -134,8 +134,15 @@ class ProcessRemoteActions(
         removeAssets: Boolean,
     ) = try {
         idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)?.let { mapping ->
-            val vaultPath = mapping.storageUri
-            syncProvider.deleteNote(mapping = mapping, removeAssets = removeAssets)
+            val vaultPath = VaultPaths.vaultMappingPath(mapping.storageUri)
+                ?: VaultMappingState.resolve(mapping.extras)?.binnedVaultPath
+                    ?.let(VaultPaths::vaultMappingPath)
+            val mappingForDelete = if (vaultPath != null && mapping.storageUri != vaultPath) {
+                mapping.copy(storageUri = vaultPath)
+            } else {
+                mapping
+            }
+            syncProvider.deleteNote(mapping = mappingForDelete, removeAssets = removeAssets)
             if (removeAssets) {
                 idMappingDao.deleteByLocalId(note.id)
             } else if (syncProvider.type == CloudService.FILE_STORAGE && !vaultPath.isNullOrBlank()) {
@@ -218,6 +225,7 @@ class ProcessRemoteActions(
             idMappingDao.insert(toInsert)
         }
         upgradeAttachmentPathsAfterPush(note.id, syncProvider)
+        persistBaselineAfterPush(note.id, syncProvider)
         noteDao.updateLastModified(note.id, created.lastModified)
         val live = noteDao.getById(note.id).first() ?: note
         noteDao.update(live.copy(isLocalOnly = false, isDeleted = false, deletionDate = null).toEntity())
@@ -226,13 +234,34 @@ class ProcessRemoteActions(
         toaster.showShort(e.message ?: "Failed to create note")
     }
 
+    private suspend fun persistBaselineAfterPush(noteId: Long, syncProvider: ISyncBackend) {
+        if (syncProvider.type != CloudService.FILE_STORAGE) return
+        val mapping = idMappingDao.getByLocalIdAndProvider(noteId, syncProvider.type) ?: return
+        val path = VaultPaths.vaultMappingPath(mapping.storageUri) ?: return
+        val remote = syncProvider.getNote(mapping) ?: return
+        val live = noteDao.getById(noteId).first() ?: return
+        val notebookName = live.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        val prior = VaultMappingState.resolve(mapping.extras)
+        val state = VaultMappingState.fromDiskSync(
+            remote.content.orEmpty(),
+            live,
+            path,
+            VaultSyncImport.vaultPathsFromNote(live),
+            vaultSyncCoordinator.currentGeneration(),
+            notebookName,
+            prior?.copy(conflictRemoteHash = null, conflictCopyPath = null),
+        )
+        idMappingDao.update(mapping.copy(extras = VaultMappingState.encode(state)))
+    }
+
     private suspend fun updateRemote(note: Note, syncProvider: ISyncBackend) = try {
         idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)?.let { mapping ->
-            val path = mapping.storageUri.orEmpty()
+            val path = VaultPaths.vaultMappingPath(mapping.storageUri).orEmpty()
             val mappingState = VaultMappingState.resolve(mapping.extras)
             val updatedMapping = syncProvider.updateNote(note, mapping)
             idMappingDao.update(updatedMapping)
             upgradeAttachmentPathsAfterPush(note.id, syncProvider)
+            persistBaselineAfterPush(note.id, syncProvider)
         }
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to update note ID=${note.id}: ${e.message}", e)

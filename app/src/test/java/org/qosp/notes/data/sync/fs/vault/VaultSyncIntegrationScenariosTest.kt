@@ -120,8 +120,9 @@ class VaultSyncIntegrationScenariosTest {
     @Test
     fun unmappedRemote_linksToMatchingLocalByPathAndHash() = runTest {
         val path = "Hello.md"
-        val local = Note(id = 2L, title = "Hello", content = "Hi", modifiedDate = 5L)
-        val full = VaultNoteDocument.fromNote(local, path).renderFullText()
+        val full = VaultNoteDocument.fromNote(Note(title = "Hello", content = "Hi"), path).renderFullText()
+        val body = VaultNoteDocument.parse(full).body
+        val local = Note(id = 2L, title = "Hello", content = body, modifiedDate = 5L)
         val remote = SyncNote(0, path, full, "Hello", 5L)
         coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns emptyList()
         val result = synchronizeNotes(listOf(local), listOf(remote), CloudService.FILE_STORAGE, vaultExportCutoffEpoch = 1L)

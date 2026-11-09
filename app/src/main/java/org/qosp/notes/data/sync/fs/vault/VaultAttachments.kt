@@ -9,6 +9,7 @@ object VaultAttachments {
     fun parseFromBody(body: String, noteRelativePath: String): List<Attachment> {
         val found = linkedMapOf<String, Attachment>()
         fun ingest(target: String) {
+            if (target.startsWith("#") || target.startsWith("mailto:", ignoreCase = true)) return
             if (target.contains("://")) return
             val vaultPath = runCatching {
                 VaultLinkResolver.resolve(noteRelativePath, normalizeLinkTarget(target))
@@ -130,6 +131,24 @@ object VaultAttachments {
 
     private inline fun forEachImageTarget(body: String, consume: (String) -> Unit) {
         imageLinkRegex.findAll(body).forEach { consume(normalizeLinkTarget(it.groupValues[1])) }
+    }
+
+    /**
+     * Removes markdown links that resolve to paths under [assetDirRelative] (e.g. after a note rename).
+     */
+    fun stripLinksUnderAssetDirectory(
+        body: String,
+        notePathForResolve: String,
+        assetDirRelative: String,
+    ): String {
+        val prefix = VaultPaths.normalize(assetDirRelative)
+        val parsed = parseFromBody(body, notePathForResolve)
+        val toRemove = parsed
+            .filter { VaultPaths.toVaultRelative(it.path).startsWith("$prefix/") || 
+                VaultPaths.toVaultRelative(it.path) == prefix }
+            .map { it.path }
+            .toSet()
+        return if (toRemove.isEmpty()) body else removeVaultLinksForPaths(body, notePathForResolve, toRemove)
     }
 
     fun mergeAttachmentLinks(body: String, noteRelativePath: String, attachments: List<Attachment>): String {

@@ -272,7 +272,7 @@ class SynchronizeNotesTest {
         val localNote = Note(id = 1L, title = "Local Note", modifiedDate = 200L)
         val remoteNote = SyncNote(
             id = 0L,
-            idStr = "file://path/to/note.txt",
+            idStr = "path/to/note.txt",
             title = "Remote Note",
             lastModified = 100L,
             content = "---\n---\nLocal Note\n",
@@ -283,7 +283,7 @@ class SynchronizeNotesTest {
             provider = CloudService.FILE_STORAGE,
             extras = null,
             isDeletedLocally = false,
-            storageUri = "file://path/to/note.txt"
+            storageUri = "path/to/note.txt",
         )
 
         coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)

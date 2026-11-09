@@ -51,8 +51,10 @@ class SynchronizeNotes(
                 val localToRemoteMap = allMappings.associateBy { it.localNoteId }
                 val remoteToLocalMap = allMappings
                     .filterNot { it.isDeletedLocally }
-                    .associateBy { it.storageUri ?: "" }
-                    .filterKeys { it.isNotEmpty() }
+                    .mapNotNull { m ->
+                        VaultPaths.vaultMappingPath(m.storageUri)?.let { it to m }
+                    }
+                    .toMap()
                 val claimedLocalIds = mutableSetOf<Long>()
                 val claimedRemotePaths = allMappings
                     .filterNot { it.isDeletedLocally }
@@ -172,6 +174,23 @@ class SynchronizeNotes(
                             )
                             logDebug("May be deleted remotely: $syncNote")
                             localUpdates.add(NoteAction.Delete(localNote, syncNote))
+                            if (service == CloudService.FILE_STORAGE) {
+                                val vaultPath = VaultPaths.vaultMappingPath(mapping.storageUri)
+                                if (!vaultPath.isNullOrBlank()) {
+                                    val prior = VaultMappingState.resolve(mapping.extras)
+                                    val state = (prior ?: VaultMappingState(baselineHash = "")).copy(
+                                        binnedVaultPath = vaultPath,
+                                        vaultAttachmentPaths = prior?.vaultAttachmentPaths ?: emptyList(),
+                                    )
+                                    mappingUpdates.add(
+                                        mapping.copy(
+                                            storageUri = null,
+                                            isDeletedLocally = true,
+                                            extras = VaultMappingState.encode(state),
+                                        ),
+                                    )
+                                }
+                            }
                         }
 
                     } else if (service == CloudService.FILE_STORAGE && vaultExportCutoffEpoch == null) {
