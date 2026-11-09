@@ -23,6 +23,7 @@ import org.qosp.notes.R
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.ui.utils.vault.VaultMarkwonContext
+import org.qosp.notes.ui.utils.vault.VaultMarkwonRenderContext
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Vault-relative and remote image resolution for Markwon / Coil. */
@@ -126,8 +127,8 @@ class CoilImagesPlugin internal constructor(
                         val viewCtx = (host as? View)?.context ?: context
                         val textView = host as? TextView
                         val dest = drawable.destination
-                        val vaultCtx =
-                            textView?.getTag(R.id.tag_vault_markwon_context) as? VaultMarkwonContext
+                        val vaultCtx = VaultMarkwonRenderContext.get()
+                            ?: (textView?.getTag(R.id.tag_vault_markwon_context) as? VaultMarkwonContext)
                         val data = VaultMarkwonImageLoader.resolveLoadData(dest, vaultCtx, vaultTreeAccess)
                         return ImageRequest.Builder(viewCtx)
                             .data(data)

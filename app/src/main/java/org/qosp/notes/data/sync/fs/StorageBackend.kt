@@ -124,9 +124,15 @@ class StorageBackend(
     override suspend fun deleteNote(mapping: IdMapping): Boolean {
         val root = getRootDocumentFile() ?: return false
         val path = mapping.storageUri ?: return false
+        val mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
+        VaultNoteRelocation.deleteOwnedAssets(
+            context,
+            root,
+            path,
+            mappingState?.vaultAttachmentPathSet.orEmpty(),
+        )
         val file = VaultDocumentTree.findByRelativePath(root, path) ?: return false
-        val deleted = DocumentsContract.deleteDocument(context.contentResolver, file.uri)
-        return deleted
+        return DocumentsContract.deleteDocument(context.contentResolver, file.uri)
     }
 
     override suspend fun getNote(mapping: IdMapping): SyncNote? {
@@ -235,8 +241,15 @@ class StorageBackend(
         mappingState: VaultMappingState?,
     ): List<Attachment> {
         val names = mutableSetOf<String>()
-        VaultDocumentTree.ensureDirectory(root, VaultPaths.assetDirectoryForNote(noteRelativePath))
-            .listFiles().mapNotNull { it.name }.toCollection(names)
+        val assetDir = VaultPaths.assetDirectoryForNote(noteRelativePath)
+        val needsDir = attachments.any { !VaultPaths.isVaultRelativeAttachment(it.path) }
+        if (needsDir) {
+            VaultDocumentTree.ensureDirectory(root, assetDir)
+                .listFiles().mapNotNull { it.name }.toCollection(names)
+        } else {
+            VaultDocumentTree.findDirectory(root, assetDir)
+                ?.listFiles().orEmpty().mapNotNull { it.name }.toCollection(names)
+        }
         return attachments.map { att ->
             when {
                 VaultPaths.isVaultRelativeAttachment(att.path) -> att

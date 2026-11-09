@@ -37,6 +37,14 @@ class VaultNoteRelocationOwnedAssetsTest {
     }
 
     @Test
+    fun deleteOwnedAssets_onlyUnderAssetDir() {
+        val owned = setOf(VaultPaths.vaultRelative("Ttt/a.jpg"), VaultPaths.vaultRelative("Other/x.jpg"))
+        val assetDir = VaultPaths.assetDirectoryForNote("Ttt.md")
+        assertTrue(VaultPaths.toVaultRelative(VaultPaths.vaultRelative("Ttt/a.jpg")).startsWith("$assetDir/"))
+        assertFalse(VaultPaths.toVaultRelative(VaultPaths.vaultRelative("Other/x.jpg")).startsWith("$assetDir/"))
+    }
+
+    @Test
     fun assetDirectoryChangesWithTitle() {
         assertEquals("Ttt", VaultPaths.assetDirectoryForNote("Ttt.md"))
         assertEquals("Tt1", VaultPaths.assetDirectoryForNote("Tt1.md"))

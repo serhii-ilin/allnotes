@@ -4,6 +4,7 @@ import android.widget.TextView
 import io.noties.markwon.Markwon
 import org.qosp.notes.R
 import org.qosp.notes.ui.utils.vault.VaultMarkwonContext
+import org.qosp.notes.ui.utils.vault.VaultMarkwonRenderContext
 import org.commonmark.ext.gfm.tables.TableBlock
 import org.commonmark.ext.gfm.tables.TableCell
 import org.commonmark.ext.gfm.tables.TableRow
@@ -33,7 +34,12 @@ inline fun Markwon.applyTo(
     val visitor = OptionsVisitor(options)
     node.accept(visitor)
 
-    setParsedMarkdown(textView, render(node))
+    try {
+        VaultMarkwonRenderContext.set(vaultContext)
+        setParsedMarkdown(textView, render(node))
+    } finally {
+        VaultMarkwonRenderContext.clear()
+    }
 }
 
 class OptionsVisitor(private val options: MarkdownOptions) : AbstractVisitor() {

@@ -149,6 +149,28 @@ object VaultNoteRelocation {
         }
     }
 
+    fun deleteOwnedAssets(
+        context: Context,
+        root: DocumentFile,
+        noteRelativePath: String,
+        ownedVaultRelPaths: Set<String>,
+    ) {
+        val assetDir = VaultPaths.assetDirectoryForNote(noteRelativePath)
+        val ownedRel = ownedVaultRelPaths.map { VaultPaths.toVaultRelative(it) }.toSet()
+        for (rel in ownedRel) {
+            if (!rel.startsWith("$assetDir/")) continue
+            VaultDocumentTree.findByRelativePath(root, rel)?.let { file ->
+                DocumentsContract.deleteDocument(context.contentResolver, file.uri)
+            }
+        }
+        VaultDocumentTree.findDirectory(root, assetDir)?.let { dir ->
+            val remaining = dir.listFiles()?.filter { it.name != null }.orEmpty()
+            if (remaining.isEmpty()) {
+                DocumentsContract.deleteDocument(context.contentResolver, dir.uri)
+            }
+        }
+    }
+
     /** Ordered pairing of local private attachments with disk vault paths after push. */
     fun materializePathsFromPush(local: List<Attachment>, fromDisk: List<Attachment>): List<Attachment> {
         val diskVault = fromDisk.filter { VaultPaths.isVaultRelativeAttachment(it.path) }.toMutableList()

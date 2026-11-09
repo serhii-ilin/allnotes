@@ -64,6 +64,17 @@ class VaultLinkResolverTest {
     }
 
     @Test
+    fun percentDecode_utf8Cyrillic() {
+        val encoded = "%D0%A4%D0%BE%D1%82%D0%BE.jpg"
+        assertEquals("Фото.jpg", VaultLinkResolver.decodePathSegment(encoded))
+    }
+
+    @Test
+    fun percentDecode_emoji() {
+        assertEquals("🙂.png", VaultLinkResolver.decodePathSegment("%F0%9F%99%82.png"))
+    }
+
+    @Test
     fun httpLeftUntouchedForResolver() {
         assertNull(VaultLinkResolver.resolve("Work/a.md", "https://example.com/x.png"))
     }

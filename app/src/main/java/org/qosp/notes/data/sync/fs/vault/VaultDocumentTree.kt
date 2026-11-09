@@ -22,7 +22,9 @@ object VaultDocumentTree {
                     }
                     VaultHousekeeping.shouldIndexFile(name) -> {
                         val rel = if (prefix.isEmpty()) name else "$prefix/$name"
-                        result.add(IndexedFile(VaultPaths.normalizeNotePath(rel), child))
+                        if (!isUnderNoteAssetFolder(rel)) {
+                            result.add(IndexedFile(VaultPaths.normalizeNotePath(rel), child))
+                        }
                     }
                 }
             }
@@ -49,6 +51,31 @@ object VaultDocumentTree {
             if (direct != null && direct.isFile) return false
         }
         return true
+    }
+
+    fun isUnderNoteAssetFolder(relativePath: String): Boolean {
+        val parent = VaultPaths.parentPath(relativePath)
+        if (parent.isEmpty()) return false
+        if (relativePath.endsWith(".md", ignoreCase = true) &&
+            VaultPaths.noteBaseName(relativePath) == VaultPaths.fileName(parent)
+        ) {
+            return false
+        }
+        val notePath = "$parent.md"
+        if (relativePath == notePath) return false
+        return VaultPaths.assetDirectoryForNote(notePath) == parent
+    }
+
+    fun findDirectory(root: DocumentFile, relativeDir: String): DocumentFile? {
+        val norm = VaultPaths.normalize(relativeDir)
+        if (norm.isEmpty()) return root
+        var current = root
+        norm.split('/').filter { it.isNotEmpty() }.forEach { segment ->
+            val child = current.findFile(segment) ?: return null
+            if (!child.isDirectory) return null
+            current = child
+        }
+        return current
     }
 
     fun findByRelativePath(root: DocumentFile, relativePath: String): DocumentFile? {

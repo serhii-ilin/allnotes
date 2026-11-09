@@ -128,6 +128,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
     private var isNoteDeleted: Boolean = false
     private var markwonTextWatcher: TextWatcher? = null
     private var onBackPressHandled: Boolean = false
+    private var pendingTitle: String? = null
 
     @ColorInt
     private var backgroundColor: Int = Color.TRANSPARENT
@@ -510,6 +511,11 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
     override fun onPause() {
         model.selectedRange = with(binding.editTextContent) { selectionStart to selectionEnd }
+        val title = pendingTitle
+        if (title != null && title != data.note?.title) {
+            model.setNoteTitle(title)
+        }
+        pendingTitle = null
         super.onPause()
     }
 
@@ -650,7 +656,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
                     return@doOnTextChanged
                 }
 
-                model.setNoteTitle(text.toString().trim())
+                pendingTitle = text.toString().trim()
             }
         }
 

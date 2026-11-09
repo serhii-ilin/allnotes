@@ -3,8 +3,8 @@ package org.qosp.notes.data.sync.fs.vault
 import org.qosp.notes.data.model.Attachment
 
 object VaultAttachments {
-    private val imageLinkRegex = Regex("""!\[[^\]]*]\(([^)\s"]+)(?:\s+"[^"]*")?\)""")
-    private val fileLinkRegex = Regex("""\[[^\]]+]\(([^)\s"]+)(?:\s+"[^"]*")?\)""")
+    private val imageLinkRegex = Regex("""!\[[^\]]*]\(([^)]+)\)""")
+    private val fileLinkRegex = Regex("""\[[^\]]+]\(([^)]+)\)""")
 
     fun parseFromBody(body: String, noteRelativePath: String): List<Attachment> {
         val found = linkedMapOf<String, Attachment>()
@@ -37,9 +37,19 @@ object VaultAttachments {
         }
     }
 
+    fun encodeLinkTarget(relativeTarget: String): String =
+        relativeTarget.split('/').joinToString("/") { segment ->
+            java.net.URLEncoder.encode(segment, Charsets.UTF_8.name()).replace("+", "%20")
+        }
+
     fun markdownImageLink(relativeTarget: String, description: String): String {
         val alt = description.ifBlank { "image" }
-        return "![$alt]($relativeTarget)"
+        val encoded = encodeLinkTarget(relativeTarget)
+        return if (relativeTarget.contains(' ') || relativeTarget.contains('%')) {
+            "![$alt](<$encoded>)"
+        } else {
+            "![$alt]($encoded)"
+        }
     }
 
     /**

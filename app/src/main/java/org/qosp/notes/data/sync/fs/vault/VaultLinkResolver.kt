@@ -49,7 +49,7 @@ object VaultLinkResolver {
      */
     fun decodePathSegment(raw: String): String? {
         if (!raw.contains('%')) return raw
-        val out = StringBuilder(raw.length)
+        val bytes = java.io.ByteArrayOutputStream(raw.length)
         var i = 0
         while (i < raw.length) {
             val c = raw[i]
@@ -57,13 +57,13 @@ object VaultLinkResolver {
                 if (i + 2 >= raw.length) return null
                 val hex = raw.substring(i + 1, i + 3)
                 val value = hex.toIntOrNull(16) ?: return null
-                out.append(value.toChar())
+                bytes.write(value)
                 i += 3
             } else {
-                out.append(c)
+                bytes.write(c.code)
                 i++
             }
         }
-        return out.toString()
+        return bytes.toString(Charsets.UTF_8.name())
     }
 }
