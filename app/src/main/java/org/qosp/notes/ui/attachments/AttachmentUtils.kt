@@ -39,17 +39,23 @@ fun Attachment.Companion.fromUri(context: Context, uri: Uri): Attachment {
 }
 
 fun getAttachmentUri(context: Context, path: String, mediaFolder: String = App.MEDIA_FOLDER): Uri? {
-    return when {
-        VaultPaths.isVaultRelativeAttachment(path) -> {
-            val tree = getKoin().get<VaultTreeAccess>()
-            resolveVaultStoredPath(tree, path)
-        }
-        path.startsWith("content://") || path.startsWith("file://") -> Uri.parse(path)
-        else -> {
-            runCatching {
+    return runCatching {
+        when {
+            VaultPaths.isVaultRelativeAttachment(path) -> {
+                val tree = runCatching { getKoin().get<VaultTreeAccess>() }.getOrNull() ?: return null
+                resolveVaultStoredPath(tree, path)
+            }
+            path.startsWith("content://") || path.startsWith("file://") -> Uri.parse(path)
+            else -> {
                 val dir = File(context.filesDir, mediaFolder).also { it.mkdir() }
-                FileProvider.getUriForFile(context, "${BuildConfig.APPLICATION_ID}.provider", File(dir, path))
-            }.getOrNull()
+                val file = File(dir, path)
+                if (!file.isFile) return null
+                FileProvider.getUriForFile(
+                    context,
+                    "${BuildConfig.APPLICATION_ID}.provider",
+                    file,
+                )
+            }
         }
-    }
+    }.getOrNull()
 }

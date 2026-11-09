@@ -23,6 +23,7 @@ import org.qosp.notes.data.model.NoteTask
 import org.qosp.notes.data.model.Notebook
 import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.repo.NotebookRepository
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.preferences.DateFormat
 import org.qosp.notes.preferences.DefaultEditorMode
 import org.qosp.notes.preferences.MoveCheckedItems
@@ -38,6 +39,7 @@ class EditorViewModel(
     private val noteRepository: NoteRepository,
     private val notebookRepository: NotebookRepository,
     private val preferenceRepository: PreferenceRepository,
+    private val vaultTreeAccess: VaultTreeAccess,
 ) : ViewModel() {
 
     var inEditMode: Boolean = false
@@ -105,7 +107,10 @@ class EditorViewModel(
 
             noteIdFlow.emit(id)
             if (id > 0L) {
-                _vaultRelativePath.value = noteRepository.getVaultRelativePath(id)
+                withContext(Dispatchers.IO) {
+                    vaultTreeAccess.warmFrom(preferenceRepository)
+                    _vaultRelativePath.value = noteRepository.getVaultRelativePath(id)
+                }
             }
 
             isNotInitialized = false

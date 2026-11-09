@@ -233,7 +233,15 @@ class MediaActivity : BaseActivity() {
 
     private fun handleImageAttachment() = with(binding) {
         imageView.isVisible = true
-        imageView.load(attachment.uri(this@MediaActivity) ?: attachment.path)
+        val attachmentUri = attachment.uri(this@MediaActivity)
+        if (attachmentUri == null) {
+            imageView.setImageResource(R.drawable.ic_file)
+        } else {
+            imageView.load(attachmentUri) {
+                placeholder(R.drawable.ic_file)
+                error(R.drawable.ic_file)
+            }
+        }
 
         var toolbarHideJob: Job? = null
         imageView.setOnViewTapListener { view, x, y ->

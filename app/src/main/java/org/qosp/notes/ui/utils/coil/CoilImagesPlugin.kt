@@ -1,6 +1,7 @@
 package org.qosp.notes.ui.utils.coil
 
 import android.content.Context
+import android.view.View
 import android.graphics.drawable.Drawable
 import android.text.Spanned
 import android.widget.TextView
@@ -21,8 +22,10 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.runBlocking
 import org.commonmark.node.Image
 import org.qosp.notes.R
+import org.qosp.notes.data.sync.fs.vault.VaultPaths
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.data.sync.fs.vault.resolveMarkwonImage
+import org.qosp.notes.data.sync.fs.vault.resolveVaultStoredPath
 import org.qosp.notes.data.sync.nextcloud.NextcloudConfig
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.ui.utils.vault.VaultMarkwonContext
@@ -127,20 +130,26 @@ class CoilImagesPlugin internal constructor(
             return create(
                 object : CoilStore {
                     override fun load(drawable: AsyncDrawable): ImageRequest {
-                        val textView = drawable.callback as? TextView
-                            ?: throw IllegalStateException("Markwon image load requires TextView callback")
+                        val host = drawable.callback
+                        val viewCtx = (host as? View)?.context ?: context
+                        val textView = host as? TextView
                         val dest = drawable.destination
                         val data: Any? = when {
                             dest.isNullOrBlank() -> null
+                            VaultPaths.isVaultRelativeAttachment(dest) -> {
+                                resolveVaultStoredPath(vaultTreeAccess, dest)
+                            }
                             dest.contains("://") -> dest
                             else -> {
                                 val vaultCtx =
-                                    textView.getTag(R.id.tag_vault_markwon_context) as? VaultMarkwonContext
-                                resolveMarkwonImage(vaultTreeAccess, vaultCtx, dest) ?: dest
+                                    textView?.getTag(R.id.tag_vault_markwon_context) as? VaultMarkwonContext
+                                resolveMarkwonImage(vaultTreeAccess, vaultCtx, dest)
                             }
                         }
-                        return ImageRequest.Builder(textView.context)
+                        return ImageRequest.Builder(viewCtx)
                             .data(data)
+                            .placeholder(R.drawable.ic_file)
+                            .error(R.drawable.ic_file)
                             .apply {
                                 runBlocking {
                                     NextcloudConfig.fromPreferences(preferenceRepository).firstOrNull()

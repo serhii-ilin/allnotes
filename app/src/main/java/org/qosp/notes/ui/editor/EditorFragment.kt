@@ -311,6 +311,8 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
         setupAttachmentsRecycler()
         setupTasksRecycler()
         model.vaultRelativePath.collect(viewLifecycleOwner) { path ->
+            val vaultContext = path?.let { org.qosp.notes.ui.utils.vault.VaultMarkwonContext(it) }
+            binding.editTextContent.setTag(R.id.tag_vault_markwon_context, vaultContext)
             if (::tasksAdapter.isInitialized) {
                 val changed = tasksAdapter.vaultRelativePath != path
                 tasksAdapter.vaultRelativePath = path
@@ -321,7 +323,6 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
             val note = data.note
             if (note != null && note.isMarkdownEnabled && !note.isList && note.content.isNotBlank()) {
                 binding.textViewContentPreview.post {
-                    val vaultContext = path?.let { org.qosp.notes.ui.utils.vault.VaultMarkwonContext(it) }
                     markwon.applyTo(binding.textViewContentPreview, note.content, vaultContext) {
                         tableReplacement = { Code(getString(R.string.message_cannot_preview_table)) }
                         maximumTableColumns = 15

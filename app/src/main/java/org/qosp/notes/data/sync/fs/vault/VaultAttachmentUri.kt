@@ -4,9 +4,12 @@ import android.net.Uri
 import org.qosp.notes.ui.utils.vault.VaultMarkwonContext
 
 fun resolveVaultStoredPath(treeAccess: VaultTreeAccess, storedPath: String): Uri? {
-    if (!VaultPaths.isVaultRelativeAttachment(storedPath)) return null
-    val relative = VaultPaths.toVaultRelative(storedPath)
-    return treeAccess.resolveFileUri(relative)
+    return runCatching {
+        if (!VaultPaths.isVaultRelativeAttachment(storedPath)) return null
+        val relative = VaultPaths.toVaultRelative(storedPath)
+        if (relative.isBlank()) return null
+        treeAccess.resolveFileUri(relative)
+    }.getOrNull()
 }
 
 fun resolveMarkwonImage(
@@ -14,8 +17,11 @@ fun resolveMarkwonImage(
     vaultContext: VaultMarkwonContext?,
     destination: String,
 ): Uri? {
-    if (destination.contains("://")) return null
-    val notePath = vaultContext?.noteVaultRelativePath ?: return null
-    val vaultRelative = VaultLinkResolver.resolve(notePath, destination) ?: return null
-    return treeAccess.resolveFileUri(vaultRelative)
+    return runCatching {
+        if (destination.contains("://")) return null
+        val notePath = vaultContext?.noteVaultRelativePath ?: return null
+        if (notePath.isBlank()) return null
+        val vaultRelative = VaultLinkResolver.resolve(notePath, destination) ?: return null
+        treeAccess.resolveFileUri(vaultRelative)
+    }.getOrNull()
 }

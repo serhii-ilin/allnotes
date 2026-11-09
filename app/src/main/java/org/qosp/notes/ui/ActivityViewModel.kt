@@ -26,6 +26,7 @@ import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.repo.NotebookRepository
 import org.qosp.notes.data.repo.ReminderRepository
 import org.qosp.notes.data.repo.TagRepository
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.data.sync.core.BaseResult
 import org.qosp.notes.di.SyncScope
 import org.qosp.notes.preferences.GroupNotesWithoutNotebook
@@ -50,6 +51,7 @@ class ActivityViewModel(
     private val mediaStorageManager: MediaStorageManager,
     private val syncScope: SyncScope,
     private val toaster: Toaster,
+    private val vaultTreeAccess: VaultTreeAccess,
 ) : ViewModel() {
 
     val notebooks: StateFlow<Pair<Boolean, List<Notebook>>> =
@@ -72,7 +74,10 @@ class ActivityViewModel(
     val vaultRelativePaths: StateFlow<Map<Long, String>> = _vaultRelativePaths.asStateFlow()
 
     init {
-        viewModelScope.launch(Dispatchers.IO) { refreshVaultRelativePaths() }
+        viewModelScope.launch(Dispatchers.IO) {
+            vaultTreeAccess.warmFrom(preferenceRepository)
+            refreshVaultRelativePaths()
+        }
     }
 
     suspend fun refreshVaultRelativePaths() {
