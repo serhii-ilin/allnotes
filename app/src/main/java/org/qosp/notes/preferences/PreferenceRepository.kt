@@ -75,5 +75,7 @@ class PreferenceRepository(
         const val STORAGE_LOCATION = "STORAGE_LOCATION"
         /** Epoch seconds when the vault folder was last selected (fresh vault boundary). */
         const val VAULT_CONFIGURED_AT = "VAULT_CONFIGURED_AT"
+        /** Monotonic fence: bumped on vault folder change; mappings capture generation at last sync. */
+        const val VAULT_GENERATION = "VAULT_GENERATION"
     }
 }

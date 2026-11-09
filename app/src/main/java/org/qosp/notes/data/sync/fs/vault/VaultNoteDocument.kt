@@ -83,7 +83,7 @@ data class VaultNoteDocument(
                 archived = note.isArchived,
                 hidden = note.isHidden,
                 color = note.color,
-                tags = note.tags.map { it.name }.ifEmpty { emptyList() },
+                tags = note.tags.map { it.name }.sorted().ifEmpty { emptyList() },
                 notebook = notebookForYaml,
                 isList = note.isList,
                 created = note.creationDate,

@@ -6,12 +6,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.qosp.notes.Config
+import kotlinx.coroutines.flow.firstOrNull
 import org.qosp.notes.data.dao.IdMappingDao
 import org.qosp.notes.data.dao.NoteDao
+import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.sync.core.RemoteOperation.Create
 import org.qosp.notes.data.sync.core.RemoteOperation.Delete
 import org.qosp.notes.data.sync.core.RemoteOperation.Update
+import org.qosp.notes.data.sync.fs.vault.VaultMappingState
+import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.di.SyncScope
@@ -25,6 +29,8 @@ class ProcessRemoteActions(
     private val idMappingDao: IdMappingDao,
     private val noteDao: NoteDao,
     private val toaster: Toaster,
+    private val vaultSyncCoordinator: VaultSyncCoordinator,
+    private val notebookDao: NotebookDao,
 ) {
     private val tag = "ProcessRemoteActions"
 
@@ -65,30 +71,35 @@ class ProcessRemoteActions(
                     }
                 }
 
-                // Get the latest operation for this noteId
-                var latestAction = operationQueue.remove(noteId)
-                while (latestAction != null) {
-                    // Process the operation based on its type
-                    when (latestAction) {
-                        is Create -> {
-                            last = latestAction.note.content.takeLast(4)
-                            Log.d(tag, "insertRemoteNote: for note ID=$noteId ending ...$last")
-                            backendProvider.syncProvider.value?.let { insertRemote(it, latestAction.note) }
-                        }
+                while (true) {
+                    val action = operationQueue.remove(noteId) ?: break
+                    val provider = backendProvider.syncProvider.value
+                    val runOp: suspend () -> Unit = {
+                        when (action) {
+                            is Create -> {
+                                last = action.note.content.takeLast(4)
+                                Log.d(tag, "insertRemoteNote: for note ID=$noteId ending ...$last")
+                                provider?.let { insertRemote(it, action.note) }
+                            }
 
-                        is Update -> {
-                            last = latestAction.note.content.takeLast(4)
-                            Log.d(tag, "updateRemoteNote: for note ID=$noteId ending ...$last")
-                            backendProvider.syncProvider.value?.let { updateRemote(latestAction.note, it) }
-                        }
+                            is Update -> {
+                                last = action.note.content.takeLast(4)
+                                Log.d(tag, "updateRemoteNote: for note ID=$noteId ending ...$last")
+                                provider?.let { updateRemote(action.note, it) }
+                            }
 
-                        is Delete -> {
-                            last = latestAction.note.content.takeLast(4)
-                            Log.d(tag, "deleteRemoteNotes: for $noteId ending ...$last")
-                            backendProvider.syncProvider.value?.let { deleteRemoteNotes(latestAction.note, it) }
+                            is Delete -> {
+                                last = action.note.content.takeLast(4)
+                                Log.d(tag, "deleteRemoteNotes: for $noteId ending ...$last")
+                                provider?.let { deleteRemoteNotes(action.note, it) }
+                            }
                         }
                     }
-                    latestAction = operationQueue.remove(noteId)
+                    if (provider?.type == CloudService.FILE_STORAGE) {
+                        vaultSyncCoordinator.withVaultLock { runOp() }
+                    } else {
+                        runOp()
+                    }
                 }
             } catch (_: CancellationException) {
                 // Job was canceled, which is expected when a newer operation comes in
@@ -136,18 +147,37 @@ class ProcessRemoteActions(
     private suspend fun applyVaultPushResult(note: Note, syncProvider: ISyncBackend) {
         if (syncProvider.type != CloudService.FILE_STORAGE) return
         val mapping = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type) ?: return
+        val mappingState = VaultMappingState.resolve(mapping.extras)
+        if (mappingState != null && vaultSyncCoordinator.isStaleMapping(mappingState.vaultGeneration)) {
+            Log.w(tag, "Skipping push Room apply: stale vault generation for note ${note.id}")
+            return
+        }
         val remote = syncProvider.getNote(mapping) ?: return
+        val path = mapping.storageUri.orEmpty()
+        val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        val diskSnapshot = VaultSyncImport.noteFromRemote(remote, note)
         val patched = VaultSyncImport.mergeNoteAfterPush(
             note,
-            VaultSyncImport.noteFromRemote(remote, note),
+            diskSnapshot,
+            mappingState,
+            path,
+            notebookName,
         )
         noteDao.update(patched.toEntity())
         noteDao.updateLastModified(note.id, remote.lastModified)
+        val gen = vaultSyncCoordinator.currentGeneration()
+        val state = VaultMappingState.fromDiskSync(
+            remote.extra.orEmpty(),
+            remote.content.orEmpty(),
+            VaultSyncImport.vaultPathsFromNote(patched),
+            gen,
+            mappingState,
+        )
         idMappingDao.update(
             mapping.copy(
                 storageUri = remote.idStr,
-                extras = remote.extra,
-            )
+                extras = VaultMappingState.encode(state),
+            ),
         )
     }
 }

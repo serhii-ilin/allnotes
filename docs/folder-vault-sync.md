@@ -77,16 +77,16 @@ Unsupported round-trip: Quillpad reminders, `screenAlwaysOn`, compact preview, w
 
 ### Dirty local edits vs attachment refresh (`refreshVaultAttachmentIndex`)
 
-When `VaultSyncImport.isLocallyDirty` (canonical file hash ≠ baseline in `VaultMappingExtras`, or pending non-`vaultrel` media exists):
+When `VaultSyncImport.isLocallyDirty` (canonical file hash ≠ `VaultMappingState.baselineHash` using **baseline** preserved YAML — not live disk YAML — or pending non-`vaultrel` media exists):
 
 - **Do not** overwrite body or portable metadata from disk.
-- **May** update attachment list from remote body links only.
+- **Keep local attachment membership**; only add vault paths that are **not** in `vaultAttachmentPaths` baseline (late file arrival). Removed `vaultrel` links are **not** resurrected from remote body.
 - **Do not** update hash baseline in mapping until push reconciles.
 
 When clean:
 
 - Full body/metadata import + tag reconciliation + notebook rules above.
-- Update `IdMapping.extras` from remote hash.
+- Update `IdMapping.extras` (`VaultMappingState` JSON) from remote hash + preserved YAML snapshot.
 
 ### Inline images & attachments (UI)
 
@@ -103,7 +103,9 @@ Vault-backed attachments use `path` prefix `vaultrel:` + normalized relative pat
 
 - Persisted SAF tree URI + permission check before destructive ops.
 - `getAll()` returns `null` on unreadable vault → sync aborts **without** treating missing files as deletions.
-- External edit detection: compare `VaultContentHash` to `IdMapping.extras`; divergent local+remote → conflict file on disk.
+- External edit detection: compare `VaultContentHash` to `VaultMappingState.baselineHash`; divergent local+remote → conflict file on disk.
+- **Recoverable writes:** `VaultRecoverableWrite` stages + verifies before publish; SAF has **no** atomic rename — prior verified bytes restored from backup on failure; staging ticket may be resumed (`resumePending`).
+- **Vault serialization:** `VaultSyncCoordinator.withVaultLock` serializes vault pull/push/refresh and folder change; `VAULT_GENERATION` fence drops stale push Room apply after folder switch.
 - No GC of vault files except when app deletes a vault-backed note.
 
 ## Phased checklist
@@ -118,17 +120,18 @@ Vault-backed attachments use `path` prefix `vaultrel:` + normalized relative pat
 - [x] `VaultTreeAccess` + attachment URI resolution
 - [x] Task-list row Markwon (`TaskViewHolder`) uses parent-note `VaultMarkwonContext` (list preview + checked rows)
 - [x] Canonical hash aligned with disk write (notebook + preserved YAML); pending private media counts as dirty
-- [x] Dirty attachment refresh merges (does not replace) local pending/`vaultrel` rows
+- [x] Dirty attachment refresh: local membership + late-file add only (no resurrection of removed baseline paths)
 - [x] Idempotent vault conflict copies (`VaultMappingExtras`)
-- [x] Safer `writeRaw` (in-place truncate when possible, staging verify, no delete-before-write)
+- [x] Recoverable `writeRaw` via `VaultRecoverableWrite` + `SafVaultWriteStore` (verify + backup restore; not truncate-only)
 - [x] Reject legacy `content://` mappings; abort scan on null/empty suspicious index; no export without cutoff
-- [x] Atomic vault folder change (`SettingsViewModel.applyVaultFolderChange`)
+- [x] Vault folder change under `withVaultLock` + generation bump (`SettingsViewModel.applyVaultFolderChange`)
+- [ ] Multi-coroutine interleaving tests (pull + push + folder switch) beyond lock/generation unit coverage
 - [ ] Instrumented SAF provider test (environment-dependent)
 - [ ] Manual: Syncthing + Obsidian checklist (below)
 
 ## Acceptance tests (automated)
 
-`VaultPathsTest`, `VaultLinkResolverTest`, `VaultNoteDocumentTest`, `VaultContentHashTest`, `VaultSyncImportTest`, `VaultAttachmentsTest`, `TaskListMarkwonBindingsTest`, extensions to `SynchronizeNotesTest`.
+`VaultPathsTest`, `VaultLinkResolverTest`, `VaultNoteDocumentTest`, `VaultContentHashTest`, `VaultSyncImportTest`, `VaultAttachmentsTest`, `VaultAttachmentDirtyRefreshTest`, `VaultRecoverableWriteTest` (fault injection via `MemoryVaultWriteStore`), `VaultSyncCoordinatorTest`, `TaskListMarkwonBindingsTest`, extensions to `SynchronizeNotesTest`.
 
 Commands (agent env):
 

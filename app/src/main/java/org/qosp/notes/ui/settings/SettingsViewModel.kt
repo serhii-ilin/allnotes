@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import me.msoul.datastore.EnumPreference
 import android.net.Uri
 import org.qosp.notes.data.repo.NoteRepository
+import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.data.sync.nextcloud.NextcloudConfig
 import org.qosp.notes.preferences.CloudService
@@ -21,6 +22,7 @@ class SettingsViewModel(
     private val preferenceRepository: PreferenceRepository,
     private val noteRepository: NoteRepository,
     private val vaultTreeAccess: VaultTreeAccess,
+    private val vaultSyncCoordinator: VaultSyncCoordinator,
 ) : ViewModel() {
 
     val appPreferences = preferenceRepository.getAll()
@@ -76,15 +78,18 @@ class SettingsViewModel(
     fun applyVaultFolderChange(newLocation: String, previousLocation: String) {
         if (newLocation == previousLocation) return
         viewModelScope.launch(Dispatchers.IO) {
-            val currentCloudService = preferenceRepository.getAll().first().cloudService
-            preferenceRepository.putEncryptedStrings(
-                PreferenceRepository.STORAGE_LOCATION to newLocation,
-                PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
-            )
-            if (currentCloudService == CloudService.FILE_STORAGE) {
-                noteRepository.deleteIdMappingsForCloudService(CloudService.FILE_STORAGE)
+            vaultSyncCoordinator.withVaultLock {
+                val currentCloudService = preferenceRepository.getAll().first().cloudService
+                vaultSyncCoordinator.bumpGeneration()
+                preferenceRepository.putEncryptedStrings(
+                    PreferenceRepository.STORAGE_LOCATION to newLocation,
+                    PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
+                )
+                if (currentCloudService == CloudService.FILE_STORAGE) {
+                    noteRepository.deleteIdMappingsForCloudService(CloudService.FILE_STORAGE)
+                }
+                vaultTreeAccess.warmFrom(Uri.parse(newLocation))
             }
-            vaultTreeAccess.warmFrom(Uri.parse(newLocation))
         }
     }
 }

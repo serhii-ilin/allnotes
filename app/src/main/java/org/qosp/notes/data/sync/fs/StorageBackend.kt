@@ -19,7 +19,9 @@ import org.qosp.notes.data.sync.fs.vault.VaultContentHash
 import org.qosp.notes.data.sync.fs.vault.VaultDocumentTree
 import org.qosp.notes.data.sync.fs.vault.VaultMediaWriter
 import org.qosp.notes.data.sync.fs.vault.VaultNoteDocument
+import org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore
 import org.qosp.notes.data.sync.fs.vault.VaultPaths
+import org.qosp.notes.data.sync.fs.vault.VaultRecoverableWrite
 import org.qosp.notes.data.sync.nextcloud.BackendValidationResult
 import org.qosp.notes.preferences.CloudService
 import java.io.FileNotFoundException
@@ -196,53 +198,12 @@ class StorageBackend(
 
     private fun writeRaw(root: DocumentFile, relativePath: String, text: String) {
         val path = VaultPaths.normalizeNotePath(relativePath)
-        val bytes = text.encodeToByteArray()
-        val existing = VaultDocumentTree.findByRelativePath(root, path)
-        if (existing != null && existing.isFile) {
-            context.contentResolver.openOutputStream(existing.uri, "wt")?.use { out ->
-                out.write(bytes)
-            } ?: throw IOException("Cannot write $path")
-            verifyOnDisk(root, path, text)
-            return
-        }
-        val stagingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.STAGING_DIR)
-        val stagingName = "w_${VaultContentHash.ofText(path).take(12)}.tmp"
-        val mimeType = if (path.endsWith(".txt", ignoreCase = true)) "text/plain" else "text/markdown"
-        stagingDir.findFile(stagingName)?.let {
-            DocumentsContract.deleteDocument(context.contentResolver, it.uri)
-        }
-        val staging = stagingDir.createFile(mimeType, stagingName)
-            ?: throw IOException("Cannot create staging file")
-        context.contentResolver.openOutputStream(staging.uri)?.use { out ->
-            out.write(bytes)
-        } ?: throw IOException("Cannot write staging")
-        val stagingBody = readFileContent(staging) ?: throw IOException("Cannot read staging")
-        if (VaultContentHash.ofText(stagingBody) != VaultContentHash.ofText(text)) {
-            throw IOException("Staging content verify failed")
-        }
-        val targetParent = VaultPaths.parentPath(path)
-        val parent = if (targetParent.isEmpty()) root else VaultDocumentTree.ensureDirectory(root, targetParent)
-        val fileName = VaultPaths.fileName(path)
-        val finalFile = parent.findFile(fileName)
-            ?: parent.createFile(mimeType, fileName.substringBeforeLast('.'))
-            ?: throw IOException("Cannot create $fileName")
-        context.contentResolver.openInputStream(staging.uri)?.use { input ->
-            context.contentResolver.openOutputStream(finalFile.uri, "wt")?.use { output ->
-                val copied = input.copyTo(output)
-                if (copied <= 0) throw IOException("Empty copy for $fileName")
-            } ?: throw IOException("Cannot open output for $fileName")
-        } ?: throw IOException("Cannot read staging for $fileName")
-        verifyOnDisk(root, path, text)
-        DocumentsContract.deleteDocument(context.contentResolver, staging.uri)
-        if (finalFile.name != fileName) finalFile.renameTo(fileName)
-    }
-
-    private fun verifyOnDisk(root: DocumentFile, relativePath: String, expected: String) {
-        val file = VaultDocumentTree.findByRelativePath(root, relativePath)
-            ?: throw IOException("Missing after write: $relativePath")
-        val read = readFileContent(file) ?: throw IOException("Unreadable after write: $relativePath")
-        if (VaultContentHash.ofText(read) != VaultContentHash.ofText(expected)) {
-            throw IOException("Content verify failed: $relativePath")
+        val store = SafVaultWriteStore(context, root)
+        val outcome = VaultRecoverableWrite(store).write(path, text)
+        if (!outcome.published) {
+            throw IOException(
+                "Recoverable write did not publish for $path (SAF may lack atomic rename; recovery=${outcome.recovery?.token})",
+            )
         }
     }
 

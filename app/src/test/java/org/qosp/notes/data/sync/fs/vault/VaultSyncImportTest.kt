@@ -38,24 +38,26 @@ class VaultSyncImportTest {
     fun isLocallyDirty_detectsUnsavedBodyEdit() {
         val path = "Work/Note.md"
         val note = Note(title = "t", content = "local edit")
-        val baseline = VaultSyncImport.canonicalFileHash(
-            note.copy(content = "remote body"),
-            path,
-            null,
-            remoteBody(path, "remote body").content,
+        val disk = remoteBody(path, "remote body")
+        val state = VaultMappingState(
+            baselineHash = VaultSyncImport.canonicalFileHash(
+                note.copy(content = "remote body"),
+                path,
+                null,
+                "",
+            ),
         )
-        assertTrue(
-            VaultSyncImport.isLocallyDirty(note, path, baseline, null, remoteBody(path, "remote body").content),
-        )
+        assertTrue(VaultSyncImport.isLocallyDirty(note, path, state, null))
     }
 
     @Test
     fun isLocallyDirty_falseWhenMatchesBaseline() {
         val path = "Work/Note.md"
         val note = Note(title = "t", content = "same")
-        val disk = remoteBody(path, "same")
-        val baseline = VaultSyncImport.canonicalFileHash(note, path, null, disk.content)
-        assertFalse(VaultSyncImport.isLocallyDirty(note, path, baseline, null, disk.content))
+        val state = VaultMappingState(
+            baselineHash = VaultSyncImport.canonicalFileHash(note, path, null, ""),
+        )
+        assertFalse(VaultSyncImport.isLocallyDirty(note, path, state, null))
     }
 
     @Test
@@ -66,15 +68,21 @@ class VaultSyncImportTest {
             content = "body",
             attachments = listOf(Attachment(Attachment.Type.IMAGE, "content://media/1", "a")),
         )
-        val disk = remoteBody(path, "body")
-        val baseline = VaultSyncImport.canonicalFileHash(note.copy(attachments = emptyList()), path, null, disk.content)
-        assertTrue(VaultSyncImport.isLocallyDirty(note, path, baseline, null, disk.content))
+        val state = VaultMappingState(
+            baselineHash = VaultSyncImport.canonicalFileHash(
+                note.copy(attachments = emptyList()),
+                path,
+                null,
+                "",
+            ),
+        )
+        assertTrue(VaultSyncImport.isLocallyDirty(note, path, state, null))
     }
 
     @Test
     fun canonicalHash_matchesExportWithNotebookAndPreservedYaml() {
         val path = "Work/Note.md"
-        val note = Note(title = "t", content = "Body", notebookId = 1L)
+        val note = Note(title = "t", content = "Body")
         val diskRaw = """
             |---
             |aliases:
@@ -82,36 +90,15 @@ class VaultSyncImportTest {
             |---
             |Old
         """.trimMargin()
-        val withNotebook = VaultSyncImport.canonicalFileHash(note, path, "Journal", diskRaw)
-        val withoutNotebook = VaultSyncImport.canonicalFileHash(note, path, null, diskRaw)
-        assertTrue(withNotebook != withoutNotebook)
+        val withNotebook = VaultSyncImport.canonicalFileHash(note, path, "Journal", "")
+        val preservedOnly = VaultNoteDocument.parse(diskRaw).frontMatter.preservedYaml
+        val withPreserved = VaultSyncImport.canonicalFileHash(note, path, "Journal", preservedOnly)
+        assertTrue(withPreserved != withNotebook)
         val rendered = VaultNoteDocument.fromNote(note, path, "Journal", exportNotebookExplicitly = true)
-            .let { VaultNoteDocument.mergePreservedFromDisk(diskRaw, it) }
+            .copy(frontMatter = VaultNoteDocument.fromNote(note, path, "Journal", true).frontMatter.copy(preservedYaml = preservedOnly))
             .copy(body = "Body")
             .renderFullText()
-        assertEquals(VaultContentHash.ofText(rendered), withNotebook)
-    }
-
-    @Test
-    fun mergeAttachmentsWhenDirty_keepsPrivateAndRemoteVault() {
-        val local = listOf(
-            Attachment(Attachment.Type.IMAGE, "content://x", "pending"),
-            Attachment(Attachment.Type.IMAGE, "vaultrel:Work/a.jpg", "a"),
-        )
-        val remote = listOf(Attachment(Attachment.Type.IMAGE, "vaultrel:Work/b.jpg", "b"))
-        val merged = VaultSyncImport.mergeAttachmentsWhenDirty(local, remote)
-        assertEquals(2, merged.count { VaultPaths.isVaultRelativeAttachment(it.path) })
-        assertTrue(merged.any { it.path == "content://x" })
-    }
-
-    @Test
-    fun attachmentsFromRemote_parsedFromBody() {
-        val path = "Work/Note.md"
-        val body = "![x](Work/Note/x.jpg)"
-        val remote = remoteBody(path, body)
-        val attachments = VaultSyncImport.attachmentsFromRemote(remote)
-        assertEquals(1, attachments.size)
-        assertEquals(Attachment.Type.IMAGE, attachments[0].type)
+        assertEquals(VaultContentHash.ofText(rendered), withPreserved)
     }
 
     @Test

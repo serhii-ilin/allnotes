@@ -7,6 +7,7 @@ import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.repo.IdMappingRepository
 import org.qosp.notes.data.sync.fs.vault.VaultMappingExtras
+import org.qosp.notes.data.sync.fs.vault.VaultMappingState
 import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.preferences.CloudService
@@ -65,24 +66,25 @@ class SynchronizeNotes(
                         if (remoteNote != null) {
                             val vaultPath = mapping.storageUri.orEmpty()
                             if (service == CloudService.FILE_STORAGE) {
+                                val mappingState = VaultMappingState.resolve(mapping.extras)
                                 val parsedExtras = VaultMappingExtras.parse(mapping.extras)
-                                val baseline = parsedExtras.baselineHash.orEmpty()
+                                val baseline = mappingState?.baselineHash ?: parsedExtras.baselineHash.orEmpty()
                                 val remoteHash = remoteNote.extra.orEmpty()
                                 val notebookName = localNote.notebookId?.let {
                                     notebookDao.getById(it).firstOrNull()?.name
                                 }
+                                val preservedBaseline = mappingState?.preservedYaml
                                 val localHash = VaultSyncImport.canonicalFileHash(
                                     localNote,
                                     vaultPath,
                                     notebookName,
-                                    remoteNote.content,
+                                    preservedBaseline,
                                 )
                                 val dirty = VaultSyncImport.isLocallyDirty(
                                     localNote,
                                     vaultPath,
-                                    mapping.extras,
+                                    mappingState,
                                     notebookName,
-                                    remoteNote.content,
                                 )
                                 val divergent = baseline.isNotEmpty() &&
                                     remoteHash.isNotEmpty() &&

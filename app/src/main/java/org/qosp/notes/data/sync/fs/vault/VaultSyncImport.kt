@@ -33,25 +33,35 @@ object VaultSyncImport {
         return VaultAttachments.parseFromBody(doc.body, remote.idStr)
     }
 
+    fun vaultPathsFromNote(note: Note): List<String> =
+        note.attachments
+            .filter { VaultPaths.isVaultRelativeAttachment(it.path) }
+            .map { it.path }
+            .distinct()
+            .sorted()
+
     /**
-     * Same bytes as [org.qosp.notes.data.sync.fs.StorageBackend] uses when writing a note file.
+     * Same bytes as [org.qosp.notes.data.sync.fs.StorageBackend] would write, using the
+     * **baseline** preserved YAML snapshot — not the current foreign file content.
      */
     fun canonicalFileHash(
         note: Note,
         relativePath: String,
         assignedNotebookName: String?,
-        existingDiskRaw: String?,
+        preservedYamlBaseline: String?,
     ): String {
-        val doc = VaultNoteDocument.fromNote(
+        var doc = VaultNoteDocument.fromNote(
             note,
             relativePath,
             assignedNotebookName = assignedNotebookName,
             exportNotebookExplicitly = true,
         )
-        val merged = VaultNoteDocument.mergePreservedFromDisk(existingDiskRaw, doc)
+        if (!preservedYamlBaseline.isNullOrBlank()) {
+            doc = doc.copy(frontMatter = doc.frontMatter.copy(preservedYaml = preservedYamlBaseline))
+        }
         val vaultOnly = note.attachments.filter { VaultPaths.isVaultRelativeAttachment(it.path) }
-        val body = VaultAttachments.mergeAttachmentLinks(merged.body, relativePath, vaultOnly)
-        return VaultContentHash.ofText(merged.copy(body = body).renderFullText())
+        val body = VaultAttachments.mergeAttachmentLinks(doc.body, relativePath, vaultOnly)
+        return VaultContentHash.ofText(doc.copy(body = body).renderFullText())
     }
 
     fun hasPendingLocalMedia(note: Note): Boolean =
@@ -60,38 +70,65 @@ object VaultSyncImport {
     fun isLocallyDirty(
         note: Note,
         relativePath: String,
-        mappingExtras: String?,
+        mappingState: VaultMappingState?,
         assignedNotebookName: String?,
-        existingDiskRaw: String?,
     ): Boolean {
-        val baseline = VaultMappingExtras.baselineHash(mappingExtras)
+        val baseline = mappingState?.baselineHash ?: VaultMappingExtras.baselineHash(null)
         if (baseline.isNullOrEmpty()) return false
         if (hasPendingLocalMedia(note)) return true
-        val localHash = canonicalFileHash(note, relativePath, assignedNotebookName, existingDiskRaw)
+        val preserved = mappingState?.preservedYaml
+        val localHash = canonicalFileHash(note, relativePath, assignedNotebookName, preserved)
         return localHash != baseline
     }
 
     /**
-     * While the note is dirty, merge remote vault links with local rows without dropping private media
-     * or re-adding vault paths the user removed locally.
+     * While dirty: local attachment membership wins; only late vault files not in baseline may be added.
      */
-    fun mergeAttachmentsWhenDirty(
+    fun attachmentsAfterDirtyRefresh(
         local: List<Attachment>,
-        remote: List<Attachment>,
+        remote: org.qosp.notes.data.sync.core.SyncNote,
+        baselineVaultPaths: Set<String>,
     ): List<Attachment> {
-        val byPath = LinkedHashMap<String, Attachment>()
-        remote.filter { VaultPaths.isVaultRelativeAttachment(it.path) }.forEach { byPath[it.path] = it }
-        local.filter { VaultPaths.isVaultRelativeAttachment(it.path) }.forEach { byPath[it.path] = it }
-        local.filter { !VaultPaths.isVaultRelativeAttachment(it.path) }.forEach { byPath[it.path] = it }
-        return byPath.values.toList()
+        val result = local.toMutableList()
+        val localPaths = local.map { it.path }.toSet()
+        for (remoteAtt in attachmentsFromRemote(remote)) {
+            if (!VaultPaths.isVaultRelativeAttachment(remoteAtt.path)) continue
+            if (remoteAtt.path in localPaths) continue
+            if (remoteAtt.path in baselineVaultPaths) continue
+            result.add(remoteAtt)
+        }
+        return result
     }
 
-    fun mergeNoteAfterPush(local: Note, pushedFromDisk: Note): Note = pushedFromDisk.copy(
-        attachments = mergeAttachmentsWhenDirty(local.attachments, pushedFromDisk.attachments),
-        reminders = local.reminders,
-        isCompactPreview = local.isCompactPreview,
-        screenAlwaysOn = local.screenAlwaysOn,
-        isLocalOnly = local.isLocalOnly,
-        notebookId = local.notebookId,
-    )
+    fun mergeNoteAfterPush(
+        local: Note,
+        diskSnapshot: Note,
+        mappingState: VaultMappingState?,
+        relativePath: String,
+        assignedNotebookName: String?,
+    ): Note {
+        val dirty = isLocallyDirty(local, relativePath, mappingState, assignedNotebookName)
+        return if (dirty) {
+            local.copy(attachments = materializePathsFromPush(local.attachments, diskSnapshot.attachments))
+        } else {
+            diskSnapshot.copy(
+                reminders = local.reminders,
+                isCompactPreview = local.isCompactPreview,
+                screenAlwaysOn = local.screenAlwaysOn,
+                isLocalOnly = local.isLocalOnly,
+                notebookId = local.notebookId,
+            )
+        }
+    }
+
+    private fun materializePathsFromPush(
+        local: List<Attachment>,
+        fromDisk: List<Attachment>,
+    ): List<Attachment> {
+        val diskByDesc = fromDisk.associateBy { it.description to it.type }
+        return local.map { att ->
+            if (VaultPaths.isVaultRelativeAttachment(att.path)) return@map att
+            diskByDesc[att.description to att.type]?.takeIf { VaultPaths.isVaultRelativeAttachment(it.path) } ?: att
+        }
+    }
 }
