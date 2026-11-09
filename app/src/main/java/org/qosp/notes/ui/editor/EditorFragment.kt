@@ -310,6 +310,15 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
         setupAttachmentsRecycler()
         setupTasksRecycler()
+        model.vaultRelativePath.collect(viewLifecycleOwner) { path ->
+            if (::tasksAdapter.isInitialized) {
+                val changed = tasksAdapter.vaultRelativePath != path
+                tasksAdapter.vaultRelativePath = path
+                if (changed && tasksAdapter.itemCount > 0) {
+                    tasksAdapter.notifyItemRangeChanged(0, tasksAdapter.itemCount)
+                }
+            }
+        }
         observeData()
         setupEditTexts()
         setupMarkdown()
@@ -818,6 +827,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
                     setText(data.note.title)
                 }
 
+                tasksAdapter.vaultRelativePath = model.vaultRelativePath.value
                 when {
                     isList -> tasksAdapter.submitList(data.note.taskList)
                     else -> {
@@ -845,6 +855,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
                 tasksAdapter.tasks.clear()
                 tasksAdapter.notifyDataSetChanged()
+                tasksAdapter.vaultRelativePath = model.vaultRelativePath.value
                 tasksAdapter.submitList(data.note.taskList)
                 editTextContent.withOnlyTextWatcher<MarkwonEditorTextWatcher> {
                     setText(data.note.content)

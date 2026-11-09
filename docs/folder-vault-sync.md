@@ -116,12 +116,13 @@ Vault-backed attachments use `path` prefix `vaultrel:` + normalized relative pat
 - [x] Unknown YAML preservation + merge on write
 - [x] `VaultLinkResolver` + Markwon/Coil note-scoped context
 - [x] `VaultTreeAccess` + attachment URI resolution
+- [x] Task-list row Markwon (`TaskViewHolder`) uses parent-note `VaultMarkwonContext` (list preview + checked rows)
 - [ ] Instrumented SAF provider test (environment-dependent)
 - [ ] Manual: Syncthing + Obsidian checklist (below)
 
 ## Acceptance tests (automated)
 
-`VaultPathsTest`, `VaultLinkResolverTest`, `VaultNoteDocumentTest`, `VaultContentHashTest`, `VaultSyncImportTest`, `VaultAttachmentsTest`, extensions to `SynchronizeNotesTest`.
+`VaultPathsTest`, `VaultLinkResolverTest`, `VaultNoteDocumentTest`, `VaultContentHashTest`, `VaultSyncImportTest`, `VaultAttachmentsTest`, `TaskListMarkwonBindingsTest`, extensions to `SynchronizeNotesTest`.
 
 Commands (agent env):
 
@@ -135,6 +136,7 @@ Commands (agent env):
 
 1. Select vault folder on internal storage Syncthing syncs.
 2. Create nested note `Team/Standup.md` with `![](photo.jpg)` where `Team/photo.jpg` exists; preview renders in list + editor.
+2b. Task-list note `Work/Repairs.md` with task text `Fix shelf ![](photos/shelf.jpg)` (`Work/photos/shelf.jpg` on disk): image renders in note-card task preview and in editor when task is checked / in preview mode (not while plain-text edit field is active).
 3. Edit body offline; pull sync with unchanged remote — **local edits must remain**.
 4. Add attachment on PC only; sync — attachment appears without overwriting dirty local text.
 5. Syncthing to PC; Obsidian opens image via relative link.

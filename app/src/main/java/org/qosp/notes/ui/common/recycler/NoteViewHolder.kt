@@ -154,6 +154,7 @@ class NoteViewHolder(
                         context.resources.getQuantityString(R.plurals.more_items, moreItems, moreItems)
                 }
             }
+            tasksAdapter.vaultRelativePath = vaultRelativePath
             tasksAdapter.submitList(taskList, useDiff)
         }
     }
@@ -182,7 +183,12 @@ class NoteViewHolder(
         if (NoteRecyclerAdapter.Payload.TitleChanged in payloads) setTitle(note)
         if (NoteRecyclerAdapter.Payload.ContentChanged in payloads ||
             NoteRecyclerAdapter.Payload.MarkdownChanged in payloads
-        ) setTextContent(note)
+        ) {
+            setTextContent(note)
+            if (note.isList && note.taskList.isNotEmpty() && !note.isCompactPreview) {
+                setTasks(note, useDiff = true)
+            }
+        }
         if (NoteRecyclerAdapter.Payload.TasksChanged in payloads) setTasks(note, useDiff = true)
         if (NoteRecyclerAdapter.Payload.ColorChanged in payloads) updateBackgroundColor(note.color)
         if (NoteRecyclerAdapter.Payload.TagsChanged in payloads) updateTags(note.tags)

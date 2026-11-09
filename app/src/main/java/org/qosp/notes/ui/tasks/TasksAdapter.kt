@@ -18,6 +18,9 @@ class TasksAdapter(
 
     private var fontSize: Float = -1.0f
 
+    /** Parent note vault path for relative `![](...)` in task row Markwon previews. */
+    var vaultRelativePath: String? = null
+
     var tasks: MutableList<NoteTask> = mutableListOf()
 
     override fun getItemCount(): Int = tasks.size
@@ -38,7 +41,12 @@ class TasksAdapter(
 
     override fun onBindViewHolder(holder: TaskViewHolder, position: Int) {
         val task: NoteTask = tasks[position]
-        holder.bind(task)
+        holder.bind(task, vaultRelativePath)
+    }
+
+    override fun onViewRecycled(holder: TaskViewHolder) {
+        holder.clearVaultMarkwonContext()
+        super.onViewRecycled(holder)
     }
 
     fun moveItem(fromPos: Int, toPos: Int) {
