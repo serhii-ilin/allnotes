@@ -8,7 +8,7 @@
 - **Folder vault is the only sync mode.** Nextcloud/DAV sync has been removed.
 - Default cloud preference is **folder storage** (`CloudService.FILE_STORAGE`). Legacy `DISABLED` / `NEXTCLOUD` values migrate to folder mode on read.
 - Until the user picks a SAF folder, the app works **fully offline in Room** and prompts to choose a folder (onboarding dialog + drawer hint).
-- When a folder is first configured, **existing local notes** (including former local-only notes without mappings) are **exported once** into the vault. Export is idempotent (mapping-based); Room rows are kept until vault writes verify successfully.
+- When a folder is first configured, **existing local notes** are **exported once** into the vault (no separate “local-only / not syncable” mode). Export is idempotent (mapping-based); Room rows are kept until vault writes verify successfully.
 - **INTERNET** remains for non-sync features (e.g. ACRA error mail, Coil loading `https://` images in Markdown). Sync itself is local/SAF-only and does not require network.
 
 ## Goals
@@ -36,6 +36,12 @@
 
 Staging/recovery journals live in **app-private storage** (not in the synced tree); see Phase 1 recovery work.
 
+## Implementation notes
+
+- All vault tree I/O goes through the [VaultFs](app/src/main/java/org/qosp/notes/data/sync/fs/vault/VaultFs.kt) interface: production uses [SafVaultFs](app/src/main/java/org/qosp/notes/data/sync/fs/vault/SafVaultFs.kt); unit tests use [InMemoryVaultFs](app/src/main/java/org/qosp/notes/data/sync/fs/vault/InMemoryVaultFs.kt). `StorageBackend` has no parallel SAF vs in-memory code paths.
+- Integration scenarios for sync blockers use real [NoteRepositoryImpl](app/src/main/java/org/qosp/notes/data/repo/NoteRepositoryImpl.kt) (`syncNotes`, bin/restore/delete, debounced `ProcessRemoteActions`) via [NoteRepositoryVaultHarness](app/src/test/java/org/qosp/notes/data/repo/NoteRepositoryVaultHarness.kt).
+- Obsidian-style YAML: scalar `tags`, block lists, ISO `created`/`modified`, and foreign keys round-trip through `VaultNoteDocument` (`knownKeysVerbatim` + `preservedYaml`).
+
 ## Related tests
 
-`CloudServiceMigrationTest`, vault orchestration/sync tests, `SynchronizeNotesTest` (export when cutoff set).
+`VaultFolderBlockerScenariosTest`, `NoteRepositoryVaultHarnessSmokeTest`, `CloudServiceMigrationTest`, vault orchestration/sync tests, `SynchronizeNotesTest`.

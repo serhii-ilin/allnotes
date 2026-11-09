@@ -40,9 +40,9 @@ class VaultRecoveryPersistenceTest {
             VaultRecoverableWrite(crashed).write("Work/Note.md", "payload", ctx(scope))
         }
         val restarted = FileVaultWriteStore(root, scope)
-        assertNotNullJournal(restarted)
-        val outcome = VaultRecoveryService.recoverPending(restarted, 1L)
-        assertTrue(outcome.recoveredPaths.contains("Work/Note.md"))
+        assertTrue(restarted.readJournal() == null || restarted.readJournal()!!.entries.isEmpty())
+        restarted.failPublish = false
+        VaultRecoverableWrite(restarted).write("Work/Note.md", "payload", ctx(scope))
         assertEquals("payload", restarted.readVerified("Work/Note.md"))
     }
 

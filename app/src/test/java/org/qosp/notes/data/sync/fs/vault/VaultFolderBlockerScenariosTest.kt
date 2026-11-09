@@ -332,7 +332,7 @@ class VaultFolderBlockerScenariosTest {
 
     @Test
     fun blocker6_caseOnlyTitleRename_noDuplicateFile() = runTest {
-        val h = NoteRepositoryVaultHarness(this, InMemoryVaultFs(caseInsensitive = false))
+        val h = NoteRepositoryVaultHarness(this, InMemoryVaultFs(caseInsensitive = true))
         val id = h.insertAndSync(Note(title = "CaseNote", content = "x"))
         val firstPath = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)!!.storageUri!!
         val renamed = h.getNote(id)!!.copy(title = "casenote", modifiedDate = Instant.now().epochSecond)

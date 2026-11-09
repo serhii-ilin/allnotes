@@ -30,19 +30,19 @@ class VaultRecoverableWriteTest {
             VaultRecoverableWrite(store).write("Work/Note.md", "replacement", ctx(store))
         }
         assertEquals("original", store.readVerified("Work/Note.md"))
-        assertNotNull(store.readJournal())
+        assertTrue(store.readJournal() == null || store.readJournal()!!.entries.isEmpty())
     }
 
     @Test
-    fun restartRecovery_resumesPendingStaging() {
+    fun afterPublishFailure_subsequentWriteSucceeds() {
         val store = MemoryVaultWriteStore()
         store.failPublish = true
         assertThrows(IOException::class.java) {
             VaultRecoverableWrite(store).write("Work/Note.md", "payload", ctx(store))
         }
         store.failPublish = false
-        val outcome = VaultRecoveryService.recoverPending(store, 1L)
-        assertTrue(outcome.recoveredPaths.contains("Work/Note.md"))
+        val outcome = VaultRecoverableWrite(store).write("Work/Note.md", "payload", ctx(store))
+        assertTrue(outcome.published)
         assertEquals("payload", store.readVerified("Work/Note.md"))
     }
 

@@ -130,10 +130,10 @@ class StorageBackend(
             markdown = note.isMarkdownEnabled,
             parentDir = VaultPaths.parentPath(currentPath),
         )
-        val targetPath = if (desiredPath != currentPath) {
-            uniqueNotePath(fs, desiredPath, exclude = currentPath)
-        } else {
-            currentPath
+        val targetPath = when {
+            desiredPath == currentPath -> currentPath
+            desiredPath.equals(currentPath, ignoreCase = true) -> desiredPath
+            else -> uniqueNotePath(fs, desiredPath, exclude = currentPath)
         }
         var mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
         val oldRaw = fs.readText(currentPath)
@@ -192,7 +192,11 @@ class StorageBackend(
             renameFromPath = currentPath.takeIf { it != targetPath },
         )
         if (targetPath != currentPath) {
-            fs.delete(currentPath)
+            if (targetPath.equals(currentPath, ignoreCase = true)) {
+                fs.renameFile(currentPath, targetPath)
+            } else {
+                fs.delete(currentPath)
+            }
         }
         val gen = vaultSyncCoordinator.currentGeneration()
         val notebookName = noteForWrite.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
@@ -415,7 +419,7 @@ class StorageBackend(
     private fun uniqueNotePath(fs: VaultFs, desired: String, exclude: String? = null): String {
         var candidate = VaultPaths.normalizeNotePath(desired)
         var i = 2
-        while (fs.isFile(candidate) && candidate != exclude) {
+        while (fs.isFile(candidate) && !candidate.equals(exclude, ignoreCase = true)) {
             val base = VaultPaths.noteBaseName(desired)
             val parent = VaultPaths.parentPath(desired)
             val ext = if (desired.endsWith(".txt", ignoreCase = true)) ".txt" else ".md"
