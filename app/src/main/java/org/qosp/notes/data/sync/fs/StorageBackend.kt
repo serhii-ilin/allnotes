@@ -67,11 +67,6 @@ class StorageBackend(
         vaultIndexCache = null
     }
 
-    /** Harness / tests: call after mutating the vault through [VaultFs] outside this backend. */
-    fun invalidateVaultListingCache() {
-        invalidateVaultIndex()
-    }
-
     override val type: CloudService = CloudService.FILE_STORAGE
 
     companion object {
@@ -110,12 +105,14 @@ class StorageBackend(
         }
     }
 
-    override suspend fun createNote(note: Note): SyncNote = VaultIo.run {
+    override suspend fun createNote(note: Note, linkExisting: Boolean): SyncNote = VaultIo.run {
         val fs = vaultFs()
         val desired = VaultPaths.titleToNotePath(note.title, note.isMarkdownEnabled)
         val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
-        linkableExistingPath(fs, note, desired, notebookName)?.let { existing ->
-            return@run pathToSyncNote(fs, existing)
+        if (linkExisting) {
+            linkableExistingPath(fs, note, desired, notebookName)?.let { existing ->
+                return@run pathToSyncNote(fs, existing)
+            }
         }
         val relativePath = uniqueNotePath(fs, desired)
         return@run writeNoteAt(relativePath, note, mapping = null)
@@ -152,10 +149,12 @@ class StorageBackend(
                 val diskRawHash = VaultContentHash.ofText(diskSync.content.orEmpty())
                 val rawBaseline = mappingState.baselineRawHash
                 val rawDiffers = rawBaseline.isNotEmpty() && diskRawHash != rawBaseline
+                // Written files end their body with a newline that the note's text does not; ignore trailing whitespace.
                 val diskBodyHash = VaultContentHash.ofText(
-                    VaultNoteDocument.parse(diskSync.content.orEmpty()).body,
+                    VaultNoteDocument.parse(diskSync.content.orEmpty()).body.trimEnd(),
                 )
-                val localBodyHash = VaultContentHash.ofText(note.content)
+                val localBody = if (note.isList) note.taskListToMd() else note.content
+                val localBodyHash = VaultContentHash.ofText(localBody.trimEnd())
                 val concurrentEdit = rawDiffers && diskBodyHash != localBodyHash
                 if (concurrentEdit) {
                     val conflictPath = createConflictCopy(diskSync)
@@ -420,7 +419,9 @@ class StorageBackend(
         for (rel in ownedRel) {
             if (rel.startsWith("$assetDir/")) fs.delete(rel)
         }
-        if (fs.listChildren(assetDir).isEmpty()) {
+        // Best effort: a failed listing must neither look empty nor fail the delete.
+        val remaining = runCatching { fs.listChildren(assetDir) }.getOrNull()
+        if (remaining != null && remaining.isEmpty()) {
             fs.delete(assetDir)
         }
     }

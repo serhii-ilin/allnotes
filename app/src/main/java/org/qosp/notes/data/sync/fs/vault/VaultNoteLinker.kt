@@ -30,11 +30,8 @@ object VaultNoteLinker {
             val desired = VaultPaths.titleToNotePath(local.title, local.isMarkdownEnabled)
             VaultPaths.normalizeNotePath(desired) == path
         }
-        val remoteHasTitle = parsed.frontMatter.title?.isNotBlank() == true
         if (pathMatch != null &&
-            contentMatchesLocal(
-                pathMatch, path, remoteTitle, remoteBodyHash, notebookName, remoteHash, remoteHasTitle,
-            )
+            contentMatchesLocal(pathMatch, path, remoteTitle, remoteBodyHash, notebookName, remoteHash)
         ) {
             claimedLocalIds.add(pathMatch.id)
             claimedRemotePaths.add(path)
@@ -44,10 +41,8 @@ object VaultNoteLinker {
             if (local.id in claimedLocalIds) return@firstOrNull false
             if (mappingsByLocalId[local.id] != null) return@firstOrNull false
             val desired = VaultPaths.titleToNotePath(local.title, local.isMarkdownEnabled)
-            contentMatchesLocal(local, path, remoteTitle, remoteBodyHash, notebookName, remoteHash, remoteHasTitle) ||
-                contentMatchesLocal(
-                    local, desired, remoteTitle, remoteBodyHash, notebookName, remoteHash, remoteHasTitle,
-                )
+            contentMatchesLocal(local, path, remoteTitle, remoteBodyHash, notebookName, remoteHash) ||
+                contentMatchesLocal(local, desired, remoteTitle, remoteBodyHash, notebookName, remoteHash)
         }
         if (hashMatch != null) {
             claimedLocalIds.add(hashMatch.id)
@@ -56,6 +51,12 @@ object VaultNoteLinker {
         return hashMatch
     }
 
+    /**
+     * [remoteTitle] is the remote file's YAML title, or its own base name when it has none. The candidate
+     * path ([pathForHash]) only shapes the canonical hash; it never supplies the title, so a title-less file
+     * cannot match a note with a different title. The hash fallback is gated by the same title check, since
+     * a canonical hash of a title-less file does not include the title.
+     */
     private fun contentMatchesLocal(
         local: Note,
         pathForHash: String,
@@ -63,16 +64,11 @@ object VaultNoteLinker {
         remoteBodyHash: String,
         notebookName: String?,
         remoteHash: String,
-        remoteHasTitleInYaml: Boolean,
     ): Boolean {
+        if (!local.title.equals(remoteTitle, ignoreCase = true)) return false
         val localBody = if (local.isList) local.taskListToMd() else local.content
         val localBodyHash = VaultContentHash.ofText(localBody.trimEnd())
-        val titleOk = if (remoteHasTitleInYaml) {
-            local.title.equals(remoteTitle, ignoreCase = true)
-        } else {
-            local.title.equals(VaultPaths.noteBaseName(pathForHash), ignoreCase = true)
-        }
-        if (titleOk && localBodyHash == remoteBodyHash) return true
+        if (localBodyHash == remoteBodyHash) return true
         val localHash = VaultSyncImport.canonicalFileHash(local, pathForHash, notebookName, null)
         return localHash == remoteHash
     }

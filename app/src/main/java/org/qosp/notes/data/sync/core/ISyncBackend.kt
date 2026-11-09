@@ -14,7 +14,11 @@ interface ISyncBackend {
      */
     suspend fun isAvailable(): AvailabilityStatus
 
-    suspend fun createNote(note: Note): SyncNote
+    /**
+     * @param linkExisting when false, always writes a new file, even if an identical one already exists
+     *   (restoring a note must not attach it to another live note's file).
+     */
+    suspend fun createNote(note: Note, linkExisting: Boolean = true): SyncNote
     suspend fun updateNote(note: Note, mapping: IdMapping): IdMapping
     suspend fun deleteNote(mapping: IdMapping, removeAssets: Boolean = true): Boolean
     suspend fun getNote(mapping: IdMapping): SyncNote?

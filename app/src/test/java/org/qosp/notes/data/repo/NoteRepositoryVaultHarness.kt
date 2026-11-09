@@ -28,8 +28,10 @@ import org.qosp.notes.data.dao.ReminderDao
 import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.sync.core.BackendProvider
+import org.qosp.notes.data.sync.core.ISyncBackend
 import org.qosp.notes.data.sync.core.ProcessRemoteActions
 import org.qosp.notes.data.sync.core.RemoteOperation
+import org.qosp.notes.data.sync.core.SyncNote
 import org.qosp.notes.data.sync.fs.vault.VaultFileOpFence
 import kotlinx.coroutines.flow.first
 import org.qosp.notes.preferences.SortMethod
@@ -86,6 +88,8 @@ class NoteRepositoryVaultHarness(
         vaultFs = vaultFs,
     )
 
+    private val providerFlow = MutableStateFlow<ISyncBackend?>(backend)
+
     val repository: NoteRepositoryImpl
     private val processRemoteActions: ProcessRemoteActions
     private val prefsRef: PreferenceRepository
@@ -103,7 +107,7 @@ class NoteRepositoryVaultHarness(
         coEvery { prefs.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT) } returns flowOf("1")
         coEvery { prefs.getEncryptedString(any()) } returns flowOf("1")
         every { backendProvider.isSyncing } returns true
-        every { backendProvider.syncProvider } returns MutableStateFlow(backend)
+        every { backendProvider.syncProvider } returns providerFlow
         val scope = SyncScope(CoroutineScope(UnconfinedTestDispatcher(testScope.testScheduler)))
         processRemoteActions = ProcessRemoteActions(
             scope,
@@ -161,7 +165,19 @@ class NoteRepositoryVaultHarness(
 
     suspend fun getNote(id: Long): Note? = noteDao.getById(id).first()
 
-    fun refreshVaultIndex() = backend.invalidateVaultListingCache()
+    /**
+     * Test seam: [hook] runs inside the create, after the vault file is written and before the repository records
+     * the mapping. That is the window where a bin can arrive while a create is in flight.
+     */
+    fun onBackendCreated(hook: suspend (Note) -> Unit) {
+        providerFlow.value = object : ISyncBackend by backend {
+            override suspend fun createNote(note: Note, linkExisting: Boolean): SyncNote {
+                val created = backend.createNote(note, linkExisting)
+                hook(note)
+                return created
+            }
+        }
+    }
 
     fun conflictFiles(): List<String> = vaultFs.snapshotPaths().filter { "(conflict" in it }
 

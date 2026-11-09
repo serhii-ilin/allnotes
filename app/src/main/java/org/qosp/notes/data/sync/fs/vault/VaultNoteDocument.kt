@@ -30,6 +30,7 @@ data class VaultNoteDocument(
 ) {
     fun renderFullText(): String {
         val skipKeys = frontMatter.knownKeysVerbatim.lines()
+            .filter { isVerbatimRootLine(it) }
             .mapNotNull { line ->
                 line.trim().substringBefore(':').trim().takeIf { it.isNotEmpty() }
             }
@@ -60,6 +61,13 @@ data class VaultNoteDocument(
             "title", "pinned", "archived", "hidden", "isList", "markdown",
             "color", "notebook", "created", "modified", "tags",
         )
+
+        /** Date-time written with a space instead of `T`, e.g. `2024-06-15 12:00` (seconds optional). */
+        private val spaceSeparatedDateTime = java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm[:ss]")
+
+        /** A line that starts a YAML key (not indented, not a block-list item). */
+        private fun isVerbatimRootLine(line: String): Boolean =
+            line.isNotBlank() && !line.startsWith(" ") && !line.startsWith("\t") && !line.startsWith("-")
 
         fun parse(raw: String): VaultNoteDocument {
             val match = frontMatterRegex.find(raw)
@@ -155,24 +163,29 @@ data class VaultNoteDocument(
             )
         }
 
+        /**
+         * Keeps each verbatim key as one unit: its root line plus the indented or `-` lines under it.
+         * A key is kept while the app's value still matches what was read from disk. An unreadable date
+         * (prior value null) is always kept, so it is never replaced.
+         */
         private fun filterUnchangedKnownKeys(
             verbatim: String,
             prior: VaultFrontMatter,
             updated: VaultFrontMatter,
         ): String {
             if (verbatim.isBlank()) return verbatim
-            val kept = verbatim.lines().filter { line ->
-                val key = line.trim().substringBefore(':').trim()
-                when (key) {
-                    "tags" -> tagsEqual(prior.tags, updated.tags)
-                    "modified" -> {
-                        val rawVal = line.substringAfter(":").trim()
-                        prior.modified == updated.modified &&
-                            (rawVal.toLongOrNull() == updated.modified || updated.modified == null)
+            val kept = mutableListOf<String>()
+            var keepBlock = true
+            for (line in verbatim.lines()) {
+                if (isVerbatimRootLine(line)) {
+                    keepBlock = when (line.trim().substringBefore(':').trim()) {
+                        "tags" -> tagsEqual(prior.tags, updated.tags)
+                        "modified" -> prior.modified == null || prior.modified == updated.modified
+                        "created" -> prior.created == null || prior.created == updated.created
+                        else -> true
                     }
-                    "created" -> prior.created == updated.created
-                    else -> true
                 }
+                if (keepBlock) kept.add(line)
             }
             return kept.joinToString("\n").trimEnd()
         }
@@ -306,10 +319,18 @@ data class VaultNoteDocument(
             ) to preserved.toString().trimEnd()
         }
 
+        /** Epoch seconds for the date formats Obsidian and other editors write. Values without a zone are UTC. */
         private fun parseEpoch(raw: String): Long? {
             val t = raw.trim().trim('"')
             t.toLongOrNull()?.let { return it }
             return runCatching { java.time.Instant.parse(t).epochSecond }.getOrNull()
+                ?: runCatching { java.time.OffsetDateTime.parse(t).toInstant().epochSecond }.getOrNull()
+                ?: runCatching {
+                    java.time.LocalDateTime.parse(t).toEpochSecond(java.time.ZoneOffset.UTC)
+                }.getOrNull()
+                ?: runCatching {
+                    java.time.LocalDateTime.parse(t, spaceSeparatedDateTime).toEpochSecond(java.time.ZoneOffset.UTC)
+                }.getOrNull()
                 ?: runCatching {
                     java.time.LocalDate.parse(t).atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
                 }.getOrNull()

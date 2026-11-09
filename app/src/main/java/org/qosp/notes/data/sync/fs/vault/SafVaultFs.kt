@@ -14,8 +14,15 @@ class SafVaultFs(
     private val caseInsensitiveLookup: Boolean = true,
 ) : VaultFs {
 
-    private var directoryCache: Map<String, Map<String, DocumentFile>>? = null
+    /** Children of one folder, by exact name and by lowercase name (first wins for case-only duplicates). */
+    private class DirectoryIndex(
+        val byExactName: Map<String, DocumentFile>,
+        val byLowerName: Map<String, DocumentFile>,
+    )
 
+    private var directoryCache: Map<String, DirectoryIndex>? = null
+
+    /** Snapshots folder listings so lookups stop querying the provider. Only [StorageBackend.getAll] enables it. */
     fun beginDirectoryCache() {
         directoryCache = buildDirectoryCache(root)
     }
@@ -28,8 +35,11 @@ class SafVaultFs(
     override fun canWrite(): Boolean = root.canWrite()
 
     override fun listChildren(relativeDir: String): List<VaultFs.VaultFsEntry> {
+        // A folder that does not exist yet is empty (e.g. a note's asset folder before its first attachment).
         val dir = resolveDir(relativeDir) ?: return emptyList()
-        return (dir.listFiles() ?: return emptyList()).mapNotNull { child ->
+        // A null listing of an existing folder is a provider failure; it must not look like an empty folder.
+        val children = dir.listFiles() ?: throw IOException("Cannot list vault directory: $relativeDir")
+        return children.mapNotNull { child ->
             val name = child.name ?: return@mapNotNull null
             val rel = childRelative(relativeDir, name)
             VaultFs.VaultFsEntry(name, rel, child.isDirectory)
@@ -121,9 +131,10 @@ class SafVaultFs(
         val to = VaultPaths.normalize(toRelative)
         val src = findByRelativePath(from)
             ?: throw IOException("missing $from")
-        val bytes = context.contentResolver.openInputStream(src.uri)?.use { it.readBytes() }
-            ?: throw IOException("unreadable $from")
-        writeBytes(to, bytes, VaultFs.mimeForPath(to))
+        context.contentResolver.openInputStream(src.uri)?.use { input ->
+            val output = openWrite(to, VaultFs.mimeForPath(to)) ?: throw IOException("cannot write $to")
+            output.use { input.copyTo(it) }
+        } ?: throw IOException("unreadable $from")
         if (deleteSource) src.delete()
     }
 
@@ -139,30 +150,47 @@ class SafVaultFs(
         copyFile(fromRelative, toRelative, deleteSource = true)
     }
 
-    fun findFileCaseInsensitive(parent: DocumentFile, name: String): DocumentFile? {
-        parent.findFile(name)?.let { return it }
-        directoryCache?.get(parent.uri.toString())?.let { children ->
-            children[name.lowercase()]?.let { return it }
-            if (caseInsensitiveLookup) {
-                return children.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
-            }
-            return null
+    override fun renameDirectory(fromRelative: String, toRelative: String) {
+        val from = VaultPaths.normalize(fromRelative)
+        val to = VaultPaths.normalize(toRelative)
+        if (from == to) return
+        if (!VaultPaths.parentPath(from).equals(VaultPaths.parentPath(to), ignoreCase = true)) {
+            throw IOException("Cannot move folder $from to $to")
         }
+        val source = resolveDir(from) ?: return
+        val fromName = VaultPaths.fileName(from)
+        val toName = VaultPaths.fileName(to)
+        // Case-insensitive providers report the target name as existing, so go through a temporary name.
+        if (!source.renameTo("$fromName.__case_rename__")) throw IOException("Cannot rename folder $from")
+        if (!source.renameTo(toName)) {
+            source.renameTo(fromName)
+            throw IOException("Cannot rename folder $from to $toName")
+        }
+    }
+
+    fun findFileCaseInsensitive(parent: DocumentFile, name: String): DocumentFile? {
+        directoryCache?.get(parent.uri.toString())?.let { index ->
+            index.byExactName[name]?.let { return it }
+            return if (caseInsensitiveLookup) index.byLowerName[name.lowercase()] else null
+        }
+        parent.findFile(name)?.let { return it }
         if (!caseInsensitiveLookup) return null
         return parent.listFiles()?.firstOrNull { child ->
             child.name?.equals(name, ignoreCase = true) == true
         }
     }
 
-    private fun buildDirectoryCache(start: DocumentFile): Map<String, Map<String, DocumentFile>> {
-        val out = mutableMapOf<String, Map<String, DocumentFile>>()
+    private fun buildDirectoryCache(start: DocumentFile): Map<String, DirectoryIndex> {
+        val out = mutableMapOf<String, DirectoryIndex>()
         fun walk(dir: DocumentFile) {
             val children = dir.listFiles() ?: return
-            val byLowerName = children.mapNotNull { child ->
-                child.name?.let { it.lowercase() to child }
-            }.toMap()
-            out[dir.uri.toString()] = byLowerName
-            children.filter { it.isDirectory }.forEach { walk(it) }
+            val named = children.mapNotNull { child -> child.name?.let { it to child } }
+            val byLowerName = mutableMapOf<String, DocumentFile>()
+            named.forEach { (name, child) -> byLowerName.putIfAbsent(name.lowercase(), child) }
+            out[dir.uri.toString()] = DirectoryIndex(named.toMap(), byLowerName)
+            children
+                .filter { it.isDirectory && !VaultHousekeeping.shouldSkipDirectory(it.name) }
+                .forEach { walk(it) }
         }
         walk(start)
         return out

@@ -38,6 +38,12 @@ interface VaultFs {
 
     fun renameFile(fromRelative: String, toRelative: String)
 
+    /**
+     * Renames a folder within its parent, used for case-only changes (`foo` to `Foo`). Case-insensitive
+     * storage treats the target as already existing, so implementations may need a temporary name.
+     */
+    fun renameDirectory(fromRelative: String, toRelative: String)
+
     data class VaultFsEntry(
         val name: String,
         val relativePath: String,

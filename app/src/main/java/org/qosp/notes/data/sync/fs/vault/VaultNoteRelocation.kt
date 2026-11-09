@@ -54,7 +54,14 @@ object VaultNoteRelocation {
     ) {
         val oldDir = VaultPaths.assetDirectoryForNote(fromNotePath)
         val newDir = VaultPaths.assetDirectoryForNote(toNotePath)
-        if (oldDir == newDir || ownedVaultRelPaths.isEmpty()) return
+        if (oldDir == newDir) return
+        if (oldDir.equals(newDir, ignoreCase = true)) {
+            // Case-only rename: both names are one folder on case-insensitive storage. Rename it; moving the
+            // files would see each source and target as the same file and delete it.
+            if (fs.isDirectory(oldDir)) fs.renameDirectory(oldDir, newDir)
+            return
+        }
+        if (ownedVaultRelPaths.isEmpty()) return
         fs.ensureDirectory(newDir)
         val ownedRel = ownedVaultRelPaths.map { VaultPaths.toVaultRelative(it) }.toSet()
         for (rel in ownedRel) {
@@ -63,7 +70,7 @@ object VaultNoteRelocation {
             val targetRel = VaultPaths.normalize("$newDir/$fileName")
             moveAssetIfNeeded(fs, rel, targetRel)
         }
-        pruneEmptyAssetDirectoryFs(fs, oldDir, ownedRel)
+        pruneEmptyAssetDirectoryFs(fs, oldDir, newDir, ownedRel)
     }
 
     fun relocateOwnedAssets(
@@ -84,7 +91,7 @@ object VaultNoteRelocation {
             val targetRel = VaultPaths.normalize("$newDir/$fileName")
             moveAssetIfNeeded(context, root, rel, targetRel)
         }
-        pruneEmptyAssetDirectory(context, root, oldDir, ownedRel)
+        pruneEmptyAssetDirectory(context, root, oldDir, newDir, ownedRel)
     }
 
     private fun moveAssetIfNeeded(
@@ -94,6 +101,8 @@ object VaultNoteRelocation {
         targetRel: String,
     ) {
         if (sourceRel == targetRel) return
+        // Same file on a case-insensitive volume: moving it would delete the only copy.
+        if (sourceRel.equals(targetRel, ignoreCase = true)) return
         val source = VaultDocumentTree.findByRelativePath(root, sourceRel) ?: return
         val existingTarget = VaultDocumentTree.findByRelativePath(root, targetRel)
         if (existingTarget != null) {
@@ -134,14 +143,12 @@ object VaultNoteRelocation {
 
     private fun moveAssetIfNeeded(fs: VaultFs, sourceRel: String, targetRel: String) {
         if (sourceRel == targetRel) return
+        // Same file on a case-insensitive volume: moving it would delete the only copy.
+        if (sourceRel.equals(targetRel, ignoreCase = true)) return
         if (!fs.isFile(sourceRel)) return
-        val existingTarget = if (fs.isFile(targetRel)) targetRel else null
-        val sourceBytes = fs.openRead(sourceRel)?.use { it.readBytes() } ?: return
-        val sourceHash = VaultContentHash.ofBytes(sourceBytes)
-        if (existingTarget != null) {
-            val targetBytes = fs.openRead(targetRel)?.use { it.readBytes() }
-            val sameBytes = targetBytes != null && VaultContentHash.ofBytes(targetBytes) == sourceHash
-            if (sameBytes) {
+        val sourceHash = VaultStreamHashes.hashVaultFsFile(fs, sourceRel) ?: return
+        if (fs.isFile(targetRel)) {
+            if (VaultStreamHashes.hashVaultFsFile(fs, targetRel) == sourceHash) {
                 fs.delete(sourceRel)
                 return
             }
@@ -149,23 +156,36 @@ object VaultNoteRelocation {
             moveAssetIfNeeded(fs, sourceRel, unique)
             return
         }
-        fs.writeBytes(targetRel, sourceBytes, VaultFs.mimeForPath(targetRel))
-        val written = fs.openRead(targetRel)?.use { it.readBytes() }
-        if (written == null || VaultContentHash.ofBytes(written) != sourceHash) {
+        // Stream the bytes instead of holding the whole attachment in memory.
+        fs.openRead(sourceRel)?.use { input ->
+            val output = fs.openWrite(targetRel, VaultFs.mimeForPath(targetRel))
+                ?: throw IOException("Cannot write $targetRel")
+            output.use { input.copyTo(it) }
+        } ?: throw IOException("Cannot read $sourceRel")
+        if (VaultStreamHashes.hashVaultFsFile(fs, targetRel) != sourceHash) {
             fs.delete(targetRel)
             throw IOException("Verify failed for $targetRel")
         }
         fs.delete(sourceRel)
     }
 
-    private fun pruneEmptyAssetDirectoryFs(fs: VaultFs, oldAssetDir: String, ownedRelUnderOld: Set<String>) {
+    private fun pruneEmptyAssetDirectoryFs(
+        fs: VaultFs,
+        oldAssetDir: String,
+        newAssetDir: String,
+        ownedRelUnderOld: Set<String>,
+    ) {
         for (rel in ownedRelUnderOld) {
-            if (rel.startsWith("$oldAssetDir/") && fs.isFile(rel)) {
-                fs.delete(rel)
+            if (!rel.startsWith("$oldAssetDir/") || !fs.isFile(rel)) continue
+            // Same file as its moved target (case-only folder change): deleting it would drop the only copy.
+            if (rel.equals(VaultPaths.normalize("$newAssetDir/${VaultPaths.fileName(rel)}"), ignoreCase = true)) {
+                continue
             }
+            fs.delete(rel)
         }
-        val children = fs.listChildren(oldAssetDir)
-        if (children.isEmpty()) {
+        // A failed listing must not look like an empty folder.
+        val remaining = runCatching { fs.listChildren(oldAssetDir) }.getOrNull() ?: return
+        if (remaining.isEmpty()) {
             fs.delete(oldAssetDir)
         }
     }
@@ -174,6 +194,7 @@ object VaultNoteRelocation {
         context: Context,
         root: DocumentFile,
         oldAssetDir: String,
+        newAssetDir: String,
         ownedRelUnderOld: Set<String>,
     ) {
         val dir = VaultDocumentTree.ensureDirectory(root, oldAssetDir)
@@ -182,6 +203,8 @@ object VaultNoteRelocation {
             val name = child.name ?: continue
             val rel = VaultPaths.normalize("$oldAssetDir/$name")
             if (rel in ownedRelUnderOld && child.isFile) {
+                // Same file as its moved target (case-only folder change): keep it.
+                if (rel.equals(VaultPaths.normalize("$newAssetDir/$name"), ignoreCase = true)) continue
                 DocumentsContract.deleteDocument(context.contentResolver, child.uri)
             }
         }

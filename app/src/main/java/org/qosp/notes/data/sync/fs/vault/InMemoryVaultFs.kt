@@ -169,16 +169,31 @@ class InMemoryVaultFs(
 
     override fun renameFile(fromRelative: String, toRelative: String) {
         val from = resolveKey(fromRelative)
-        val to = norm(toRelative)
-        if (caseInsensitive && from.equals(to, ignoreCase = true) && from != to) {
-            val node = nodes[from] ?: return
-            nodes.remove(from)
-            nodes[to] = node
+        // Raw target: norm() would return the existing canonical casing and hide a case-only rename.
+        val rawTo = VaultPaths.normalize(toRelative)
+        if (caseInsensitive && from.equals(rawTo, ignoreCase = true) && from != rawTo) {
+            val node = nodes.remove(from) ?: throw IOException("missing $from")
             canonicalPath.remove(from.lowercase())
-            canonicalPath[to.lowercase()] = to
+            nodes[rawTo] = node
+            canonicalPath[rawTo.lowercase()] = rawTo
             return
         }
         copyFile(fromRelative, toRelative, deleteSource = true)
+    }
+
+    override fun renameDirectory(fromRelative: String, toRelative: String) {
+        val from = resolveKey(fromRelative)
+        val to = VaultPaths.normalize(toRelative)
+        if (from == to) return
+        val prefix = "$from/"
+        val moved = nodes.keys.filter { it == from || it.startsWith(prefix) }
+        for (key in moved) {
+            val node = nodes.remove(key) ?: continue
+            canonicalPath.remove(key.lowercase())
+            val target = to + key.removePrefix(from)
+            nodes[target] = node
+            canonicalPath[target.lowercase()] = target
+        }
     }
 
     fun snapshotPaths(): Set<String> = nodes.keys.filter { nodes[it]?.bytes != null }.toSet()

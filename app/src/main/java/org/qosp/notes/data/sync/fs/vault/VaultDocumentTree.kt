@@ -203,7 +203,8 @@ object VaultDocumentTree {
         if (norm.isEmpty()) return root
         var current = root
         norm.split('/').filter { it.isNotEmpty() }.forEach { segment ->
-            val next = current.findFile(segment)
+            // Case-insensitive: on shared storage `foo` and `Foo` are one folder, not a new sibling.
+            val next = findFileCaseInsensitive(current, segment)
             current = when {
                 next == null -> current.createDirectory(segment)
                     ?: throw IOException("Cannot create directory $segment")
