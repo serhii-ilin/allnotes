@@ -40,9 +40,11 @@ import org.qosp.notes.data.model.Notebook
 import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.fs.StorageConfig
 import org.qosp.notes.data.sync.fs.toFriendlyString
-import org.qosp.notes.data.sync.nextcloud.NextcloudConfig
 import org.qosp.notes.databinding.ActivityMainBinding
-import org.qosp.notes.preferences.CloudService
+import org.qosp.notes.preferences.PreferenceRepository
+import org.qosp.notes.data.repo.NoteRepository
+import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.qosp.notes.preferences.SortNavdrawerNotebooksMethod
 import org.qosp.notes.ui.attachments.fromUri
 import org.qosp.notes.ui.utils.closeAndThen
@@ -59,6 +61,8 @@ class MainActivity : BaseActivity() {
     private lateinit var binding: ActivityMainBinding
     private val activityModel: ActivityViewModel by viewModel()
     private val backendProvider by inject<BackendProvider>()
+    private val noteRepository by inject<NoteRepository>()
+    private var vaultFolderPromptShown = false
 
     private val topLevelMenu get() = binding.navigationView.menu
     private val notebooksMenu get() = topLevelMenu.findItem(R.id.menu_notebooks).subMenu
@@ -116,9 +120,40 @@ class MainActivity : BaseActivity() {
         }
     }
 
+    private val vaultForegroundRescan: VaultForegroundRescan by inject()
+
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            val location = preferenceRepository
+                .getEncryptedString(PreferenceRepository.STORAGE_LOCATION)
+                .first()
+            if (location.isNotBlank()) {
+                if (vaultForegroundRescan.shouldRunRescan()) {
+                    noteRepository.syncNotes()
+                }
+            } else {
+                promptForVaultFolderIfNeeded()
+            }
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
+    }
+
+    private fun promptForVaultFolderIfNeeded() {
+        if (vaultFolderPromptShown) return
+        vaultFolderPromptShown = true
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.vault_onboarding_title)
+            .setMessage(R.string.vault_onboarding_message)
+            .setPositiveButton(R.string.preferences_file_storage_select) { _, _ ->
+                navController.navigateSafely(R.id.fragment_sync_settings)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -132,19 +167,7 @@ class MainActivity : BaseActivity() {
      * @return The new URI in app's private storage, or null if copy failed
      */
     private suspend fun copySharedMedia(uri: Uri): Uri? = withContext(Dispatchers.IO) {
-        try {
-            val mimeType = contentResolver.getType(uri) ?: return@withContext null
-            val newUri = activityModel.copyMediaToPrivateStorage(uri, mimeType) ?: return@withContext null
-
-            contentResolver.openInputStream(uri)?.use { input ->
-                contentResolver.openOutputStream(newUri)?.use { output ->
-                    input.copyTo(output)
-                }
-            }
-            newUri
-        } catch (e: Exception) {
-            null
-        }
+        activityModel.copyMediaToPrivateStorage(uri, contentResolver.getType(uri).orEmpty())
     }
 
     private fun handleIntent(intent: Intent) {
@@ -273,32 +296,14 @@ class MainActivity : BaseActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 backendProvider.syncProvider.collect { backend ->
-                    when (backend?.type) {
-                        CloudService.NEXTCLOUD -> {
-                            NextcloudConfig.fromPreferences(preferenceRepository)
-                                .filterNotNull().firstOrNull()?.let { config ->
-                                    textViewUsername.text = config.username
-                                    textViewProvider.text = getString(R.string.preferences_cloud_service_nextcloud)
-                                }
-                        }
-
-                        CloudService.FILE_STORAGE -> {
-                            val uri = StorageConfig.storageLocation(preferenceRepository)
-                                .filterNotNull().firstOrNull()?.location
-                            if (uri != null && uri.toString().isNotEmpty()) {
-                                textViewUsername.text =
-                                    uri.toFriendlyString(applicationContext)
-                                textViewProvider.text = getString(R.string.preferences_cloud_service_files)
-                            } else {
-                                textViewUsername.text = getString(R.string.preferences_cloud_service)
-                                textViewProvider.text = getString(R.string.preferences_cloud_service_disabled)
-                            }
-                        }
-
-                        CloudService.DISABLED, null -> {
-                            textViewUsername.text = getString(R.string.preferences_cloud_service)
-                            textViewProvider.text = getString(R.string.preferences_cloud_service_disabled)
-                        }
+                    val uri = StorageConfig.storageLocation(preferenceRepository)
+                        .filterNotNull().firstOrNull()?.location
+                    if (backend != null && uri != null && uri.toString().isNotEmpty()) {
+                        textViewUsername.text = uri.toFriendlyString(applicationContext)
+                        textViewProvider.text = getString(R.string.preferences_cloud_service_files)
+                    } else {
+                        textViewUsername.text = getString(R.string.vault_onboarding_title)
+                        textViewProvider.text = getString(R.string.vault_onboarding_hint)
                     }
                 }
             }

@@ -42,4 +42,17 @@ interface IdMappingDao {
 
     @Query("SELECT count(mappingId) FROM cloud_ids WHERE provider = :provider")
     suspend fun getCountByCloudService(provider: CloudService): Int
+
+    @Query(
+        """
+        SELECT count(mappingId) FROM cloud_ids
+        WHERE provider = :provider AND isDeletedLocally = 0
+        AND storageUri = :path AND localNoteId != :excludeLocalId
+        """,
+    )
+    suspend fun countActiveMappingsAtPath(
+        provider: CloudService,
+        path: String,
+        excludeLocalId: Long,
+    ): Int
 }

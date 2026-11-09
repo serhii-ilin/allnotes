@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    if: github.repository == 'quillpad/quillpad'
+    if: github.repository == 'quillpad/quillpad' || github.repository == 'serhii-ilin/quillpad'
     runs-on: ubuntu-latest
     environment: Test
     

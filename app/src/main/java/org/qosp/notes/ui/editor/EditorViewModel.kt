@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -22,10 +23,10 @@ import org.qosp.notes.data.model.NoteTask
 import org.qosp.notes.data.model.Notebook
 import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.repo.NotebookRepository
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.preferences.DateFormat
 import org.qosp.notes.preferences.DefaultEditorMode
 import org.qosp.notes.preferences.MoveCheckedItems
-import org.qosp.notes.preferences.NewNotesSyncable
 import org.qosp.notes.preferences.OpenMediaIn
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.preferences.ShowDate
@@ -37,12 +38,15 @@ class EditorViewModel(
     private val noteRepository: NoteRepository,
     private val notebookRepository: NotebookRepository,
     private val preferenceRepository: PreferenceRepository,
+    private val vaultTreeAccess: VaultTreeAccess,
 ) : ViewModel() {
 
     var inEditMode: Boolean = false
     var isNotInitialized = true
     var moveCheckedItems: Boolean = true
     private val noteIdFlow: MutableStateFlow<Long?> = MutableStateFlow(null)
+    private val _vaultRelativePath = MutableStateFlow<String?>(null)
+    val vaultRelativePath = _vaultRelativePath.asStateFlow()
     var selectedRange = 0 to 0
 
     val data = noteIdFlow
@@ -95,12 +99,18 @@ class EditorViewModel(
                         notebookId = newNoteNotebookId,
                         isList = newNoteIsList,
                         attachments = newNoteAttachments,
-                        isLocalOnly = preferenceRepository.get<NewNotesSyncable>().first() == NewNotesSyncable.NO
+                        isLocalOnly = false
                     ),
                 )
             }
 
             noteIdFlow.emit(id)
+            if (id > 0L) {
+                withContext(Dispatchers.IO) {
+                    vaultTreeAccess.warmFrom(preferenceRepository)
+                    _vaultRelativePath.value = noteRepository.getVaultRelativePath(id)
+                }
+            }
 
             isNotInitialized = false
             moveCheckedItems = preferenceRepository.get<MoveCheckedItems>().first() == MoveCheckedItems.YES
@@ -111,6 +121,14 @@ class EditorViewModel(
         note.copy(
             title = title,
             modifiedDate = Instant.now().epochSecond,
+        )
+    }
+
+    suspend fun flushPendingTitle(title: String) = withContext(Dispatchers.IO) {
+        val note = data.value.note ?: return@withContext
+        if (title == note.title) return@withContext
+        noteRepository.updateNotes(
+            note.copy(title = title, modifiedDate = Instant.now().epochSecond),
         )
     }
 

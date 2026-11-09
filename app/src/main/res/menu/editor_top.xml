@@ -73,13 +73,6 @@
             android:visible="false"
             app:showAsAction="never"/>
     <item
-            android:id="@+id/action_do_not_sync"
-            android:title="@string/action_do_not_sync"
-            android:checkable="true"
-            android:checked="false"
-            android:visible="false"
-            app:showAsAction="never"/>
-    <item
             android:id="@+id/action_change_color"
             android:title="@string/action_change_color"
             android:visible="false"

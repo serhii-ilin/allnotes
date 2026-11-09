@@ -2,6 +2,9 @@ package org.qosp.notes.ui.editor.markdown
 
 import android.widget.TextView
 import io.noties.markwon.Markwon
+import org.qosp.notes.R
+import org.qosp.notes.ui.utils.vault.VaultMarkwonContext
+import org.qosp.notes.ui.utils.vault.VaultMarkwonRenderContext
 import org.commonmark.ext.gfm.tables.TableBlock
 import org.commonmark.ext.gfm.tables.TableCell
 import org.commonmark.ext.gfm.tables.TableRow
@@ -16,15 +19,27 @@ class MarkdownOptions {
     var tableReplacement: () -> Node = { Code("...") }
 }
 
-inline fun Markwon.applyTo(textView: TextView, content: String, withOptions: MarkdownOptions.() -> Unit = {}) {
+inline fun Markwon.applyTo(
+    textView: TextView,
+    content: String,
+    vaultContext: VaultMarkwonContext? = null,
+    withOptions: MarkdownOptions.() -> Unit = {},
+) {
     val options = MarkdownOptions()
     withOptions(options)
+
+    textView.setTag(R.id.tag_vault_markwon_context, vaultContext)
 
     val node = parse(content)
     val visitor = OptionsVisitor(options)
     node.accept(visitor)
 
-    setParsedMarkdown(textView, render(node))
+    try {
+        VaultMarkwonRenderContext.set(vaultContext)
+        setParsedMarkdown(textView, render(node))
+    } finally {
+        VaultMarkwonRenderContext.clear()
+    }
 }
 
 class OptionsVisitor(private val options: MarkdownOptions) : AbstractVisitor() {

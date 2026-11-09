@@ -20,6 +20,7 @@ import io.noties.markwon.Markwon
 import org.qosp.notes.R
 import org.qosp.notes.data.model.NoteTask
 import org.qosp.notes.databinding.LayoutTaskBinding
+import org.qosp.notes.ui.editor.markdown.applyTo
 import org.qosp.notes.ui.utils.applyMask
 import org.qosp.notes.ui.utils.dp
 import org.qosp.notes.ui.utils.ellipsize
@@ -38,6 +39,7 @@ class TaskViewHolder(
 
     private var isContentLoaded: Boolean = false
     private var isChecked: Boolean = false
+    private var vaultRelativePath: String? = null
 
     init {
         with(binding) {
@@ -162,9 +164,11 @@ class TaskViewHolder(
 
     private fun setTextViewText(text: String, isChecked: Boolean) {
         binding.textView.text.toSpannable().clearSpans()
-        if (isChecked && text.isNotBlank()) {
-            markwon.setMarkdown(binding.textView, "~~${text.trim()}~~")
+        val plan = planTaskRowRender(text, inPreview, isChecked, vaultRelativePath)
+        if (plan.markdown != null) {
+            markwon.applyTo(binding.textView, plan.markdown, plan.vaultContext)
         } else {
+            binding.textView.setTag(R.id.tag_vault_markwon_context, null)
             binding.textView.text = text
         }
     }
@@ -173,7 +177,13 @@ class TaskViewHolder(
 
     fun requestFocus() = binding.editText.requestFocusAndKeyboard()
 
-    fun bind(task: NoteTask) {
+    fun bind(task: NoteTask, vaultRelativePath: String? = null) {
+        this.vaultRelativePath = vaultRelativePath
         setContent(task.isDone, task.content)
+    }
+
+    fun clearVaultMarkwonContext() {
+        vaultRelativePath = null
+        binding.textView.setTag(R.id.tag_vault_markwon_context, null)
     }
 }

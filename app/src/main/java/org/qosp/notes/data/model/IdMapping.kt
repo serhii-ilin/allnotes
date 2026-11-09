@@ -12,8 +12,10 @@ import org.qosp.notes.preferences.CloudService
 @Parcelize
 @Entity(
     tableName = "cloud_ids",
-    indices = [Index(value = ["localNoteId"], name = "cloud_ids_id_index"),
-        Index(value = ["localNoteId", "provider"], name = "cloud_ids_id_provider_index")],
+    indices = [
+        Index(value = ["localNoteId"], name = "cloud_ids_id_index"),
+        Index(value = ["localNoteId", "provider"], name = "cloud_ids_local_provider_unique", unique = true),
+    ],
 )
 data class IdMapping(
     @PrimaryKey(autoGenerate = true)

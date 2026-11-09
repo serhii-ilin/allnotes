@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import org.qosp.notes.R
 import org.qosp.notes.data.model.Note
+import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
 import org.qosp.notes.data.sync.core.BaseResult
 import org.qosp.notes.data.sync.core.ServerNotSupported
 import org.qosp.notes.data.sync.core.Unauthorized
@@ -79,6 +80,7 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
         }
 
     val markwon: Markwon by inject()
+    private val vaultForegroundRescan: VaultForegroundRescan by inject()
 
     // Bug:
     //
@@ -153,6 +155,7 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
             listener = listener,
             markwon = markwon,
         ).apply {
+            vaultRelativePaths = activityModel.vaultRelativePaths.value
             stateRestorationPolicy = RecyclerView.Adapter.StateRestorationPolicy.PREVENT_WHEN_EMPTY
             showHiddenNotes = this@AbstractNotesFragment.showHiddenNotes
 
@@ -179,6 +182,25 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
 
             if (isSelectionEnabled) {
                 enableSelection(this@AbstractNotesFragment, ::onSelectionChanged)
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                activityModel.vaultRelativePaths.collect { paths ->
+                    recyclerAdapter.vaultRelativePaths = paths
+                    if (recyclerAdapter.itemCount > 0) {
+                        recyclerAdapter.notifyItemRangeChanged(
+                            0,
+                            recyclerAdapter.itemCount,
+                            setOf(
+                                NoteRecyclerAdapter.Payload.VaultPathChanged,
+                                NoteRecyclerAdapter.Payload.ContentChanged,
+                                NoteRecyclerAdapter.Payload.TasksChanged,
+                            ),
+                        )
+                    }
+                }
             }
         }
 
@@ -244,7 +266,9 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
                     sendMessage(getString(R.string.indicator_empty_note_discarded))
                 }
 
-                if (model.isSyncingEnabled() && !recyclerAdapter.searchMode) {
+                if (model.isSyncingEnabled() && !recyclerAdapter.searchMode &&
+                    vaultForegroundRescan.shouldRunRescan()
+                ) {
                     activityModel
                         .syncAsync()
                         .await()

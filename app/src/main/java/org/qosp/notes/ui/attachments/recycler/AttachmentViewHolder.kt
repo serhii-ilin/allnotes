@@ -40,10 +40,18 @@ class AttachmentViewHolder(
 
     private inline fun ImageView.loadThumbnail(
         uri: Uri?,
-        builder: ImageRequest.Builder.() -> Unit = {}
+        @DrawableRes placeholder: Int = R.drawable.ic_file,
+        builder: ImageRequest.Builder.() -> Unit = {},
     ) {
+        if (uri == null) {
+            scaleType = ImageView.ScaleType.CENTER
+            setImageResource(placeholder)
+            return
+        }
         load(uri) {
             if (inPreview) size(480, 480) else size(860, 860)
+            placeholder(placeholder)
+            error(placeholder)
             builder()
         }
     }
@@ -66,7 +74,7 @@ class AttachmentViewHolder(
 
         when (attachment.type) {
             Attachment.Type.IMAGE -> {
-                imageView.loadThumbnail(attachment.uri(context))
+                imageView.loadThumbnail(attachment.uri(context), R.drawable.ic_file)
             }
             Attachment.Type.VIDEO -> {
                 imageView.apply {

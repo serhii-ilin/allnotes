@@ -48,27 +48,36 @@ open class MainFragment : AbstractNotesFragment(R.layout.fragment_main) {
     private val chooseFileLauncher = registerForActivityResult(ChooseFilesContract) { uris ->
         if (uris.isEmpty()) return@registerForActivityResult
 
-        val attachments = uris.map {
-            requireContext().contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            Attachment.fromUri(requireContext(), it)
+        lifecycleScope.launch {
+            val attachments = uris.mapNotNull { uri ->
+                runCatching {
+                    requireContext().contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                }
+                activityModel.persistAttachmentFromUri(uri)
+            }
+            if (attachments.isEmpty()) return@launch
+            goToEditor(
+                attachments = attachments,
+                sharedElement = binding.fabCreateNote,
+            )
         }
-
-        goToEditor(
-            attachments = attachments,
-            sharedElement = binding.fabCreateNote
-        )
     }
 
     private val takePhotoLauncher = registerForActivityResult(TakePictureContract) { saved ->
         if (!saved) return@registerForActivityResult
-
-        activityModel.tempPhotoUri?.toString()?.let { path ->
+        val captureUri = activityModel.tempPhotoUri ?: return@registerForActivityResult
+        activityModel.tempPhotoUri = null
+        lifecycleScope.launch {
+            val attachment = activityModel.persistAttachmentFromUri(captureUri)
+                ?: return@launch
             goToEditor(
-                attachments = listOf(Attachment(Attachment.Type.IMAGE, path = path)),
-                sharedElement = binding.fabCreateNote
+                attachments = listOf(attachment),
+                sharedElement = binding.fabCreateNote,
             )
         }
-        activityModel.tempPhotoUri = null
     }
 
     override val recyclerView: RecyclerView

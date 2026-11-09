@@ -57,6 +57,7 @@ import io.noties.markwon.editor.MarkwonEditor
 import io.noties.markwon.editor.MarkwonEditorTextWatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.commonmark.node.Code
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -128,6 +129,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
     private var isNoteDeleted: Boolean = false
     private var markwonTextWatcher: TextWatcher? = null
     private var onBackPressHandled: Boolean = false
+    private var pendingTitle: String? = null
 
     @ColorInt
     private var backgroundColor: Int = Color.TRANSPARENT
@@ -152,20 +154,31 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
     private val requestMediaLauncher = registerForActivityResult(ChooseFilesContract) { uris ->
         if (uris.isEmpty()) return@registerForActivityResult
 
-        val attachments = uris.map {
-            requireContext().contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            Attachment.fromUri(requireContext(), it)
+        lifecycleScope.launch {
+            val attachments = uris.mapNotNull { uri ->
+                runCatching {
+                    requireContext().contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                }
+                activityModel.persistAttachmentFromUri(uri)
+            }
+            if (attachments.isNotEmpty()) {
+                model.insertAttachments(*attachments.toTypedArray())
+            }
         }
-
-        model.insertAttachments(*attachments.toTypedArray())
     }
 
     private val takePhotoLauncher = registerForActivityResult(TakePictureContract) { saved ->
         if (!saved) return@registerForActivityResult
-        val uri = activityModel.tempPhotoUri ?: return@registerForActivityResult
-
-        model.insertAttachments(Attachment.fromUri(requireContext(), uri))
+        val captureUri = activityModel.tempPhotoUri ?: return@registerForActivityResult
         activityModel.tempPhotoUri = null
+        lifecycleScope.launch {
+            val attachment = activityModel.persistAttachmentFromUri(captureUri)
+                ?: return@launch
+            model.insertAttachments(attachment)
+        }
     }
 
     private val itemTouchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(UP or DOWN, LEFT or RIGHT) {
@@ -310,6 +323,26 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
         setupAttachmentsRecycler()
         setupTasksRecycler()
+        model.vaultRelativePath.collect(viewLifecycleOwner) { path ->
+            val vaultContext = path?.let { org.qosp.notes.ui.utils.vault.VaultMarkwonContext(it) }
+            binding.editTextContent.setTag(R.id.tag_vault_markwon_context, vaultContext)
+            if (::tasksAdapter.isInitialized) {
+                val changed = tasksAdapter.vaultRelativePath != path
+                tasksAdapter.vaultRelativePath = path
+                if (changed && tasksAdapter.itemCount > 0) {
+                    tasksAdapter.notifyItemRangeChanged(0, tasksAdapter.itemCount)
+                }
+            }
+            val note = data.note
+            if (note != null && note.isMarkdownEnabled && !note.isList && note.content.isNotBlank()) {
+                binding.textViewContentPreview.post {
+                    markwon.applyTo(binding.textViewContentPreview, note.content, vaultContext) {
+                        tableReplacement = { Code(getString(R.string.message_cannot_preview_table)) }
+                        maximumTableColumns = 15
+                    }
+                }
+            }
+        }
         observeData()
         setupEditTexts()
         setupMarkdown()
@@ -410,10 +443,6 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
                     if (note.isHidden) activityModel.showNotes(note) else activityModel.hideNotes(note)
                 }
 
-                R.id.action_do_not_sync -> {
-                    if (note.isLocalOnly) activityModel.makeNotesSyncable(note) else activityModel.makeNotesLocal(note)
-                }
-
                 R.id.action_change_color -> {
                     showColorChangeDialog()
                 }
@@ -479,6 +508,11 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
     override fun onPause() {
         model.selectedRange = with(binding.editTextContent) { selectionStart to selectionEnd }
+        val title = pendingTitle
+        if (title != null && title != data.note?.title) {
+            runBlocking { model.flushPendingTitle(title) }
+        }
+        pendingTitle = null
         super.onPause()
     }
 
@@ -619,7 +653,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
                     return@doOnTextChanged
                 }
 
-                model.setNoteTitle(text.toString().trim())
+                pendingTitle = text.toString().trim()
             }
         }
 
@@ -747,11 +781,6 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
             isVisible = !note.isDeleted
         }
 
-        findItem(R.id.action_do_not_sync)?.apply {
-            isChecked = note.isLocalOnly
-            isVisible = !note.isDeleted
-        }
-
         findItem(R.id.action_screen_always_on)?.apply {
             isChecked = note.screenAlwaysOn
             isVisible = !note.isDeleted
@@ -818,6 +847,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
                     setText(data.note.title)
                 }
 
+                tasksAdapter.vaultRelativePath = model.vaultRelativePath.value
                 when {
                     isList -> tasksAdapter.submitList(data.note.taskList)
                     else -> {
@@ -845,6 +875,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
                 tasksAdapter.tasks.clear()
                 tasksAdapter.notifyDataSetChanged()
+                tasksAdapter.vaultRelativePath = model.vaultRelativePath.value
                 tasksAdapter.submitList(data.note.taskList)
                 editTextContent.withOnlyTextWatcher<MarkwonEditorTextWatcher> {
                     setText(data.note.content)
@@ -863,7 +894,9 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
             if (isMarkdownEnabled) {
                 // Seems to be crashing often without wrapping it in a post { } call
                 textViewContentPreview.post {
-                    markwon.applyTo(textViewContentPreview, data.note.content) {
+                    val vaultPath = model.vaultRelativePath.value
+                    val vaultContext = vaultPath?.let { org.qosp.notes.ui.utils.vault.VaultMarkwonContext(it) }
+                    markwon.applyTo(textViewContentPreview, data.note.content, vaultContext) {
                         tableReplacement = { Code(getString(R.string.message_cannot_preview_table)) }
                         maximumTableColumns = 15
                     }

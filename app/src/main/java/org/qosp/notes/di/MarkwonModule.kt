@@ -33,17 +33,28 @@ import org.qosp.notes.ui.editor.markdown.CodeBlockHandler
 import org.qosp.notes.ui.editor.markdown.CodeHandler
 import org.qosp.notes.ui.editor.markdown.HeadingHandler
 import org.qosp.notes.ui.editor.markdown.StrikethroughHandler
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.ui.utils.coil.CoilImagesPlugin
 import org.qosp.notes.ui.utils.resolveAttribute
 
 object MarkwonModule {
 
     val markwonModule = module {
-        factory<Markwon> { getMarkwon(context = androidContext(), preferenceRepository = get()) }
+        factory<Markwon> {
+            getMarkwon(
+                context = androidContext(),
+                preferenceRepository = get(),
+                vaultTreeAccess = get(),
+            )
+        }
         factory<MarkwonEditor> { getMarkWonEditor(markwon = get()) }
     }
 
-    private fun getMarkwon(context: Context, preferenceRepository: PreferenceRepository): Markwon = builder(context)
+    private fun getMarkwon(
+        context: Context,
+        preferenceRepository: PreferenceRepository,
+        vaultTreeAccess: VaultTreeAccess,
+    ): Markwon = builder(context)
         .usePlugin(LinkifyPlugin.create(EMAIL_ADDRESSES or WEB_URLS))
         .usePlugin(SoftBreakAddsNewLinePlugin.create())
         .usePlugin(MovementMethodPlugin.create(getInstance()))
@@ -65,7 +76,7 @@ object MarkwonModule {
                         return@SpanFactory BackgroundColorSpan(typedValue.data)
                     })
         })
-        .usePlugin(CoilImagesPlugin.create(context, preferenceRepository))
+        .usePlugin(CoilImagesPlugin.create(context, preferenceRepository, vaultTreeAccess))
         .apply {
             val mainColor = context.resolveAttribute(colorMarkdownTask)
             val backgroundColor = context.resolveAttribute(colorBackground)

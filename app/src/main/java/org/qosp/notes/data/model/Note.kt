@@ -112,7 +112,14 @@ data class Note(
             val task = result?.let {
                 val checked = it.groupValues[1].lowercase() == "x"
                 NoteTask(id = index.toLong(), content = it.groupValues[2].trim(), isDone = checked)
-            } ?: tasks.removeLastOrNull()?.let { t -> t.copy(content = t.content + line.trim()) }
+            } ?: tasks.removeLastOrNull()?.let { t ->
+                val extra = line.trim()
+                if (extra.contains("](") || extra.startsWith("![")) {
+                    t
+                } else {
+                    t.copy(content = "${t.content.trim()} $extra".trim())
+                }
+            }
             task?.let { tasks.add(it) }
         }
         return tasks.toList()

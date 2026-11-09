@@ -1,35 +1,33 @@
 package org.qosp.notes.ui.settings
 
+import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.msoul.datastore.EnumPreference
 import org.qosp.notes.data.repo.NoteRepository
-import org.qosp.notes.data.sync.nextcloud.NextcloudConfig
+import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.preferences.PreferenceRepository
-import org.qosp.notes.preferences.SyncMode
+import java.time.Instant
 
 class SettingsViewModel(
+    private val context: Context,
     private val preferenceRepository: PreferenceRepository,
-    private val noteRepository: NoteRepository
+    private val noteRepository: NoteRepository,
+    private val vaultTreeAccess: VaultTreeAccess,
+    private val vaultSyncCoordinator: VaultSyncCoordinator,
 ) : ViewModel() {
 
     val appPreferences = preferenceRepository.getAll()
-    val loggedInUsername = NextcloudConfig.fromPreferences(preferenceRepository).map { it?.username }
 
     fun <T> setPreference(pref: T) where T : Enum<T>, T : EnumPreference {
-        when (pref) {
-            is CloudService -> {
-                if (pref in listOf(CloudService.FILE_STORAGE, CloudService.DISABLED)) {
-                    setPreference(SyncMode.ALWAYS)
-                }
-            }
-        }
         viewModelScope.launch(Dispatchers.IO) {
             preferenceRepository.set(pref)
         }
@@ -39,36 +37,45 @@ class SettingsViewModel(
         preferenceRepository.set(pref)
     }
 
-    fun getEncryptedString(key: String): Flow<String> {
-        return preferenceRepository.getEncryptedString(key)
-    }
+    fun getEncryptedString(key: String): Flow<String> = preferenceRepository.getEncryptedString(key)
 
     fun setEncryptedString(key: String, value: String) =
         viewModelScope.launch { preferenceRepository.putEncryptedStrings(key to value) }
 
-    fun clearNextcloudCredentials() = viewModelScope.launch {
-        preferenceRepository.putEncryptedStrings(
-            PreferenceRepository.NEXTCLOUD_INSTANCE_URL to "",
-            PreferenceRepository.NEXTCLOUD_PASSWORD to "",
-            PreferenceRepository.NEXTCLOUD_USERNAME to "",
-        )
-        noteRepository.deleteIdMappingsForCloudService(CloudService.NEXTCLOUD)
+    fun rebuildVaultIndex() = viewModelScope.launch(Dispatchers.IO) {
+        noteRepository.syncNotes()
+    }
+
+    fun clearVaultRecoveryState() = viewModelScope.launch(Dispatchers.IO) {
+        val loc = preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
+        if (loc.isBlank()) return@launch
+        val root = DocumentFile.fromTreeUri(context, Uri.parse(loc)) ?: return@launch
+        org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore(context, root).clearAllRecoveryState()
     }
 
     /**
-     * Removes all IdMappings for file storage if the current cloud service is FILE_STORAGE
-     * and the new storage location is different from the previous one.
-     *
-     * @param newLocation The new storage location URI as a string
-     * @param previousLocation The previous storage location URI as a string
+     * Atomically switch vault folder: URI, cutoff, mapping wipe when path changes, and tree warm-up.
      */
-    fun removeFileStorageIdMappingsIfNeeded(newLocation: String, previousLocation: String) {
-        if (newLocation != previousLocation) {
-            viewModelScope.launch(Dispatchers.IO) {
-                val currentCloudService = preferenceRepository.getAll().first().cloudService
-                if (currentCloudService == CloudService.FILE_STORAGE) {
+    fun applyVaultFolderChange(newLocation: String, previousLocation: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val triggerSync = vaultSyncCoordinator.withVaultLock {
+                if (newLocation == previousLocation && newLocation.isNotBlank()) {
+                    vaultTreeAccess.warmFrom(Uri.parse(newLocation))
+                    return@withVaultLock true
+                }
+                vaultSyncCoordinator.bumpGeneration()
+                preferenceRepository.putEncryptedStrings(
+                    PreferenceRepository.STORAGE_LOCATION to newLocation,
+                    PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
+                )
+                if (previousLocation.isNotBlank() && newLocation != previousLocation) {
                     noteRepository.deleteIdMappingsForCloudService(CloudService.FILE_STORAGE)
                 }
+                vaultTreeAccess.warmFrom(Uri.parse(newLocation))
+                true
+            }
+            if (triggerSync) {
+                noteRepository.syncNotes()
             }
         }
     }

@@ -232,12 +232,6 @@ dependencies {
     implementation(libs.exoplayerCore)
     implementation(libs.exoplayerUi)
 
-    // Retrofit
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging.interceptor)
-    implementation(libs.retrofit)
-    implementation(libs.retrofit2Convertor)
-
     // Software Quality
     debugImplementation(libs.leakcanaryAndroid)
     implementation(libs.bundles.acra)

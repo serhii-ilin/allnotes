@@ -16,7 +16,6 @@ import org.qosp.notes.ui.notebooks.dialog.NotebookDialogViewModel
 import org.qosp.notes.ui.reminders.EditReminderViewModel
 import org.qosp.notes.ui.search.SearchViewModel
 import org.qosp.notes.ui.settings.SettingsViewModel
-import org.qosp.notes.ui.sync.nextcloud.NextcloudViewModel
 import org.qosp.notes.ui.tags.TagsViewModel
 import org.qosp.notes.ui.tags.dialog.TagDialogViewModel
 
@@ -27,7 +26,6 @@ object UIModule {
         viewModelOf(::ArchiveViewModel)
         viewModelOf(::TagsViewModel)
         viewModelOf(::TagDialogViewModel)
-        viewModelOf(::NextcloudViewModel)
         viewModelOf(::SettingsViewModel)
         viewModelOf(::SearchViewModel)
         viewModelOf(::EditReminderViewModel)

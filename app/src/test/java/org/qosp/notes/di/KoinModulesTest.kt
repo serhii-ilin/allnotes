@@ -21,7 +21,6 @@ class KoinModulesTest : KoinTest {
         val allModules = module {
             includes(
                 MarkwonModule.markwonModule,
-                NextcloudModule.nextcloudModule,
                 PreferencesModule.prefModule,
                 RepositoryModule.repoModule,
                 UIModule.uiModule,

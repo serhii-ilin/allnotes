@@ -27,7 +27,7 @@ import org.qosp.notes.data.model.Tag
         Reminder::class,
         IdMapping::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(DatabaseConverters::class)
@@ -71,6 +71,56 @@ abstract class AppDatabase : RoomDatabase() {
                     execSQL("CREATE INDEX IF NOT EXISTS cloud_ids_id_index ON cloud_ids (localNoteId)")
                     execSQL("CREATE INDEX IF NOT EXISTS cloud_ids_id_provider_index ON cloud_ids (localNoteId, provider)")
                 }
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS cloud_ids_id_provider_index")
+                val cursor = db.query(
+                    """
+                    SELECT localNoteId, provider FROM cloud_ids
+                    GROUP BY localNoteId, provider HAVING COUNT(*) > 1
+                    """.trimIndent(),
+                )
+                while (cursor.moveToNext()) {
+                    val localId = cursor.getLong(0)
+                    val provider = cursor.getString(1)
+                    val rows = db.query(
+                        "SELECT mappingId, storageUri FROM cloud_ids WHERE localNoteId = ? AND provider = ?",
+                        arrayOf(localId, provider),
+                    )
+                    var winnerId = -1L
+                    while (rows.moveToNext()) {
+                        val id = rows.getLong(0)
+                        val uri = rows.getString(1)
+                        val isVault = uri != null && !uri.contains("://")
+                        if (isVault) {
+                            winnerId = id
+                            break
+                        }
+                    }
+                    rows.close()
+                    if (winnerId < 0) {
+                        val fallback = db.query(
+                            "SELECT MAX(mappingId) FROM cloud_ids WHERE localNoteId = ? AND provider = ?",
+                            arrayOf(localId, provider),
+                        )
+                        if (fallback.moveToFirst()) winnerId = fallback.getLong(0)
+                        fallback.close()
+                    }
+                    if (winnerId >= 0) {
+                        db.execSQL(
+                            "DELETE FROM cloud_ids WHERE localNoteId = ? AND provider = ? AND mappingId != ?",
+                            arrayOf(localId, provider, winnerId),
+                        )
+                    }
+                }
+                cursor.close()
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS cloud_ids_local_provider_unique " +
+                        "ON cloud_ids (localNoteId, provider)",
+                )
             }
         }
     }

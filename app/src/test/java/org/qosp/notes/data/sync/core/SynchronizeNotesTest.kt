@@ -8,7 +8,9 @@ import io.mockk.impl.annotations.InjectMockKs
 import io.mockk.impl.annotations.MockK
 import io.mockk.junit4.MockKRule
 import io.mockk.mockkStatic
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import org.qosp.notes.data.dao.NotebookDao
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
@@ -26,6 +28,9 @@ class SynchronizeNotesTest {
     @MockK
     private lateinit var idMappingRepository: IdMappingRepository
 
+    @MockK
+    private lateinit var notebookDao: NotebookDao
+
     @InjectMockKs
     private lateinit var synchronizeNotes: SynchronizeNotes
 
@@ -33,6 +38,7 @@ class SynchronizeNotesTest {
     fun setup() {
         mockkStatic(Log::class)
         every { Log.d(any(), any()) } returns 0
+        coEvery { notebookDao.getById(any()) } returns flowOf(null)
     }
 
     @Test
@@ -40,15 +46,15 @@ class SynchronizeNotesTest {
         // Given
         val localNotes = emptyList<Note>()
         val remoteNotes = emptyList<SyncNote>()
-        coEvery { idMappingRepository.getAllByProvider(CloudService.NEXTCLOUD) } returns emptyList()
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns emptyList()
 
         // When
-        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.NEXTCLOUD)
+        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.FILE_STORAGE)
 
         // Then
         assertEquals(0, result.localUpdates.size)
         assertEquals(0, result.remoteUpdates.size)
-        coVerify { idMappingRepository.getAllByProvider(CloudService.NEXTCLOUD) }
+        coVerify { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) }
     }
 
     @Test
@@ -57,10 +63,15 @@ class SynchronizeNotesTest {
         val localNote = Note(id = 1L, title = "Local Note", modifiedDate = 100L)
         val localNotes = listOf(localNote)
         val remoteNotes = emptyList<SyncNote>()
-        coEvery { idMappingRepository.getAllByProvider(CloudService.NEXTCLOUD) } returns emptyList()
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns emptyList()
 
         // When
-        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.NEXTCLOUD)
+        val result = synchronizeNotes(
+            localNotes,
+            remoteNotes,
+            CloudService.FILE_STORAGE,
+            vaultExportCutoffEpoch = 1L,
+        )
 
         // Then
         assertEquals(0, result.localUpdates.size)
@@ -79,10 +90,10 @@ class SynchronizeNotesTest {
             SyncNote(id = 0L, idStr = "remote1", title = "Remote Note", lastModified = 100L, content = null)
         val localNotes = emptyList<Note>()
         val remoteNotes = listOf(remoteNote)
-        coEvery { idMappingRepository.getAllByProvider(CloudService.NEXTCLOUD) } returns emptyList()
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns emptyList()
 
         // When
-        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.NEXTCLOUD)
+        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.FILE_STORAGE)
 
         // Then
         assertEquals(1, result.localUpdates.size)
@@ -101,15 +112,16 @@ class SynchronizeNotesTest {
         val mapping = IdMapping(
             localNoteId = 1L,
             remoteNoteId = 2L,
-            provider = CloudService.NEXTCLOUD,
+            provider = CloudService.FILE_STORAGE,
             extras = null,
-            isDeletedLocally = false
+            isDeletedLocally = false,
+            storageUri = "2",
         )
 
-        coEvery { idMappingRepository.getAllByProvider(CloudService.NEXTCLOUD) } returns listOf(mapping)
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
 
         // When
-        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.NEXTCLOUD)
+        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.FILE_STORAGE)
 
         // Then
         assertEquals(0, result.localUpdates.size)
@@ -127,15 +139,16 @@ class SynchronizeNotesTest {
         val mapping = IdMapping(
             localNoteId = 1L,
             remoteNoteId = 2L,
-            provider = CloudService.NEXTCLOUD,
+            provider = CloudService.FILE_STORAGE,
             extras = null,
-            isDeletedLocally = false
+            isDeletedLocally = false,
+            storageUri = "2",
         )
 
-        coEvery { idMappingRepository.getAllByProvider(CloudService.NEXTCLOUD) } returns listOf(mapping)
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
 
         // When
-        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.NEXTCLOUD)
+        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.FILE_STORAGE)
 
         // Then
         assertEquals(1, result.localUpdates.size)
@@ -152,15 +165,16 @@ class SynchronizeNotesTest {
         val mapping = IdMapping(
             localNoteId = 1L,
             remoteNoteId = 2L,
-            provider = CloudService.NEXTCLOUD,
+            provider = CloudService.FILE_STORAGE,
             extras = null,
-            isDeletedLocally = false
+            isDeletedLocally = false,
+            storageUri = "2",
         )
 
-        coEvery { idMappingRepository.getAllByProvider(CloudService.NEXTCLOUD) } returns listOf(mapping)
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
 
         // When
-        val result = synchronizeNotes(emptyList(), listOf(remoteNote), CloudService.NEXTCLOUD)
+        val result = synchronizeNotes(emptyList(), listOf(remoteNote), CloudService.FILE_STORAGE)
 
         // Then
         assertEquals(0, result.localUpdates.size)
@@ -177,15 +191,16 @@ class SynchronizeNotesTest {
         val mapping = IdMapping(
             localNoteId = 1L,
             remoteNoteId = 2L,
-            provider = CloudService.NEXTCLOUD,
+            provider = CloudService.FILE_STORAGE,
             extras = null,
-            isDeletedLocally = false
+            isDeletedLocally = false,
+            storageUri = "2",
         )
 
-        coEvery { idMappingRepository.getAllByProvider(CloudService.NEXTCLOUD) } returns listOf(mapping)
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
 
         // When
-        val result = synchronizeNotes(listOf(localNote), emptyList(), CloudService.NEXTCLOUD)
+        val result = synchronizeNotes(listOf(localNote), emptyList(), CloudService.FILE_STORAGE)
 
         // Then
         assertEquals(1, result.localUpdates.size)
@@ -200,15 +215,67 @@ class SynchronizeNotesTest {
     }
 
     @Test
+    fun `vault does not export when cutoff unset`() = runTest {
+        val localNote = Note(id = 2L, title = "New", creationDate = 500L, modifiedDate = 500L)
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns emptyList()
+        val result = synchronizeNotes(
+            listOf(localNote),
+            emptyList(),
+            CloudService.FILE_STORAGE,
+            vaultExportCutoffEpoch = null,
+        )
+        assertEquals(0, result.remoteUpdates.size)
+    }
+
+    @Test
+    fun `vault exports legacy local note when folder configured`() = runTest {
+        val localNote = Note(id = 1L, title = "Old", creationDate = 100L, modifiedDate = 100L)
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns emptyList()
+
+        val result = synchronizeNotes(
+            listOf(localNote),
+            emptyList(),
+            CloudService.FILE_STORAGE,
+            vaultExportCutoffEpoch = 200L,
+        )
+
+        assertEquals(1, result.remoteUpdates.size)
+        assertEquals(localNote, (result.remoteUpdates[0] as NoteAction.Create).note)
+    }
+
+    @Test
+    fun `vault skips bin when remote missing and scan not succeeded`() = runTest {
+        val localNote = Note(id = 1L, title = "Note", modifiedDate = 100L)
+        val mapping = IdMapping(
+            localNoteId = 1L,
+            remoteNoteId = null,
+            provider = CloudService.FILE_STORAGE,
+            extras = "abc",
+            isDeletedLocally = false,
+            storageUri = "Work/Note.md",
+        )
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
+
+        val result = synchronizeNotes(
+            listOf(localNote),
+            emptyList(),
+            CloudService.FILE_STORAGE,
+            remoteScanSucceeded = false,
+        )
+
+        assertEquals(0, result.localUpdates.size)
+    }
+
+    @Test
     fun `file storage service should use storageUri instead of remoteNoteId`() = runTest {
         // Given
         val localNote = Note(id = 1L, title = "Local Note", modifiedDate = 200L)
         val remoteNote = SyncNote(
             id = 0L,
-            idStr = "file://path/to/note.txt",
+            idStr = "path/to/note.txt",
             title = "Remote Note",
             lastModified = 100L,
-            content = null
+            content = "---\n---\nLocal Note\n",
         )
         val mapping = IdMapping(
             localNoteId = 1L,
@@ -216,7 +283,7 @@ class SynchronizeNotesTest {
             provider = CloudService.FILE_STORAGE,
             extras = null,
             isDeletedLocally = false,
-            storageUri = "file://path/to/note.txt"
+            storageUri = "path/to/note.txt",
         )
 
         coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
@@ -240,7 +307,7 @@ class SynchronizeNotesTest {
         val remoteNotes = emptyList<SyncNote>()
 
         // When
-        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.NEXTCLOUD, SyncMethod.TITLE)
+        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.FILE_STORAGE, SyncMethod.TITLE)
 
         // Then
         assertEquals(0, result.localUpdates.size)
@@ -255,7 +322,7 @@ class SynchronizeNotesTest {
         val remoteNotes = emptyList<SyncNote>()
 
         // When
-        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.NEXTCLOUD, SyncMethod.TITLE)
+        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.FILE_STORAGE, SyncMethod.TITLE)
 
         // Then
         assertEquals(0, result.localUpdates.size)
@@ -276,7 +343,7 @@ class SynchronizeNotesTest {
         val remoteNotes = listOf(remoteNote)
 
         // When
-        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.NEXTCLOUD, SyncMethod.TITLE)
+        val result = synchronizeNotes(localNotes, remoteNotes, CloudService.FILE_STORAGE, SyncMethod.TITLE)
 
         // Then
         assertEquals(1, result.localUpdates.size)
@@ -294,7 +361,7 @@ class SynchronizeNotesTest {
         val remoteNote = SyncNote(id = 0L, idStr = "remote1", title = "Same Title", lastModified = 100L, content = null)
 
         // When
-        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.NEXTCLOUD, SyncMethod.TITLE)
+        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.FILE_STORAGE, SyncMethod.TITLE)
 
         // Then
         assertEquals(0, result.localUpdates.size)
@@ -311,7 +378,7 @@ class SynchronizeNotesTest {
         val remoteNote = SyncNote(id = 0L, idStr = "remote1", title = "Same Title", lastModified = 200L, content = null)
 
         // When
-        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.NEXTCLOUD, SyncMethod.TITLE)
+        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.FILE_STORAGE, SyncMethod.TITLE)
 
         // Then
         assertEquals(1, result.localUpdates.size)
@@ -328,7 +395,7 @@ class SynchronizeNotesTest {
         val remoteNote = SyncNote(id = 0L, idStr = "remote1", title = "Same Title", lastModified = 100L, content = null)
 
         // When
-        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.NEXTCLOUD, SyncMethod.TITLE)
+        val result = synchronizeNotes(listOf(localNote), listOf(remoteNote), CloudService.FILE_STORAGE, SyncMethod.TITLE)
 
         // Then
         assertEquals(0, result.localUpdates.size)

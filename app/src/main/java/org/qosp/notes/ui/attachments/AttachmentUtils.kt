@@ -4,9 +4,13 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
+import org.koin.java.KoinJavaComponent.getKoin
 import org.qosp.notes.App
 import org.qosp.notes.BuildConfig
 import org.qosp.notes.data.model.Attachment
+import org.qosp.notes.data.sync.fs.vault.VaultPaths
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
+import org.qosp.notes.data.sync.fs.vault.resolveVaultStoredPath
 import java.io.File
 
 fun getAttachmentFilename(context: Context, uri: Uri): String? {
@@ -35,13 +39,23 @@ fun Attachment.Companion.fromUri(context: Context, uri: Uri): Attachment {
 }
 
 fun getAttachmentUri(context: Context, path: String, mediaFolder: String = App.MEDIA_FOLDER): Uri? {
-    return when {
-        path.startsWith("content://") || path.startsWith("file://") -> Uri.parse(path)
-        else -> {
-            runCatching {
+    return runCatching {
+        when {
+            VaultPaths.isVaultRelativeAttachment(path) -> {
+                val tree = runCatching { getKoin().get<VaultTreeAccess>() }.getOrNull() ?: return null
+                resolveVaultStoredPath(tree, path)
+            }
+            path.startsWith("content://") || path.startsWith("file://") -> Uri.parse(path)
+            else -> {
                 val dir = File(context.filesDir, mediaFolder).also { it.mkdir() }
-                FileProvider.getUriForFile(context, "${BuildConfig.APPLICATION_ID}.provider", File(dir, path))
-            }.getOrNull()
+                val file = File(dir, path)
+                if (!file.isFile) return null
+                FileProvider.getUriForFile(
+                    context,
+                    "${BuildConfig.APPLICATION_ID}.provider",
+                    file,
+                )
+            }
         }
-    }
+    }.getOrNull()
 }

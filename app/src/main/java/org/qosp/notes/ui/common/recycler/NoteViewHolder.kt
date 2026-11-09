@@ -22,6 +22,7 @@ import org.qosp.notes.ui.attachments.recycler.AttachmentViewHolder
 import org.qosp.notes.ui.attachments.recycler.AttachmentsAdapter
 import org.qosp.notes.ui.attachments.recycler.AttachmentsPreviewGridManager
 import org.qosp.notes.ui.editor.markdown.applyTo
+import org.qosp.notes.ui.utils.vault.VaultMarkwonContext
 import org.qosp.notes.ui.tasks.TasksAdapter
 import org.qosp.notes.ui.utils.dp
 import org.qosp.notes.ui.utils.ellipsize
@@ -42,6 +43,7 @@ class NoteViewHolder(
 
     private val defaultStrokeWidth = 1.dp(context)
     private val selectedStrokeWidth = 2.dp(context)
+    private var vaultRelativePath: String? = null
 
     init {
         binding.recyclerAttachments.apply {
@@ -123,7 +125,8 @@ class NoteViewHolder(
 
             if (note.isMarkdownEnabled && note.content.isNotBlank()) {
                 try {
-                    markwon.applyTo(textViewContent, note.content) {
+                    val vaultContext = vaultRelativePath?.let { VaultMarkwonContext(it) }
+                    markwon.applyTo(textViewContent, note.content, vaultContext) {
                         maximumTableColumns = 4
                         tableReplacement = { Code(context.getString(R.string.message_cannot_preview_table)) }
                     }
@@ -151,6 +154,7 @@ class NoteViewHolder(
                         context.resources.getQuantityString(R.plurals.more_items, moreItems, moreItems)
                 }
             }
+            tasksAdapter.vaultRelativePath = vaultRelativePath
             tasksAdapter.submitList(taskList, useDiff)
         }
     }
@@ -175,12 +179,28 @@ class NoteViewHolder(
         }
     }
 
-    fun runPayloads(note: Note, payloads: Set<NoteRecyclerAdapter.Payload>) {
+    fun runPayloads(note: Note, payloads: Set<NoteRecyclerAdapter.Payload>, vaultPath: String? = vaultRelativePath) {
         if (NoteRecyclerAdapter.Payload.TitleChanged in payloads) setTitle(note)
+        if (NoteRecyclerAdapter.Payload.VaultPathChanged in payloads) {
+            vaultRelativePath = vaultPath
+            setTextContent(note)
+            tasksAdapter.vaultRelativePath = vaultRelativePath
+            if (note.isList && note.taskList.isNotEmpty() && !note.isCompactPreview) {
+                setTasks(note, useDiff = true)
+            }
+        }
         if (NoteRecyclerAdapter.Payload.ContentChanged in payloads ||
             NoteRecyclerAdapter.Payload.MarkdownChanged in payloads
-        ) setTextContent(note)
-        if (NoteRecyclerAdapter.Payload.TasksChanged in payloads) setTasks(note, useDiff = true)
+        ) {
+            setTextContent(note)
+            if (note.isList && note.taskList.isNotEmpty() && !note.isCompactPreview) {
+                setTasks(note, useDiff = true)
+            }
+        }
+        if (NoteRecyclerAdapter.Payload.TasksChanged in payloads) {
+            tasksAdapter.vaultRelativePath = vaultRelativePath
+            setTasks(note, useDiff = true)
+        }
         if (NoteRecyclerAdapter.Payload.ColorChanged in payloads) updateBackgroundColor(note.color)
         if (NoteRecyclerAdapter.Payload.TagsChanged in payloads) updateTags(note.tags)
         if (NoteRecyclerAdapter.Payload.AttachmentsChanged in payloads) setupAttachments(note)
@@ -195,7 +215,8 @@ class NoteViewHolder(
         }
     }
 
-    fun bind(note: Note) {
+    fun bind(note: Note, vaultRelativePath: String? = null) {
+        this.vaultRelativePath = vaultRelativePath
         setTextContent(note)
         setTasks(note, useDiff = false)
         setTitle(note)
