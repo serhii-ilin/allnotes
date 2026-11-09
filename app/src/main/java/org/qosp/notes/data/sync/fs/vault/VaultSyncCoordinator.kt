@@ -7,7 +7,8 @@ import org.qosp.notes.preferences.PreferenceRepository
 
 /**
  * Single serialization point for vault pull/push/refresh vs folder reconfiguration.
- * Not a cross-store SQL transaction; generation fencing blocks stale pushes after folder change.
+ * **Not re-entrant:** callers must not invoke [withVaultLock] while already inside [withVaultLock]
+ * (e.g. [org.qosp.notes.data.repo.NoteRepositoryImpl.syncNotes] holds the lock while applying imports).
  */
 class VaultSyncCoordinator(
     private val preferenceRepository: PreferenceRepository,

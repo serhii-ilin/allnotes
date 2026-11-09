@@ -10,13 +10,15 @@ object VaultAttachments {
         val found = linkedMapOf<String, Attachment>()
         fun ingest(target: String) {
             if (target.contains("://")) return
-            val vaultPath = runCatching { VaultLinkResolver.resolve(noteRelativePath, target) }.getOrNull() ?: return
+            val vaultPath = runCatching {
+                VaultLinkResolver.resolve(noteRelativePath, normalizeLinkTarget(target))
+            }.getOrNull() ?: return
             val stored = VaultPaths.vaultRelative(vaultPath)
             if (stored in found) return
             val type = guessType(vaultPath)
             found[stored] = Attachment(type = type, path = stored, description = VaultPaths.fileName(vaultPath))
         }
-        imageLinkRegex.findAll(body).forEach { ingest(it.groupValues[1]) }
+        forEachImageTarget(body) { ingest(it) }
         fileLinkRegex.findAll(body).forEach { ingest(it.groupValues[1]) }
         return found.values.toList()
     }
@@ -29,7 +31,6 @@ object VaultAttachments {
         } else if (att.startsWith("$parent/")) {
             att.removePrefix("$parent/")
         } else {
-            // path relative from note directory
             val noteDir = VaultPaths.parentPath(noteRelativePath)
             val fromRoot = att
             if (noteDir.isEmpty()) fromRoot else fromRoot.removePrefix("$noteDir/")
@@ -42,7 +43,8 @@ object VaultAttachments {
     }
 
     /**
-     * Removes only vault markdown link tokens that resolve to [removedVaultRelPaths].
+     * Removes only **image** markdown links for [removedVaultRelPaths].
+     * Skips fenced code blocks and inline `` `code` `` spans.
      */
     fun removeVaultLinksForPaths(
         body: String,
@@ -50,17 +52,68 @@ object VaultAttachments {
         removedVaultRelPaths: Set<String>,
     ): String {
         if (removedVaultRelPaths.isEmpty()) return body
-        fun targetsRemoved(rawTarget: String): Boolean {
-            val resolved = VaultLinkResolver.resolve(noteRelativePath, rawTarget) ?: return false
-            return VaultPaths.vaultRelative(resolved) in removedVaultRelPaths
+        val out = StringBuilder()
+        var inFence = false
+        body.lineSequence().forEach { line ->
+            if (line.trim().startsWith("```")) {
+                inFence = !inFence
+                if (out.isNotEmpty()) out.append('\n')
+                out.append(line)
+                return@forEach
+            }
+            val processed = if (inFence) line else removeImageLinksOutsideInlineCode(line, noteRelativePath, removedVaultRelPaths)
+            if (out.isNotEmpty()) out.append('\n')
+            out.append(processed)
         }
-        var result = imageLinkRegex.replace(body) { match ->
-            if (targetsRemoved(match.groupValues[1])) "" else match.value
+        return out.toString()
+    }
+
+    private fun removeImageLinksOutsideInlineCode(
+        line: String,
+        noteRelativePath: String,
+        removedVaultRelPaths: Set<String>,
+    ): String {
+        val parts = line.split('`')
+        return buildString {
+            parts.forEachIndexed { idx, part ->
+                if (idx > 0) append('`')
+                if (idx % 2 == 1) {
+                    append(part)
+                } else {
+                    append(
+                        imageLinkRegex.replace(part) { match ->
+                            val target = normalizeLinkTarget(match.groupValues[1])
+                            if (isRemovedVaultImageTarget(noteRelativePath, target, removedVaultRelPaths)) {
+                                ""
+                            } else {
+                                match.value
+                            }
+                        },
+                    )
+                }
+            }
         }
-        result = fileLinkRegex.replace(result) { match ->
-            if (targetsRemoved(match.groupValues[1])) "" else match.value
+    }
+
+    private fun isRemovedVaultImageTarget(
+        noteRelativePath: String,
+        rawTarget: String,
+        removedVaultRelPaths: Set<String>,
+    ): Boolean {
+        val resolved = VaultLinkResolver.resolve(noteRelativePath, rawTarget) ?: return false
+        return VaultPaths.vaultRelative(resolved) in removedVaultRelPaths
+    }
+
+    private fun normalizeLinkTarget(raw: String): String {
+        val t = raw.trim()
+        if (t.startsWith('<') && t.endsWith('>')) {
+            return t.substring(1, t.length - 1).trim()
         }
-        return result
+        return t
+    }
+
+    private inline fun forEachImageTarget(body: String, consume: (String) -> Unit) {
+        imageLinkRegex.findAll(body).forEach { consume(normalizeLinkTarget(it.groupValues[1])) }
     }
 
     fun mergeAttachmentLinks(body: String, noteRelativePath: String, attachments: List<Attachment>): String {

@@ -33,6 +33,8 @@ object VaultDocumentTree {
 
     /**
      * A mapped path that [findByRelativePath] can open must appear in [indexed]; otherwise listing was incomplete.
+     * (Residual: partial directory listings that omit notes without failing [findByRelativePath] may still require
+     * future directory-entry-count heuristics — only the single-path probe is implemented here.)
      */
     fun isIndexCompleteForMappedPaths(
         root: DocumentFile,

@@ -61,11 +61,22 @@ class VaultImportBaselineOrderingTest {
             |Body
         """.trimMargin()
 
+    private fun fileToSyncNote(
+        relativePath: String,
+        fullText: String,
+        lastModified: Long = 10L,
+    ): SyncNote = SyncNote(
+        id = 0,
+        idStr = relativePath,
+        title = VaultPaths.noteBaseName(relativePath),
+        content = fullText,
+        lastModified = lastModified,
+        extra = VaultContentHash.ofText(fullText),
+    )
+
     private fun noteAfterMetadata(body: String = "Body"): Note {
         val raw = taggedFileBody()
-        val imported = VaultSyncImport.noteFromRemote(
-            SyncNote(0, path, "Note", raw, 10L, VaultContentHash.ofText(raw)),
-        )
+        val imported = VaultSyncImport.noteFromRemote(fileToSyncNote(path, raw))
         return imported.copy(
             id = 1L,
             notebookId = 42L,
@@ -111,13 +122,13 @@ class VaultImportBaselineOrderingTest {
             storageUri = path,
         )
         coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
-        val unchangedRemote = SyncNote(0, path, "Note", raw, 10L, VaultContentHash.ofText(raw))
+        val unchangedRemote = fileToSyncNote(path, raw)
         val second = synchronizeNotes(listOf(note), listOf(unchangedRemote), CloudService.FILE_STORAGE)
         assertEquals("unexpected churn on unchanged file: $second", 0, second.vaultConflicts.size)
         assertEquals(0, second.remoteUpdates.size)
 
         val editedRaw = raw.replace("Body", "Body from desktop")
-        val edited = SyncNote(0, path, "Note", editedRaw, 50L, VaultContentHash.ofText(editedRaw))
+        val edited = fileToSyncNote(path, editedRaw, lastModified = 50L)
         val third = synchronizeNotes(listOf(note), listOf(edited), CloudService.FILE_STORAGE)
         assertEquals(1, third.localUpdates.size)
         assertEquals(0, third.vaultConflicts.size)

@@ -71,7 +71,27 @@ class NoteRepositoryImpl(
         )
     }
 
-  private suspend fun persistVaultMappingBaseline(
+    private suspend fun persistVaultMappingBaselineForCreate(
+        noteId: Long,
+        syncNote: org.qosp.notes.data.sync.core.SyncNote,
+        provider: CloudService,
+    ) {
+        val local = getById(noteId).first() ?: return
+        val mapping = syncNote.getMapping(noteId, provider)
+        val gen = vaultSyncCoordinator.currentGeneration()
+        val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        val state = VaultMappingState.fromDiskSync(
+            syncNote.content.orEmpty(),
+            local,
+            syncNote.idStr,
+            VaultSyncImport.vaultPathsFromNote(local),
+            gen,
+            notebookName,
+        )
+        idMappingDao.insert(mapping.copy(extras = VaultMappingState.encode(state)))
+    }
+
+    private suspend fun persistVaultMappingBaseline(
         noteId: Long,
         relativePath: String,
         rawContent: String,
@@ -203,7 +223,8 @@ class NoteRepositoryImpl(
                 )
 
                 if (syncMethod == SyncMethod.TITLE) applyMappingChanges(syncResult, syncProvider) // Initial import
-                applyLocalUpdates(syncResult.localUpdates, syncProvider)
+                // Caller holds [vaultSyncCoordinator.withVaultLock]; do not re-enter.
+                applyLocalUpdates(syncResult.localUpdates, syncProvider, vaultLockHeld = true)
                 handleVaultConflicts(syncResult.vaultConflicts, syncProvider)
                 refreshVaultAttachmentIndex(syncProvider)
                 pendingRemoteUpdates = syncResult.remoteUpdates
@@ -220,7 +241,15 @@ class NoteRepositoryImpl(
         return lockedResult
     }
 
-    private suspend fun applyLocalUpdates(localUpdates: List<NoteAction>, syncProvider: ISyncBackend) {
+    /**
+     * @param vaultLockHeld When true, FILE_STORAGE baseline persistence runs without acquiring
+     *   the vault mutex (required when called from [syncNotes]).
+     */
+    private suspend fun applyLocalUpdates(
+        localUpdates: List<NoteAction>,
+        syncProvider: ISyncBackend,
+        vaultLockHeld: Boolean = false,
+    ) {
         for (action in localUpdates) {
             try {
                 when (action) {
@@ -234,23 +263,10 @@ class NoteRepositoryImpl(
                         val noteId = insertNote(imported, sync = false)
                         if (syncProvider.type == CloudService.FILE_STORAGE) {
                             vaultPortableMetadata.applyFromRemote(noteId, syncNote)
-                            vaultSyncCoordinator.withVaultLock {
-                                val local = getById(noteId).first() ?: return@withVaultLock
-                                val mapping = syncNote.getMapping(noteId, syncProvider.type)
-                                val gen = vaultSyncCoordinator.currentGeneration()
-                                val notebookName = local.notebookId?.let {
-                                    notebookDao.getById(it).firstOrNull()?.name
-                                }
-                                val state = VaultMappingState.fromDiskSync(
-                                    syncNote.content.orEmpty(),
-                                    local,
-                                    syncNote.idStr,
-                                    VaultSyncImport.vaultPathsFromNote(local),
-                                    gen,
-                                    notebookName,
-                                )
-                                idMappingDao.insert(mapping.copy(extras = VaultMappingState.encode(state)))
+                            check(vaultLockHeld) {
+                                "FILE_STORAGE create mapping requires vault lock (syncNotes)"
                             }
+                            persistVaultMappingBaselineForCreate(noteId, syncNote, syncProvider.type)
                         } else {
                             idMappingDao.insert(syncNote.getMapping(noteId, syncProvider.type))
                         }
@@ -271,17 +287,18 @@ class NoteRepositoryImpl(
                         if (syncProvider.type == CloudService.FILE_STORAGE) {
                             updateNote(note, sync = false)
                             vaultPortableMetadata.applyFromRemote(action.note.id, action.remoteNote)
+                            check(vaultLockHeld) {
+                                "FILE_STORAGE pull mapping requires vault lock (syncNotes)"
+                            }
                             val prior = VaultMappingState.resolve(
                                 idMappingDao.getByLocalIdAndProvider(action.note.id, syncProvider.type)?.extras,
                             )
-                            vaultSyncCoordinator.withVaultLock {
-                                persistVaultMappingBaseline(
-                                    action.note.id,
-                                    action.remoteNote.idStr,
-                                    action.remoteNote.content.orEmpty(),
-                                    prior,
-                                )
-                            }
+                            persistVaultMappingBaseline(
+                                action.note.id,
+                                action.remoteNote.idStr,
+                                action.remoteNote.content.orEmpty(),
+                                prior,
+                            )
                         } else {
                             idMappingDao.updateNoteExtras(
                                 localId = action.note.id,

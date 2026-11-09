@@ -116,9 +116,18 @@ class SynchronizeNotes(
                                             logDebug("Vault push while dirty: ${localNote.title}")
                                             remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
                                         }
-                                        membershipDirty && !contentDirty -> {
-                                            logDebug("Vault push attachment membership: ${localNote.title}")
-                                            remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
+                                        membershipDirty && !contentDirty -> when {
+                                            remoteHash == baseline -> {
+                                                logDebug("Vault push attachment membership: ${localNote.title}")
+                                                remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
+                                            }
+                                            localHash == baseline -> {
+                                                logDebug(
+                                                    "Vault pull: remote changed while attachment-only dirty " +
+                                                        localNote.title,
+                                                )
+                                                localUpdates.add(NoteAction.Update(localNote, remoteNote))
+                                            }
                                         }
                                     }
                                 } else {

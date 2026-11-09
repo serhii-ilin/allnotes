@@ -57,5 +57,33 @@ class VaultAttachmentMembershipTest {
         val stripped = VaultAttachments.removeVaultLinksForPaths(body, path, setOf(vaultRel))
         assertEquals("See  please", stripped)
     }
+
+    @Test
+    fun exportStripsAngleBracketImageTarget() {
+        val body = "Hi ![x](<Note/x.jpg>) end"
+        val stripped = VaultAttachments.removeVaultLinksForPaths(body, path, setOf(vaultRel))
+        assertEquals("Hi  end", stripped)
+    }
+
+    @Test
+    fun exportSkipsFencedCodeBlock() {
+        val body = """
+            |```markdown
+            |![x](Note/x.jpg)
+            |```
+            |ok
+        """.trimMargin()
+        val stripped = VaultAttachments.removeVaultLinksForPaths(body, path, setOf(vaultRel))
+        assertTrue(stripped.contains("![x]"))
+        assertTrue(stripped.contains("```"))
+    }
+
+    @Test
+    fun exportSkipsInlineCodeSpan() {
+        val body = "Use `![x](Note/x.jpg)` literal"
+        val stripped = VaultAttachments.removeVaultLinksForPaths(body, path, setOf(vaultRel))
+        assertEquals(body, stripped)
+    }
 }
+
 

@@ -142,13 +142,15 @@ class SafVaultWriteStore(
         }
     }
 
-    private fun ensureStorageName(dir: DocumentFile, created: DocumentFile, desired: String): String {
-        val current = created.name ?: throw IOException("createFile returned null name")
-        if (current == desired) return current
-        if (!created.renameTo(desired)) {
-            return current
-        }
-        return dir.findFile(desired)?.name ?: current
+    internal fun ensureStorageName(dir: DocumentFile, created: DocumentFile, desired: String): String {
+        val current = VaultStagingNames.requireCreatedName(created.name)
+        val renamed = if (current == desired) true else created.renameTo(desired)
+        return VaultStagingNames.resolveAfterCreate(
+            current,
+            desired,
+            renameSucceeded = renamed,
+            findAfterRename = dir.findFile(desired)?.name,
+        )
     }
 
     companion object {
