@@ -152,20 +152,31 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
     private val requestMediaLauncher = registerForActivityResult(ChooseFilesContract) { uris ->
         if (uris.isEmpty()) return@registerForActivityResult
 
-        val attachments = uris.map {
-            requireContext().contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            Attachment.fromUri(requireContext(), it)
+        lifecycleScope.launch {
+            val attachments = uris.mapNotNull { uri ->
+                runCatching {
+                    requireContext().contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                }
+                activityModel.persistAttachmentFromUri(uri)
+            }
+            if (attachments.isNotEmpty()) {
+                model.insertAttachments(*attachments.toTypedArray())
+            }
         }
-
-        model.insertAttachments(*attachments.toTypedArray())
     }
 
     private val takePhotoLauncher = registerForActivityResult(TakePictureContract) { saved ->
         if (!saved) return@registerForActivityResult
-        val uri = activityModel.tempPhotoUri ?: return@registerForActivityResult
-
-        model.insertAttachments(Attachment.fromUri(requireContext(), uri))
+        val captureUri = activityModel.tempPhotoUri ?: return@registerForActivityResult
         activityModel.tempPhotoUri = null
+        lifecycleScope.launch {
+            val attachment = activityModel.persistAttachmentFromUri(captureUri)
+                ?: return@launch
+            model.insertAttachments(attachment)
+        }
     }
 
     private val itemTouchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(UP or DOWN, LEFT or RIGHT) {

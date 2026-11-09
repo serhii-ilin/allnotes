@@ -1,7 +1,7 @@
 package org.qosp.notes.ui
 
 import android.net.Uri
-import android.webkit.MimeTypeMap
+import org.qosp.notes.data.model.Attachment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineScope
@@ -216,19 +216,11 @@ class ActivityViewModel(
      * @param mimeType The MIME type of the media
      * @return The new URI in app's private storage, or null if creation failed
      */
-    suspend fun copyMediaToPrivateStorage(uri: Uri, mimeType: String): Uri? = withContext(Dispatchers.IO) {
-        val mediaType = when {
-            mimeType.startsWith("image/") -> MediaStorageManager.MediaType.IMAGE
-            mimeType.startsWith("video/") -> MediaStorageManager.MediaType.VIDEO
-            mimeType.startsWith("audio/") -> MediaStorageManager.MediaType.AUDIO
-            else -> return@withContext null
-        }
+    suspend fun copyMediaToPrivateStorage(uri: Uri, mimeType: String): Uri? =
+        mediaStorageManager.persistFromUri(uri)
 
-        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)?.let { ".$it" }
-            ?: mediaType.defaultExtension
-
-        mediaStorageManager.createMediaFile(mediaType, extension)?.first
-    }
+    suspend fun persistAttachmentFromUri(uri: Uri): Attachment? =
+        mediaStorageManager.persistAttachmentFromUri(uri)
 
     private inline fun update(
         vararg notes: Note,

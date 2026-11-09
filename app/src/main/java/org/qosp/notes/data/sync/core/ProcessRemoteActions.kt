@@ -17,6 +17,7 @@ import org.qosp.notes.data.sync.core.RemoteOperation.Update
 import kotlinx.coroutines.flow.first
 import org.qosp.notes.data.sync.fs.vault.VaultFileOpFence
 import org.qosp.notes.data.sync.fs.vault.VaultMappingState
+import org.qosp.notes.data.sync.fs.vault.VaultPaths
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.getMapping
@@ -148,15 +149,20 @@ class ProcessRemoteActions(
 
     private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) = try {
         val created = syncProvider.createNote(note)
+        val diskAfterCreate = VaultSyncImport.noteFromRemote(created, note)
         val base = created.getMapping(note.id, syncProvider.type)
         val toInsert = if (syncProvider.type == CloudService.FILE_STORAGE) {
             val gen = vaultSyncCoordinator.currentGeneration()
             val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+            val vaultPaths = VaultSyncImport.attachmentsFromRemote(created)
+                .map { it.path }
+                .filter { VaultPaths.isVaultRelativeAttachment(it) }
+                .ifEmpty { VaultSyncImport.vaultPathsFromNote(diskAfterCreate) }
             val state = VaultMappingState.fromDiskSync(
                 created.content.orEmpty(),
-                note,
+                diskAfterCreate,
                 created.idStr,
-                VaultSyncImport.vaultPathsFromNote(note),
+                vaultPaths,
                 gen,
                 notebookName,
             )

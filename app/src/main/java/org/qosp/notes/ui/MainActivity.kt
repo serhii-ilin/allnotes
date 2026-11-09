@@ -132,19 +132,7 @@ class MainActivity : BaseActivity() {
      * @return The new URI in app's private storage, or null if copy failed
      */
     private suspend fun copySharedMedia(uri: Uri): Uri? = withContext(Dispatchers.IO) {
-        try {
-            val mimeType = contentResolver.getType(uri) ?: return@withContext null
-            val newUri = activityModel.copyMediaToPrivateStorage(uri, mimeType) ?: return@withContext null
-
-            contentResolver.openInputStream(uri)?.use { input ->
-                contentResolver.openOutputStream(newUri)?.use { output ->
-                    input.copyTo(output)
-                }
-            }
-            newUri
-        } catch (e: Exception) {
-            null
-        }
+        activityModel.copyMediaToPrivateStorage(uri, contentResolver.getType(uri).orEmpty())
     }
 
     private fun handleIntent(intent: Intent) {
