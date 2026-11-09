@@ -142,7 +142,14 @@ object VaultSyncImport {
     ): Note {
         val dirty = isLocallyDirty(local, relativePath, mappingState, assignedNotebookName)
         return if (dirty) {
-            local.copy(attachments = materializePathsFromPush(local.attachments, diskSnapshot.attachments))
+            val upgraded = VaultNoteRelocation.materializePathsFromPush(local.attachments, diskSnapshot.attachments)
+            local.copy(
+                attachments = VaultNoteRelocation.applyBaselineVaultPathsIfPending(
+                    upgraded,
+                    mappingState,
+                    diskSnapshot.attachments,
+                ),
+            )
         } else {
             diskSnapshot.copy(
                 reminders = local.reminders,
@@ -154,14 +161,4 @@ object VaultSyncImport {
         }
     }
 
-    private fun materializePathsFromPush(
-        local: List<Attachment>,
-        fromDisk: List<Attachment>,
-    ): List<Attachment> {
-        val diskByDesc = fromDisk.associateBy { it.description to it.type }
-        return local.map { att ->
-            if (VaultPaths.isVaultRelativeAttachment(att.path)) return@map att
-            diskByDesc[att.description to att.type]?.takeIf { VaultPaths.isVaultRelativeAttachment(it.path) } ?: att
-        }
-    }
 }

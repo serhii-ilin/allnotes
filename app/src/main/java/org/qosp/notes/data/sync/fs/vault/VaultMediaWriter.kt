@@ -16,11 +16,35 @@ object VaultMediaWriter {
         existingNames: MutableSet<String>,
     ): Attachment {
         val assetDir = VaultPaths.assetDirectoryForNote(noteRelativePath)
-        VaultDocumentTree.ensureDirectory(root, assetDir)
         val dir = VaultDocumentTree.ensureDirectory(root, assetDir)
         val sourceUri = resolveSource(context, root, attachment) ?: throw IOException("Cannot open attachment source")
+        val sourceHash = VaultStreamHashes.hashUri(context, sourceUri)
+        findReusableFile(context, dir, sourceHash, existingNames)?.let { fileName ->
+            val vaultPath = VaultPaths.normalize("$assetDir/$fileName")
+            return attachment.copy(
+                path = VaultPaths.vaultRelative(vaultPath),
+                description = attachment.description.ifBlank { fileName },
+                fileName = "",
+            )
+        }
         val suggested = attachment.description.ifBlank { attachment.fileName }.ifBlank { "file" }
-        val fileName = VaultPaths.uniqueName(suggested, existingNames)
+        val sanitized = VaultPaths.sanitizeFileName(suggested)
+        val fileName = if (sanitized !in existingNames) {
+            sanitized
+        } else {
+            dir.findFile(sanitized)?.let { existing ->
+                if (VaultStreamHashes.hashDocumentFile(context, existing) == sourceHash) {
+                    existingNames.add(sanitized)
+                    val vaultPath = VaultPaths.normalize("$assetDir/$sanitized")
+                    return attachment.copy(
+                        path = VaultPaths.vaultRelative(vaultPath),
+                        description = attachment.description.ifBlank { sanitized },
+                        fileName = "",
+                    )
+                }
+            }
+            VaultPaths.uniqueName(suggested, existingNames)
+        }
         existingNames.add(fileName)
         val mime = context.contentResolver.getType(sourceUri) ?: "application/octet-stream"
         val target = dir.createFile(mime, fileName.substringBeforeLast('.'))
@@ -32,12 +56,32 @@ object VaultMediaWriter {
                 input.copyTo(output)
             } ?: throw IOException("Cannot write vault asset")
         } ?: throw IOException("Cannot read attachment source")
+        val writtenHash = VaultStreamHashes.hashDocumentFile(context, finalFile)
+        if (writtenHash != sourceHash) {
+            throw IOException("Attachment byte verify failed for $fileName")
+        }
         val vaultPath = VaultPaths.normalize("$assetDir/$fileName")
         return attachment.copy(
             path = VaultPaths.vaultRelative(vaultPath),
             description = attachment.description.ifBlank { fileName },
             fileName = "",
         )
+    }
+
+    private fun findReusableFile(
+        context: Context,
+        dir: DocumentFile,
+        sourceHash: String,
+        existingNames: MutableSet<String>,
+    ): String? {
+        for (child in dir.listFiles().orEmpty()) {
+            if (!child.isFile) continue
+            val name = child.name ?: continue
+            if (VaultStreamHashes.hashDocumentFile(context, child) != sourceHash) continue
+            existingNames.add(name)
+            return name
+        }
+        return null
     }
 
     private fun resolveSource(context: Context, root: DocumentFile, attachment: Attachment): Uri? {

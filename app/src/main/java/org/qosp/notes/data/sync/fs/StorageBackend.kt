@@ -19,6 +19,8 @@ import org.qosp.notes.data.sync.fs.vault.VaultContentHash
 import org.qosp.notes.data.sync.fs.vault.VaultDocumentTree
 import org.qosp.notes.data.sync.fs.vault.VaultMediaWriter
 import org.qosp.notes.data.sync.fs.vault.VaultNoteDocument
+import org.qosp.notes.data.sync.fs.vault.VaultNoteRelocation
+import org.qosp.notes.data.sync.fs.vault.VaultStreamHashes
 import org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore
 import org.qosp.notes.data.sync.fs.vault.VaultPaths
 import org.qosp.notes.data.sync.fs.vault.VaultMappingState
@@ -83,7 +85,22 @@ class StorageBackend(
         } else {
             currentPath
         }
-        val syncNote = writeNoteAt(root, targetPath, note, mapping)
+        val mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
+        val noteForWrite = if (targetPath != currentPath) {
+            VaultNoteRelocation.remapNoteAttachments(note, currentPath, targetPath)
+        } else {
+            note
+        }
+        if (targetPath != currentPath) {
+            VaultNoteRelocation.relocateOwnedAssets(
+                context,
+                root,
+                currentPath,
+                targetPath,
+                mappingState?.vaultAttachmentPathSet.orEmpty(),
+            )
+        }
+        val syncNote = writeNoteAt(root, targetPath, noteForWrite, mapping)
         if (targetPath != currentPath) {
             VaultDocumentTree.findByRelativePath(root, currentPath)?.let { old ->
                 DocumentsContract.deleteDocument(context.contentResolver, old.uri)
@@ -161,7 +178,8 @@ class StorageBackend(
         mapping: IdMapping?,
     ): SyncNote {
         val path = VaultPaths.normalizeNotePath(relativePath)
-        val vaultAttachments = materializeAttachments(root, path, note.attachments)
+        val mappingState = mapping?.extras?.let { VaultMappingState.resolve(it) }
+        val vaultAttachments = materializeAttachments(root, path, note.attachments, mappingState)
         val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
         val existingRaw = VaultDocumentTree.findByRelativePath(root, path)?.let { readFileContent(it) }
         var doc = VaultNoteDocument.fromNote(
@@ -171,7 +189,6 @@ class StorageBackend(
             exportNotebookExplicitly = true,
         )
         doc = VaultNoteDocument.mergePreservedFromDisk(existingRaw, doc)
-        val mappingState = mapping?.extras?.let { VaultMappingState.resolve(it) }
         val removedPaths = VaultSyncImport.removedVaultAttachmentPaths(
             note.copy(attachments = vaultAttachments),
             mappingState,
@@ -201,20 +218,69 @@ class StorageBackend(
         root: DocumentFile,
         noteRelativePath: String,
         attachments: List<Attachment>,
+        mappingState: VaultMappingState?,
     ): List<Attachment> {
         val names = mutableSetOf<String>()
         VaultDocumentTree.ensureDirectory(root, VaultPaths.assetDirectoryForNote(noteRelativePath))
             .listFiles().mapNotNull { it.name }.toCollection(names)
         return attachments.map { att ->
-            if (VaultPaths.isVaultRelativeAttachment(att.path)) {
-                att
-            } else {
-                runCatching {
-                    VaultMediaWriter.copyAttachmentToVault(context, root, noteRelativePath, att, names)
-                }.onFailure { Log.w(TAG, "materializeAttachments: keeping local ${att.path}", it) }
-                    .getOrDefault(att)
+            when {
+                VaultPaths.isVaultRelativeAttachment(att.path) -> att
+                else -> {
+                    reuseFromMappingBaseline(context, root, noteRelativePath, att, mappingState, names)
+                        ?: materializePrivateAttachment(root, noteRelativePath, att, names)
+                }
             }
         }
+    }
+
+    private fun reuseFromMappingBaseline(
+        context: Context,
+        root: DocumentFile,
+        noteRelativePath: String,
+        att: Attachment,
+        mappingState: VaultMappingState?,
+        names: MutableSet<String>,
+    ): Attachment? {
+        if (mappingState == null) return null
+        val assetDir = VaultPaths.assetDirectoryForNote(noteRelativePath)
+        val sourceUri = runCatching {
+            when {
+                VaultPaths.isVaultRelativeAttachment(att.path) ->
+                    VaultDocumentTree.findByRelativePath(root, VaultPaths.toVaultRelative(att.path))?.uri
+                att.path.startsWith("content://") || att.path.startsWith("file://") -> android.net.Uri.parse(att.path)
+                else -> null
+            }
+        }.getOrNull() ?: return null
+        val sourceHash = runCatching { VaultStreamHashes.hashUri(context, sourceUri) }.getOrNull()
+            ?: return null
+        for (stored in mappingState.vaultAttachmentPathSet) {
+            val rel = VaultPaths.toVaultRelative(stored)
+            if (!rel.startsWith("$assetDir/")) continue
+            val file = VaultDocumentTree.findByRelativePath(root, rel) ?: continue
+            if (!file.isFile) continue
+            if (VaultStreamHashes.hashDocumentFile(context, file) != sourceHash) continue
+            val fileName = VaultPaths.fileName(rel)
+            names.add(fileName)
+            return att.copy(
+                path = stored,
+                description = att.description.ifBlank { fileName },
+                fileName = "",
+            )
+        }
+        return null
+    }
+
+    private fun materializePrivateAttachment(
+        root: DocumentFile,
+        noteRelativePath: String,
+        att: Attachment,
+        names: MutableSet<String>,
+    ): Attachment {
+        return runCatching {
+            VaultMediaWriter.copyAttachmentToVault(context, root, noteRelativePath, att, names)
+        }.onFailure { Log.w(TAG, "materializeAttachments: keeping local ${att.path}", it) }
+            .getOrDefault(att)
     }
 
     private suspend fun writeRaw(root: DocumentFile, relativePath: String, text: String) {
