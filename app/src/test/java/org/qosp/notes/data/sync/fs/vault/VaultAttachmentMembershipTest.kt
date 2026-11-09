@@ -84,6 +84,13 @@ class VaultAttachmentMembershipTest {
         val stripped = VaultAttachments.removeVaultLinksForPaths(body, path, setOf(vaultRel))
         assertEquals(body, stripped)
     }
-}
 
+    @Test
+    fun export_doesNotStripNonImageFileLinks() {
+        val fileRel = VaultPaths.vaultRelative("Work/Note/doc.pdf")
+        val body = "Get [doc](Note/doc.pdf)"
+        val stripped = VaultAttachments.removeVaultLinksForPaths(body, path, setOf(fileRel))
+        assertEquals(body, stripped)
+    }
+}
 

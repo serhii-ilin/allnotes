@@ -44,4 +44,16 @@ class VaultAttachmentPushIdempotencyTest {
         assertEquals("same", merged.content)
         assertEquals(vaultStored, merged.attachments.single().path)
     }
+
+    @Test
+    fun debouncedPushTwice_upgradesOnce_thenStableVaultRel() {
+        val vaultStored = VaultPaths.vaultRelative("Shot/photo.jpg")
+        val disk = listOf(Attachment(Attachment.Type.IMAGE, vaultStored, "photo.jpg"))
+        var local = listOf(Attachment(Attachment.Type.IMAGE, "content://x", "photo.jpg"))
+        local = VaultNoteRelocation.materializePathsFromPush(local, disk)
+        val again = VaultNoteRelocation.materializePathsFromPush(local, disk)
+        assertEquals(1, again.size)
+        assertEquals(vaultStored, again.single().path)
+        assertEquals(again, VaultNoteRelocation.materializePathsFromPush(again, disk))
+    }
 }

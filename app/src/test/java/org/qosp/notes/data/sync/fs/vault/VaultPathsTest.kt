@@ -1,6 +1,7 @@
 package org.qosp.notes.data.sync.fs.vault
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -27,6 +28,18 @@ class VaultPathsTest {
     fun uniqueName_avoidsCollision() {
         val name = VaultPaths.uniqueName("photo.jpg", setOf("photo.jpg"))
         assertEquals("photo-2.jpg", name)
+    }
+
+    @Test
+    fun sanitizeFileName_stripsIllegalChars() {
+        val sanitized = VaultPaths.sanitizeFileName("vacation: photo?.jpg")
+        assertFalse(sanitized.contains(':'))
+        assertFalse(sanitized.contains('?'))
+    }
+
+    @Test
+    fun normalize_collapsesRepeatedSlashes() {
+        assertEquals("Work/Note.md", VaultPaths.normalize("Work//Note.md"))
     }
 
     @Test

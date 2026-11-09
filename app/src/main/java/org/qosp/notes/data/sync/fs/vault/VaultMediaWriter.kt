@@ -15,6 +15,11 @@ object VaultMediaWriter {
         attachment: Attachment,
         existingNames: MutableSet<String>,
     ): Attachment {
+        if (VaultPaths.isVaultRelativeAttachment(attachment.path)) {
+            val rel = VaultPaths.toVaultRelative(attachment.path)
+            existingNames.add(VaultPaths.fileName(rel))
+            return attachment
+        }
         val assetDir = VaultPaths.assetDirectoryForNote(noteRelativePath)
         val dir = VaultDocumentTree.ensureDirectory(root, assetDir)
         val sourceUri = resolveSource(context, root, attachment) ?: throw IOException("Cannot open attachment source")
