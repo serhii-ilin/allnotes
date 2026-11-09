@@ -50,6 +50,32 @@ class StorageBackend(
 ) : ISyncBackend {
 
     private val quarantinedNotePaths = mutableSetOf<String>()
+    private var inMemoryIndexCache: List<VaultDocumentTree.IndexedVaultFile>? = null
+    private var safIndexCache: List<VaultDocumentTree.IndexedFile>? = null
+
+    private fun indexFs(fs: VaultFs): List<VaultDocumentTree.IndexedVaultFile> {
+        inMemoryIndexCache?.let { return it }
+        return VaultDocumentTree.indexNotes(fs).also { inMemoryIndexCache = it }
+    }
+
+    private fun indexSaf(root: DocumentFile): List<VaultDocumentTree.IndexedFile> {
+        safIndexCache?.let { return it }
+        return VaultDocumentTree.indexNotes(root).also { safIndexCache = it }
+    }
+
+    private fun invalidateInMemoryIndex() {
+        inMemoryIndexCache = null
+    }
+
+    private fun invalidateSafIndex() {
+        safIndexCache = null
+    }
+
+    /** Harness / tests: call after mutating the vault through [VaultFs] outside this backend. */
+    fun invalidateVaultListingCache() {
+        invalidateInMemoryIndex()
+        invalidateSafIndex()
+    }
 
     override val type: CloudService = CloudService.FILE_STORAGE
 
@@ -159,8 +185,12 @@ class StorageBackend(
                 val diskRawHash = VaultContentHash.ofText(diskSync.content.orEmpty())
                 val rawBaseline = mappingState.baselineRawHash
                 val rawDiffers = rawBaseline.isNotEmpty() && diskRawHash != rawBaseline
-                val logicalDiffers = diskHash != mappingState.baselineHash
-                if (rawDiffers && logicalDiffers) {
+                val diskBodyHash = VaultContentHash.ofText(
+                    VaultNoteDocument.parse(diskSync.content.orEmpty()).body,
+                )
+                val localBodyHash = VaultContentHash.ofText(note.content)
+                val concurrentEdit = rawDiffers && diskBodyHash != localBodyHash
+                if (concurrentEdit) {
                     val conflictPath = createConflictCopy(diskSync)
                     mappingState = mappingState.copy(
                         conflictRemoteHash = diskHash,
@@ -270,7 +300,7 @@ class StorageBackend(
         vaultFs()?.let { fs ->
             if (!fs.canRead()) return@run null
             return@run try {
-                val indexed = VaultDocumentTree.indexNotes(fs)
+                val indexed = indexFs(fs)
                 if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexed, knownMappedPaths)) {
                     Log.w(TAG, "getAll: mapped note visible but missing from index; failing scan")
                     return@run null
@@ -441,6 +471,31 @@ class StorageBackend(
         return candidate
     }
 
+    private suspend fun linkableAtPathFs(
+        fs: VaultFs,
+        note: Note,
+        rel: String,
+        desired: String,
+        desiredHash: String,
+        notebookName: String?,
+    ): String? {
+        if (!fs.isFile(rel)) return null
+        val raw = fs.readText(rel) ?: return null
+        val sync = pathToSyncNote(fs, rel)
+        val imported = VaultSyncImport.noteFromRemote(sync, note)
+        val onDiskHash = VaultSyncImport.canonicalFileHash(
+            imported,
+            rel,
+            notebookName,
+            VaultNoteDocument.parse(raw).frontMatter.preservedYaml,
+        )
+        if (onDiskHash != desiredHash) return null
+        val desiredBase = VaultPaths.noteBaseName(desired)
+        val baseMatch = VaultPaths.noteBaseName(rel) == desiredBase
+        val parentMatch = VaultPaths.parentPath(rel) == VaultPaths.parentPath(desired)
+        return if (baseMatch || parentMatch || rel == VaultPaths.normalizeNotePath(desired)) rel else null
+    }
+
     private suspend fun linkableExistingPathFs(
         fs: VaultFs,
         note: Note,
@@ -448,23 +503,18 @@ class StorageBackend(
         notebookName: String?,
     ): String? {
         val desiredHash = VaultSyncImport.canonicalFileHash(note, desired, notebookName, preservedYamlBaseline = null)
-        val desiredBase = VaultPaths.noteBaseName(desired)
-        val indexed = VaultDocumentTree.indexNotes(fs)
+        val desiredNorm = VaultPaths.normalizeNotePath(desired)
+        linkableAtPathFs(fs, note, desiredNorm, desired, desiredHash, notebookName)?.let { return it }
+        val parent = VaultPaths.parentPath(desiredNorm)
+        val parentDir = parent
+        for (child in fs.listChildren(parentDir)) {
+            if (child.isDirectory) continue
+            if (!org.qosp.notes.data.sync.fs.vault.VaultHousekeeping.shouldIndexFile(child.name)) continue
+            linkableAtPathFs(fs, note, child.relativePath, desired, desiredHash, notebookName)?.let { return it }
+        }
+        val indexed = indexFs(fs)
         for (file in indexed) {
-            val rel = file.relativePath
-            val raw = fs.readText(rel) ?: continue
-            val sync = pathToSyncNote(fs, rel)
-            val imported = VaultSyncImport.noteFromRemote(sync, note)
-            val onDiskHash = VaultSyncImport.canonicalFileHash(
-                imported,
-                rel,
-                notebookName,
-                VaultNoteDocument.parse(raw).frontMatter.preservedYaml,
-            )
-            if (onDiskHash != desiredHash) continue
-            val baseMatch = VaultPaths.noteBaseName(rel) == desiredBase
-            val parentMatch = VaultPaths.parentPath(rel) == VaultPaths.parentPath(desired)
-            if (baseMatch || parentMatch || rel == desired) return rel
+            linkableAtPathFs(fs, note, file.relativePath, desired, desiredHash, notebookName)?.let { return it }
         }
         return null
     }
@@ -552,6 +602,7 @@ class StorageBackend(
             val generationAtCapture = vaultSyncCoordinator.currentGeneration()
             val writeContext = VaultWriteContext(store.vaultScopeId(), generationAtCapture)
             VaultRecoverableWrite(store).write(path, text, writeContext)
+            invalidateInMemoryIndex()
             if (vaultSyncCoordinator.isStaleMapping(generationAtCapture)) {
                 throw IOException("Vault generation changed during write; refusing to treat result as committed")
             }
@@ -565,6 +616,7 @@ class StorageBackend(
         val generationAtCapture = vaultSyncCoordinator.currentGeneration()
         val writeContext = VaultWriteContext(store.vaultScopeId(), generationAtCapture)
         VaultRecoverableWrite(store).write(path, text, writeContext)
+        invalidateSafIndex()
         if (vaultSyncCoordinator.isStaleMapping(generationAtCapture)) {
             throw IOException("Vault generation changed during write; refusing to treat result as committed")
         }
@@ -603,7 +655,46 @@ class StorageBackend(
     ): String? {
         val desiredHash = VaultSyncImport.canonicalFileHash(note, desired, notebookName, preservedYamlBaseline = null)
         val desiredBase = VaultPaths.noteBaseName(desired)
-        val indexed = VaultDocumentTree.indexNotes(root)
+        val desiredNorm = VaultPaths.normalizeNotePath(desired)
+        VaultDocumentTree.findByRelativePath(root, desiredNorm)?.let { file ->
+            val rel = desiredNorm
+            val raw = readFileContent(file) ?: return@let null
+            val imported = VaultSyncImport.noteFromRemote(
+                fileToSyncNote(file, rel) ?: return@let null,
+                note,
+            )
+            val onDiskHash = VaultSyncImport.canonicalFileHash(
+                imported,
+                rel,
+                notebookName,
+                VaultNoteDocument.parse(raw).frontMatter.preservedYaml,
+            )
+            if (onDiskHash == desiredHash) return rel
+        }
+        val parent = VaultPaths.parentPath(desiredNorm)
+        VaultDocumentTree.findDirectory(root, parent)?.listFiles().orEmpty().forEach { child ->
+            if (!child.isFile) return@forEach
+            val name = child.name ?: return@forEach
+            if (!org.qosp.notes.data.sync.fs.vault.VaultHousekeeping.shouldIndexFile(name)) return@forEach
+            val rel = if (parent.isEmpty()) name else "$parent/$name"
+            val raw = readFileContent(child) ?: return@forEach
+            val imported = VaultSyncImport.noteFromRemote(
+                fileToSyncNote(child, rel) ?: return@forEach,
+                note,
+            )
+            val onDiskHash = VaultSyncImport.canonicalFileHash(
+                imported,
+                rel,
+                notebookName,
+                VaultNoteDocument.parse(raw).frontMatter.preservedYaml,
+            )
+            if (onDiskHash == desiredHash) {
+                val baseMatch = VaultPaths.noteBaseName(rel) == desiredBase
+                val parentMatch = VaultPaths.parentPath(rel) == VaultPaths.parentPath(desired)
+                if (baseMatch || parentMatch || rel == desiredNorm) return rel
+            }
+        }
+        val indexed = indexSaf(root)
         for ((rel, file) in indexed) {
             val raw = readFileContent(file) ?: continue
             val imported = VaultSyncImport.noteFromRemote(

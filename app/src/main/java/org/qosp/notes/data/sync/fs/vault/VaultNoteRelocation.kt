@@ -101,7 +101,12 @@ object VaultNoteRelocation {
                 VaultStreamHashes.hashDocumentFile(context, existingTarget)
             if (sameBytes) {
                 DocumentsContract.deleteDocument(context.contentResolver, source.uri)
+                return
             }
+            val unique = VaultPaths.uniqueSiblingPath(targetRel) { candidate ->
+                VaultDocumentTree.findByRelativePath(root, candidate) != null
+            }
+            moveAssetIfNeeded(context, root, sourceRel, unique)
             return
         }
         val parent = VaultPaths.parentPath(targetRel)
@@ -138,7 +143,10 @@ object VaultNoteRelocation {
             val sameBytes = targetBytes != null && VaultContentHash.ofBytes(targetBytes) == sourceHash
             if (sameBytes) {
                 fs.delete(sourceRel)
+                return
             }
+            val unique = VaultPaths.uniqueSiblingPath(targetRel) { fs.isFile(it) }
+            moveAssetIfNeeded(fs, sourceRel, unique)
             return
         }
         fs.writeBytes(targetRel, sourceBytes, VaultFs.mimeForPath(targetRel))

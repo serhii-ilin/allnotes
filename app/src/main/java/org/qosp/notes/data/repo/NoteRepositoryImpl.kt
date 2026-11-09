@@ -35,6 +35,7 @@ import org.qosp.notes.data.sync.core.SynchronizeNotes
 import org.qosp.notes.data.sync.fs.StorageBackend
 import org.qosp.notes.data.sync.fs.vault.VaultPortableMetadata
 import org.qosp.notes.data.sync.fs.vault.VaultNoteDocument
+import org.qosp.notes.data.sync.fs.vault.VaultContentHash
 import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.core.SyncNote
 import org.qosp.notes.data.sync.fs.vault.VaultPaths
@@ -585,12 +586,16 @@ class NoteRepositoryImpl(
         for (legacy in legacyMappings) {
             val local = localNotes.find { it.id == legacy.localNoteId } ?: continue
             val remote = remotes.firstOrNull { sync ->
+                val desired = VaultPaths.normalizeNotePath(sync.idStr)
                 val doc = VaultNoteDocument.parse(sync.content.orEmpty())
                 val title = doc.frontMatter.title?.takeIf { it.isNotBlank() }
                     ?: VaultPaths.noteBaseName(sync.idStr)
-                title.equals(local.title, ignoreCase = true) &&
-                    org.qosp.notes.data.sync.fs.vault.VaultContentHash.ofText(local.content) ==
-                    org.qosp.notes.data.sync.fs.vault.VaultContentHash.ofText(doc.body)
+                val titleMatch = title.equals(local.title, ignoreCase = true)
+                val bodyMatch = VaultContentHash.ofText(local.content) ==
+                    VaultContentHash.ofText(doc.body)
+                val hashMatch = VaultSyncImport.canonicalFileHash(local, desired, null, null) ==
+                    VaultSyncImport.logicalHashFromRemoteFile(sync, local, desired, null)
+                titleMatch && (bodyMatch || hashMatch)
             } ?: continue
             val desired = VaultPaths.normalizeNotePath(remote.idStr)
             val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }

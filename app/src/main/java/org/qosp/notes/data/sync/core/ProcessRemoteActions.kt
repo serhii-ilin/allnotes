@@ -189,8 +189,14 @@ class ProcessRemoteActions(
         return !fence.isStale(currentGen, currentUri)
     }
 
-    private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) = try {
-        val created = syncProvider.createNote(note)
+    private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) {
+        try {
+            val liveBefore = noteDao.getById(note.id).first()
+            if (liveBefore?.isDeleted == true) {
+                Log.d(tag, "insertRemote skipped: note ${note.id} is binned")
+                return
+            }
+            val created = syncProvider.createNote(note)
         val diskAfterCreate = VaultSyncImport.noteFromRemote(created, note)
         val base = created.getMapping(note.id, syncProvider.type)
         val toInsert = if (syncProvider.type == CloudService.FILE_STORAGE) {
@@ -227,11 +233,12 @@ class ProcessRemoteActions(
         upgradeAttachmentPathsAfterPush(note.id, syncProvider)
         persistBaselineAfterPush(note.id, syncProvider)
         noteDao.updateLastModified(note.id, created.lastModified)
-        val live = noteDao.getById(note.id).first() ?: note
-        noteDao.update(live.copy(isLocalOnly = false, isDeleted = false, deletionDate = null).toEntity())
-    } catch (e: Exception) {
-        Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
-        toaster.showShort(e.message ?: "Failed to create note")
+            val live = noteDao.getById(note.id).first() ?: note
+            noteDao.update(live.copy(isLocalOnly = false, isDeleted = false, deletionDate = null).toEntity())
+        } catch (e: Exception) {
+            Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
+            toaster.showShort(e.message ?: "Failed to create note")
+        }
     }
 
     private suspend fun persistBaselineAfterPush(noteId: Long, syncProvider: ISyncBackend) {

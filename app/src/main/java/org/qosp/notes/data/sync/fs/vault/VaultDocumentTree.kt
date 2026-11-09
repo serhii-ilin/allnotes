@@ -25,10 +25,58 @@ object VaultDocumentTree {
         }
         walk("")
         val notePaths = candidates.map { VaultPaths.normalizeNotePath(it) }.toSet()
+        val referencedAttachments = referencedVaultPathsFromNotes(fs, notePaths)
         return candidates.mapNotNull { rel ->
             val norm = VaultPaths.normalizeNotePath(rel)
-            if (isUnderNoteAssetFolder(norm, notePaths)) null else IndexedVaultFile(norm)
+            if (isUnderNoteAssetFolder(norm, notePaths)) return@mapNotNull null
+            if (isReferencedAttachmentMarkdown(norm, notePaths, referencedAttachments)) return@mapNotNull null
+            IndexedVaultFile(norm)
         }
+    }
+
+    /**
+     * `.md`/`.txt` beside a note's asset folder are omitted when referenced as vault attachments
+     * by that note. Unreferenced files (e.g. `Meeting/agenda.md`) still import.
+     */
+    fun isReferencedAttachmentMarkdown(
+        relativePath: String,
+        indexedNotePaths: Set<String>,
+        referencedVaultRelPaths: Set<String>,
+    ): Boolean {
+        if (!relativePath.endsWith(".md", ignoreCase = true) &&
+            !relativePath.endsWith(".txt", ignoreCase = true)
+        ) {
+            return false
+        }
+        if (!isBesideIndexedNoteAssetFolder(relativePath, indexedNotePaths)) return false
+        val norm = VaultPaths.normalize(relativePath)
+        return norm in referencedVaultRelPaths ||
+            VaultPaths.vaultRelative(norm) in referencedVaultRelPaths
+    }
+
+    private fun isBesideIndexedNoteAssetFolder(relativePath: String, indexedNotePaths: Set<String>): Boolean {
+        val parent = VaultPaths.parentPath(relativePath)
+        if (parent.isEmpty()) return false
+        val dirName = VaultPaths.fileName(parent)
+        val grandparent = VaultPaths.parentPath(parent)
+        val siblingNotePath = VaultPaths.normalizeNotePath(
+            if (grandparent.isEmpty()) "$dirName.md" else "$grandparent/$dirName.md",
+        )
+        return siblingNotePath in indexedNotePaths
+    }
+
+    private fun referencedVaultPathsFromNotes(fs: VaultFs, notePaths: Set<String>): Set<String> {
+        val out = mutableSetOf<String>()
+        for (path in notePaths) {
+            val raw = fs.readText(path) ?: continue
+            val body = VaultNoteDocument.parse(raw).body
+            VaultAttachments.parseFromBody(body, path).forEach { att ->
+                if (VaultPaths.isVaultRelativeAttachment(att.path)) {
+                    out.add(VaultPaths.toVaultRelative(att.path))
+                }
+            }
+        }
+        return out
     }
 
     fun isIndexCompleteForMappedPaths(

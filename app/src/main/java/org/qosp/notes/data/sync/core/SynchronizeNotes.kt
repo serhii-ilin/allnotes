@@ -164,6 +164,11 @@ class SynchronizeNotes(
                             }
                         } else if (service == CloudService.FILE_STORAGE && !remoteScanSucceeded) {
                             logDebug("Skipping delete; vault scan incomplete for ${localNote.title}")
+                        } else if (
+                            service == CloudService.FILE_STORAGE &&
+                            mapping.storageUri?.contains("://") == true
+                        ) {
+                            logDebug("Awaiting legacy relink for ${localNote.title}")
                         } else {
                             val syncNote = SyncNote(
                                 title = localNote.title,

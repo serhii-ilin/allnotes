@@ -74,6 +74,25 @@ object VaultPaths {
     fun vaultMappingPath(storageUri: String?): String? =
         storageUri?.takeIf { isVaultStoragePath(it) }?.let { normalizeNotePath(it) }
 
+    fun uniqueSiblingPath(path: String, exists: (String) -> Boolean): String {
+        if (!exists(path)) return normalizeNotePath(path)
+        val parent = parentPath(path)
+        val base = noteBaseName(path)
+        val ext = when {
+            path.endsWith(".txt", ignoreCase = true) -> ".txt"
+            path.contains('.') -> ".${fileName(path).substringAfterLast('.')}"
+            else -> ".md"
+        }
+        var i = 2
+        while (true) {
+            val candidate = normalize(
+                if (parent.isEmpty()) "$base-$i$ext" else "$parent/$base-$i$ext",
+            )
+            if (!exists(candidate)) return candidate
+            i++
+        }
+    }
+
     fun toVaultRelative(storedPath: String): String =
         storedPath.removePrefix(VAULT_REL_PREFIX).let { normalize(it) }
 
