@@ -73,5 +73,7 @@ class PreferenceRepository(
         const val NEXTCLOUD_USERNAME = "NEXTCLOUD_USERNAME"
         const val NEXTCLOUD_PASSWORD = "NEXTCLOUD_PASSWORD"
         const val STORAGE_LOCATION = "STORAGE_LOCATION"
+        /** Epoch seconds when the vault folder was last selected (fresh vault boundary). */
+        const val VAULT_CONFIGURED_AT = "VAULT_CONFIGURED_AT"
     }
 }

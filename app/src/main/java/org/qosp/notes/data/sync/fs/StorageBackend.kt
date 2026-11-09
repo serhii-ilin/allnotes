@@ -6,15 +6,21 @@ import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import org.qosp.notes.data.model.Attachment
 import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.sync.core.AvailabilityStatus
 import org.qosp.notes.data.sync.core.ISyncBackend
 import org.qosp.notes.data.sync.core.SyncNote
+import org.qosp.notes.data.sync.fs.vault.VaultAttachments
+import org.qosp.notes.data.sync.fs.vault.VaultContentHash
+import org.qosp.notes.data.sync.fs.vault.VaultDocumentTree
+import org.qosp.notes.data.sync.fs.vault.VaultMediaWriter
+import org.qosp.notes.data.sync.fs.vault.VaultNoteDocument
+import org.qosp.notes.data.sync.fs.vault.VaultPaths
 import org.qosp.notes.data.sync.nextcloud.BackendValidationResult
 import org.qosp.notes.preferences.CloudService
 import java.io.FileNotFoundException
-import java.io.FileOutputStream
 import java.io.IOException
 import kotlin.time.measureTimedValue
 
@@ -41,86 +47,74 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         }
     }
 
-    private val Note.filename: String
-        get() {
-            val titleToSet = title.ifBlank { "Untitled" }
-            val ext = if (isMarkdownEnabled) "md" else "txt"
-            return "${titleToSet.trim()}.$ext"
-        }
-
     override suspend fun createNote(note: Note): SyncNote {
         val root = getRootDocumentFile() ?: throw IOException("Unable to access storage location")
-
-        Log.d(TAG, "createNote: $note")
-        val mimeType = if (note.isMarkdownEnabled) "text/markdown" else "text/plain"
-        val newDoc = root.createFile(mimeType, note.filename)
-
-        return newDoc?.let {
-            writeNoteToFile(it, note.toStorableContent())
-            SyncNote(
-                idStr = newDoc.uri.toString(),
-                title = note.title,
-                content = note.toStorableContent(),
-                lastModified = newDoc.lastModified() / 1000, // Epoch milliseconds to seconds
-                id = 0
-            )
-        } ?: throw IOException("Unable to create file for ${note.filename}")
+        val relativePath = uniqueNotePath(root, VaultPaths.titleToNotePath(note.title, note.isMarkdownEnabled))
+        return writeNoteAt(root, relativePath, note, mapping = null)
     }
 
     override suspend fun updateNote(note: Note, mapping: IdMapping): IdMapping {
-        val uri = mapping.storageUri?.toUri() ?: throw IllegalArgumentException("URI cannot be null")
-        val rootDoc = getRootDocumentFile() ?: throw IOException("Unable to access storage location")
-        val file = DocumentFile.fromSingleUri(context, uri) ?: throw FileNotFoundException("URI not found")
-
-        writeNoteToFile(file, content = note.toStorableContent())
-        val newUri = if (note.filename != file.name) renameFile(file, note.filename, rootDoc) else uri
-        return mapping.copy(storageUri = newUri.toString())
+        val root = getRootDocumentFile() ?: throw IOException("Unable to access storage location")
+        val currentPath = mapping.storageUri?.let { VaultPaths.normalizeNotePath(it) }
+            ?: throw IllegalArgumentException("Vault path missing in mapping")
+        val desiredPath = VaultPaths.titleToNotePath(
+            title = note.title,
+            markdown = note.isMarkdownEnabled,
+            parentDir = VaultPaths.parentPath(currentPath),
+        )
+        val targetPath = if (desiredPath != currentPath) {
+            uniqueNotePath(root, desiredPath, exclude = currentPath)
+        } else {
+            currentPath
+        }
+        val syncNote = writeNoteAt(root, targetPath, note, mapping)
+        if (targetPath != currentPath) {
+            VaultDocumentTree.findByRelativePath(root, currentPath)?.let { old ->
+                DocumentsContract.deleteDocument(context.contentResolver, old.uri)
+            }
+        }
+        return mapping.copy(storageUri = targetPath, extras = syncNote.extra)
     }
 
     override suspend fun deleteNote(mapping: IdMapping): Boolean {
-        val uri = mapping.storageUri?.toUri() ?: return false
-        val deletionResult = inStorage {
-            val result = DocumentsContract.deleteDocument(context.contentResolver, uri)
-            Log.d(TAG, "deleteNote: Deleted (${result}) the file: ${uri.pathSegments.last()}")
-            result
+        val root = getRootDocumentFile() ?: return false
+        val path = mapping.storageUri ?: return false
+        val file = VaultDocumentTree.findByRelativePath(root, path) ?: return false
+        val deleted = DocumentsContract.deleteDocument(context.contentResolver, file.uri)
+        if (deleted) {
+            val assetDir = VaultPaths.assetDirectoryForNote(path)
+            VaultDocumentTree.findByRelativePath(root, assetDir)?.takeIf { it.isDirectory }?.let { dir ->
+                dir.listFiles().forEach { child ->
+                    DocumentsContract.deleteDocument(context.contentResolver, child.uri)
+                }
+                DocumentsContract.deleteDocument(context.contentResolver, dir.uri)
+            }
         }
-        return deletionResult == true
+        return deleted
     }
 
     override suspend fun getNote(mapping: IdMapping): SyncNote? {
-        return try {
-            val uri = mapping.storageUri?.toUri() ?: return null
-            val file = DocumentFile.fromSingleUri(context, uri) ?: return null
-            getFile(file)
-        } catch (e: Exception) {
-            Log.e(TAG, "getNote: Error getting note with id ${mapping.localNoteId}", e)
-            null
-        }
+        val path = mapping.storageUri ?: return null
+        val root = getRootDocumentFile() ?: return null
+        val file = VaultDocumentTree.findByRelativePath(root, path) ?: return null
+        return fileToSyncNote(file, path)
     }
-
-    private fun getFile(file: DocumentFile) = SyncNote(
-        id = 0,
-        idStr = file.uri.toString(),
-        content = readFileContent(file),
-        title = getTitleFromUri(file.uri),
-        lastModified = file.lastModified() / 1000, // Milliseconds to seconds
-    )
 
     override suspend fun getAll(): List<SyncNote>? {
         val root = getRootDocumentFile() ?: return null
+        if (!root.canRead()) return null
         return try {
-            val files = root.listFiles()
-                .flatMap {
-                    if (it.isDirectory) {
-                        if (it.name?.startsWith(".") == true) emptyList()// Skip hidden directories
-                        else it.listFiles().toList()
-                    } else listOf(it)
-                }
-                .filter { it.name?.startsWith(".") != true } // Skip hidden files
-                .filter { it.name?.endsWith(".md") == true || it.name?.endsWith(".txt") == true }
-            files.map { file -> getFile(file) }
+            VaultDocumentTree.indexNotes(root).map { (rel, file) ->
+                fileToSyncNote(file, rel) ?: SyncNote(
+                    id = 0,
+                    idStr = rel,
+                    content = null,
+                    title = VaultPaths.noteBaseName(rel),
+                    lastModified = 0,
+                )
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "getAll: Error listing files", e)
+            Log.e(TAG, "getAll: scan failed", e)
             null
         }
     }
@@ -139,6 +133,120 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         }
     }
 
+    suspend fun createConflictCopy(remote: SyncNote): String? {
+        val root = getRootDocumentFile() ?: return null
+        val original = remote.idStr
+        val conflictPath = VaultPaths.conflictPath(original, remote.lastModified)
+        val unique = uniqueNotePath(root, conflictPath)
+        val content = remote.content ?: return null
+        writeRaw(root, unique, content)
+        return unique
+    }
+
+    private suspend fun writeNoteAt(
+        root: DocumentFile,
+        relativePath: String,
+        note: Note,
+        mapping: IdMapping?,
+    ): SyncNote {
+        val path = VaultPaths.normalizeNotePath(relativePath)
+        val vaultAttachments = materializeAttachments(root, path, note.attachments)
+        var doc = VaultNoteDocument.fromNote(note.copy(attachments = vaultAttachments), path)
+        val bodyWithLinks = VaultAttachments.mergeAttachmentLinks(doc.body, path, vaultAttachments)
+        doc = doc.copy(body = bodyWithLinks)
+        val fullText = doc.renderFullText()
+        val hash = VaultContentHash.ofText(fullText)
+        writeRaw(root, path, fullText)
+        val file = VaultDocumentTree.findByRelativePath(root, path)
+            ?: throw IOException("Written file not found: $path")
+        return SyncNote(
+            id = 0,
+            idStr = path,
+            title = note.title,
+            content = fullText,
+            lastModified = file.lastModified() / 1000,
+            extra = hash,
+        )
+    }
+
+    private fun materializeAttachments(
+        root: DocumentFile,
+        noteRelativePath: String,
+        attachments: List<Attachment>,
+    ): List<Attachment> {
+        val names = mutableSetOf<String>()
+        VaultDocumentTree.ensureDirectory(root, VaultPaths.assetDirectoryForNote(noteRelativePath))
+            .listFiles().mapNotNull { it.name }.toCollection(names)
+        return attachments.mapNotNull { att ->
+            if (VaultPaths.isVaultRelativeAttachment(att.path)) {
+                att
+            } else {
+                runCatching {
+                    VaultMediaWriter.copyAttachmentToVault(context, root, noteRelativePath, att, names)
+                }.onFailure { Log.w(TAG, "materializeAttachments: skip ${att.path}", it) }
+                    .getOrNull()
+            }
+        }
+    }
+
+    private fun writeRaw(root: DocumentFile, relativePath: String, text: String) {
+        val path = VaultPaths.normalizeNotePath(relativePath)
+        val stagingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.STAGING_DIR)
+        val stagingName = "w_${VaultContentHash.ofText(path).take(12)}.tmp"
+        val mimeType = if (path.endsWith(".txt", ignoreCase = true)) "text/plain" else "text/markdown"
+        stagingDir.findFile(stagingName)?.let {
+            DocumentsContract.deleteDocument(context.contentResolver, it.uri)
+        }
+        val staging = stagingDir.createFile(mimeType, stagingName)
+            ?: throw IOException("Cannot create staging file")
+        context.contentResolver.openOutputStream(staging.uri)?.use { out ->
+            out.write(text.encodeToByteArray())
+        } ?: throw IOException("Cannot write staging")
+        val targetParent = VaultPaths.parentPath(path)
+        val parent = if (targetParent.isEmpty()) root else VaultDocumentTree.ensureDirectory(root, targetParent)
+        val fileName = VaultPaths.fileName(path)
+        parent.findFile(fileName)?.let { existing ->
+            DocumentsContract.deleteDocument(context.contentResolver, existing.uri)
+        }
+        val finalFile = parent.createFile(mimeType, fileName.substringBeforeLast('.'))
+            ?: throw IOException("Cannot create $fileName")
+        context.contentResolver.openInputStream(staging.uri)?.use { input ->
+            context.contentResolver.openOutputStream(finalFile.uri, "wt")?.use { output ->
+                input.copyTo(output)
+            }
+        }
+        DocumentsContract.deleteDocument(context.contentResolver, staging.uri)
+        if (finalFile.name != fileName) finalFile.renameTo(fileName)
+    }
+
+    private fun fileToSyncNote(file: DocumentFile, relativePath: String): SyncNote? {
+        val raw = readFileContent(file) ?: return null
+        val hash = VaultContentHash.ofText(raw)
+        return SyncNote(
+            id = 0,
+            idStr = relativePath,
+            content = raw,
+            title = VaultPaths.noteBaseName(relativePath),
+            lastModified = file.lastModified() / 1000,
+            extra = hash,
+        )
+    }
+
+    private fun uniqueNotePath(root: DocumentFile, desired: String, exclude: String? = null): String {
+        var candidate = VaultPaths.normalizeNotePath(desired)
+        var i = 2
+        while (VaultDocumentTree.findByRelativePath(root, candidate) != null && candidate != exclude) {
+            val base = VaultPaths.noteBaseName(desired)
+            val parent = VaultPaths.parentPath(desired)
+            val ext = if (desired.endsWith(".txt", ignoreCase = true)) ".txt" else ".md"
+            candidate = VaultPaths.normalize(
+                if (parent.isEmpty()) "$base-$i$ext" else "$parent/$base-$i$ext",
+            )
+            i++
+        }
+        return candidate
+    }
+
     private fun getRootDocumentFile(): DocumentFile? {
         return DocumentFile.fromTreeUri(context, config.location)
     }
@@ -148,45 +256,13 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         return perm?.let { it.isReadPermission && it.isWritePermission } ?: false
     }
 
-    private fun writeNoteToFile(file: DocumentFile, content: String) {
-        context.contentResolver.openOutputStream(file.uri, "wt")?.use { output ->
-            (output as? FileOutputStream)?.let {
-                val bytesWritten = content.encodeToByteArray().inputStream().copyTo(output)
-                Log.d(TAG, "writeNote: Wrote $bytesWritten bytes to ${file.name}")
-            } ?: run {
-                Log.e(TAG, "writeNoteToDocument: ${file.name} is not a file. URI:${file.uri}")
-            }
-        }
-    }
-
     private fun readFileContent(file: DocumentFile): String? {
-        Log.d(TAG, "readFileContent: ${file.name}")
         return context.contentResolver.openInputStream(file.uri)?.use { it.bufferedReader().readText() }
-    }
-
-    private fun getTitleFromUri(uri: Uri): String {
-        val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: ""
-        return when {
-            fileName.endsWith(".md") -> fileName.removeSuffix(".md")
-            fileName.endsWith(".txt") -> fileName.removeSuffix(".txt")
-            else -> fileName
-        }
-    }
-
-    private fun renameFile(file: DocumentFile, newName: String, root: DocumentFile): String {
-        Log.d(TAG, "renameFile: Renaming ${file.name} to $newName")
-        val foundFile = root.listFiles().firstOrNull { it.name == file.name }
-            ?: throw FileNotFoundException("File ${file.name} not found")
-        val succeeded = foundFile.renameTo(newName)
-        Log.d(TAG, "renameFile: Renaming ${foundFile.name}, succeeded? $succeeded")
-        return foundFile.uri.toString()
     }
 
     private inline fun <reified T> inStorage(block: () -> T): T? {
         return try {
-            val duration = measureTimedValue {
-                block()
-            }
+            val duration = measureTimedValue { block() }
             Log.i(TAG, "inStorage: That took ${duration.duration} to complete")
             duration.value
         } catch (e: Exception) {

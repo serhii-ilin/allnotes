@@ -12,8 +12,10 @@ import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.sync.core.RemoteOperation.Create
 import org.qosp.notes.data.sync.core.RemoteOperation.Delete
 import org.qosp.notes.data.sync.core.RemoteOperation.Update
+import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.di.SyncScope
+import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.ui.utils.Toaster
 import java.util.concurrent.ConcurrentHashMap
 
@@ -115,6 +117,7 @@ class ProcessRemoteActions(
         val created = syncProvider.createNote(note)
         idMappingDao.insert(created.getMapping(note.id, syncProvider.type))
         noteDao.updateLastModified(note.id, created.lastModified)
+        applyVaultPushResult(note, syncProvider)
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
         toaster.showShort(e.message ?: "Failed to create note")
@@ -124,8 +127,24 @@ class ProcessRemoteActions(
         idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)?.let {
             val updatedMapping = syncProvider.updateNote(note, it)
             idMappingDao.update(updatedMapping)
+            applyVaultPushResult(note, syncProvider)
         }
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to update note ID=${note.id}: ${e.message}", e)
+    }
+
+    private suspend fun applyVaultPushResult(note: Note, syncProvider: ISyncBackend) {
+        if (syncProvider.type != CloudService.FILE_STORAGE) return
+        val mapping = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type) ?: return
+        val remote = syncProvider.getNote(mapping) ?: return
+        val patched = VaultSyncImport.noteFromRemote(remote, note)
+        noteDao.update(patched.toEntity())
+        noteDao.updateLastModified(note.id, remote.lastModified)
+        idMappingDao.update(
+            mapping.copy(
+                storageUri = remote.idStr,
+                extras = remote.extra,
+            )
+        )
     }
 }

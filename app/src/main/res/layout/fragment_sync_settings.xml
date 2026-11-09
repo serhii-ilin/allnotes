@@ -147,6 +147,14 @@
                         app:subText="@string/preferences_file_storage_location"
                         app:text="@string/preferences_file_storage_select"/>
 
+                    <org.qosp.notes.ui.utils.views.PreferenceView
+                        android:id="@+id/setting_vault_rebuild_index"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:iconSrc="@drawable/ic_sync"
+                        app:subText="@string/preferences_vault_rebuild_index_hint"
+                        app:text="@string/preferences_vault_rebuild_index"/>
+
                 </LinearLayout>
             </LinearLayout>
         </ScrollView>

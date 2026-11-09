@@ -46,6 +46,7 @@ class SyncSettingsFragment : BaseFragment(R.layout.fragment_sync_settings) {
 
             // Set the new location
             model.setEncryptedString(PreferenceRepository.STORAGE_LOCATION, newLocation)
+            model.setVaultConfiguredAtNow()
             Log.i(TAG, "Storing location: $it")
 
             // Remove IdMappings if needed
@@ -77,6 +78,9 @@ class SyncSettingsFragment : BaseFragment(R.layout.fragment_sync_settings) {
         setupTrustCertificatesListener()
 
         setupLocalLocationListener()
+        binding.settingVaultRebuildIndex.setOnClickListener {
+            model.rebuildVaultIndex()
+        }
     }
 
     private fun View.show(visible: Boolean) = if (visible) visibility = View.VISIBLE else visibility = View.GONE

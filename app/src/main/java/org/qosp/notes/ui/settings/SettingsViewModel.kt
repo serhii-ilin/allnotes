@@ -13,6 +13,7 @@ import org.qosp.notes.data.sync.nextcloud.NextcloudConfig
 import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.preferences.SyncMode
+import java.time.Instant
 
 class SettingsViewModel(
     private val preferenceRepository: PreferenceRepository,
@@ -62,6 +63,16 @@ class SettingsViewModel(
      * @param newLocation The new storage location URI as a string
      * @param previousLocation The previous storage location URI as a string
      */
+    fun setVaultConfiguredAtNow() = viewModelScope.launch {
+        preferenceRepository.putEncryptedStrings(
+            PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
+        )
+    }
+
+    fun rebuildVaultIndex() = viewModelScope.launch(Dispatchers.IO) {
+        noteRepository.syncNotes()
+    }
+
     fun removeFileStorageIdMappingsIfNeeded(newLocation: String, previousLocation: String) {
         if (newLocation != previousLocation) {
             viewModelScope.launch(Dispatchers.IO) {

@@ -27,11 +27,14 @@ import org.qosp.notes.data.sync.core.Success
 import org.qosp.notes.data.sync.core.SyncMethod
 import org.qosp.notes.data.sync.core.SyncNotesResult
 import org.qosp.notes.data.sync.core.SynchronizeNotes
+import org.qosp.notes.data.sync.fs.StorageBackend
+import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.data.sync.toLocalNote
 import org.qosp.notes.data.sync.updateLocalNote
 import org.qosp.notes.di.SyncScope
 import org.qosp.notes.preferences.CloudService
+import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.preferences.SortMethod
 import org.qosp.notes.ui.utils.Toaster
 import java.time.Instant
@@ -44,7 +47,8 @@ class NoteRepositoryImpl(
     private val synchronizeNotes: SynchronizeNotes,
     private val processRemoteActions: ProcessRemoteActions,
     private val syncingScope: SyncScope,
-    private val toaster: Toaster
+    private val toaster: Toaster,
+    private val preferenceRepository: PreferenceRepository,
 ) : NoteRepository {
 
     private val tag = NoteRepositoryImpl::class.java.simpleName
@@ -79,9 +83,13 @@ class NoteRepositoryImpl(
         }
 
         return syncMutex.withLock {
-            val syncMethod =
-                if (idMappingDao.getCountByCloudService(syncProvider.type) == 0)
-                    SyncMethod.TITLE else SyncMethod.MAPPING
+            val syncMethod = when (syncProvider.type) {
+                CloudService.FILE_STORAGE -> SyncMethod.MAPPING
+                CloudService.NEXTCLOUD ->
+                    if (idMappingDao.getCountByCloudService(syncProvider.type) == 0) SyncMethod.TITLE
+                    else SyncMethod.MAPPING
+                else -> SyncMethod.MAPPING
+            }
             try {
                 // Get all local notes (excluding local-only ones)
                 val localNotes = getAll().first().filterNot { it.isLocalOnly || it.isDeleted }
@@ -89,6 +97,12 @@ class NoteRepositoryImpl(
                 // Get all remote notes and convert to metadata
                 val allRemoteNotes =
                     syncProvider.getAll() ?: return@withLock GenericError("Failed to fetch remote notes")
+                val vaultCutoff = if (syncProvider.type == CloudService.FILE_STORAGE) {
+                    preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT)
+                        .first().toLongOrNull()
+                } else {
+                    null
+                }
                 Log.d(
                     tag, "syncNotes: Syncing by $syncMethod. " +
                         "Found ${allRemoteNotes.size} remote notes, and ${localNotes.size} local notes"
@@ -96,15 +110,25 @@ class NoteRepositoryImpl(
 
                 // Use SynchronizeNotes to determine what updates are needed
                 val syncResult =
-                    synchronizeNotes(localNotes, allRemoteNotes, service = syncProvider.type, syncMethod)
+                    synchronizeNotes(
+                        localNotes,
+                        allRemoteNotes,
+                        service = syncProvider.type,
+                        syncMethod,
+                        remoteScanSucceeded = true,
+                        vaultExportCutoffEpoch = vaultCutoff,
+                    )
                 Log.d(
                     tag, "sync updates: ${syncResult.localUpdates.size} local, " +
-                        "${syncResult.remoteUpdates.size} remote"
+                        "${syncResult.remoteUpdates.size} remote, " +
+                        "${syncResult.vaultConflicts.size} conflicts"
                 )
 
                 if (syncMethod == SyncMethod.TITLE) applyMappingChanges(syncResult, syncProvider) // Initial import
                 applyLocalUpdates(syncResult.localUpdates, syncProvider)
                 applyRemoteUpdates(syncResult.remoteUpdates)
+                handleVaultConflicts(syncResult.vaultConflicts, syncProvider)
+                refreshVaultAttachmentIndex(syncProvider)
                 Log.i(tag, "syncNotes: Synchronization completed successfully")
             } catch (e: Exception) {
                 Log.e(tag, "syncNotes: Synchronization failed: ${e.message}", e)
@@ -120,17 +144,26 @@ class NoteRepositoryImpl(
                 when (action) {
                     is NoteAction.Create -> {
                         val syncNote = action.remoteNote
-                        val noteId = insertNote(syncNote.toLocalNote(defaultPinned = false), sync = false)
+                        val imported = if (syncProvider.type == CloudService.FILE_STORAGE) {
+                            VaultSyncImport.noteFromRemote(syncNote)
+                        } else {
+                            syncNote.toLocalNote(defaultPinned = false)
+                        }
+                        val noteId = insertNote(imported, sync = false)
                         idMappingDao.insert(syncNote.getMapping(noteId, syncProvider.type))
                     }
 
                     is NoteAction.Update -> {
-                        val mergedNote = action.remoteNote.updateLocalNote(action.note)
-                        val note = if (action.note.isList) {
-                            val tasks = mergedNote.mdToTaskList(mergedNote.content)
-                            mergedNote.copy(content = "", taskList = tasks, isList = true)
+                        val note = if (syncProvider.type == CloudService.FILE_STORAGE) {
+                            VaultSyncImport.noteFromRemote(action.remoteNote, action.note)
                         } else {
-                            mergedNote
+                            val mergedNote = action.remoteNote.updateLocalNote(action.note)
+                            if (action.note.isList) {
+                                val tasks = mergedNote.mdToTaskList(mergedNote.content)
+                                mergedNote.copy(content = "", taskList = tasks, isList = true)
+                            } else {
+                                mergedNote
+                            }
                         }
                         idMappingDao.updateNoteExtras(
                             localId = action.note.id,
@@ -302,4 +335,33 @@ class NoteRepositoryImpl(
 
     override suspend fun deleteIdMappingsForCloudService(cloudService: CloudService) =
         idMappingDao.deleteAllMappingsFor(cloudService)
+
+    private suspend fun handleVaultConflicts(
+        conflicts: List<org.qosp.notes.data.sync.core.VaultSyncConflict>,
+        syncProvider: ISyncBackend,
+    ) {
+        val backend = syncProvider as? StorageBackend ?: return
+        for (conflict in conflicts) {
+            backend.createConflictCopy(conflict.remote)
+            toaster.showLong("Edit conflict for ${conflict.local.title}; a copy was saved in the vault.")
+        }
+    }
+
+    private suspend fun refreshVaultAttachmentIndex(syncProvider: ISyncBackend) {
+        if (syncProvider.type != CloudService.FILE_STORAGE) return
+        val mappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
+        for (mapping in mappings) {
+            val path = mapping.storageUri ?: continue
+            val remote = syncProvider.getNote(mapping) ?: continue
+            val local = getById(mapping.localNoteId).first() ?: continue
+            val imported = VaultSyncImport.noteFromRemote(remote, local)
+            if (imported.attachments != local.attachments || imported.content != local.content) {
+                updateNote(imported, sync = false)
+            }
+            val hash = remote.extra
+            if (hash != null && hash != mapping.extras) {
+                idMappingDao.update(mapping.copy(extras = hash))
+            }
+        }
+    }
 }
