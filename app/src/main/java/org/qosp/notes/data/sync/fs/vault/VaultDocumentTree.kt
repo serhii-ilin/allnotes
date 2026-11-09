@@ -6,6 +6,44 @@ import java.io.IOException
 /** SAF helpers for nested vault paths. */
 object VaultDocumentTree {
     data class IndexedFile(val relativePath: String, val file: DocumentFile)
+    data class IndexedVaultFile(val relativePath: String)
+
+    fun indexNotes(fs: VaultFs): List<IndexedVaultFile> {
+        val candidates = mutableListOf<String>()
+        fun walk(dir: String) {
+            val children = fs.listChildren(dir)
+            children.forEach { child ->
+                when {
+                    child.isDirectory -> {
+                        if (!VaultHousekeeping.shouldSkipDirectory(child.name)) walk(child.relativePath)
+                    }
+                    VaultHousekeeping.shouldIndexFile(child.name) -> {
+                        candidates.add(child.relativePath)
+                    }
+                }
+            }
+        }
+        walk("")
+        val notePaths = candidates.map { VaultPaths.normalizeNotePath(it) }.toSet()
+        return candidates.mapNotNull { rel ->
+            val norm = VaultPaths.normalizeNotePath(rel)
+            if (isUnderNoteAssetFolder(norm, notePaths)) null else IndexedVaultFile(norm)
+        }
+    }
+
+    fun isIndexCompleteForMappedPaths(
+        fs: VaultFs,
+        indexed: List<IndexedVaultFile>,
+        knownMappedPaths: Set<String>,
+    ): Boolean {
+        if (knownMappedPaths.isEmpty()) return true
+        val indexedPaths = indexed.map { it.relativePath }.toSet()
+        for (path in knownMappedPaths) {
+            if (path in indexedPaths) continue
+            if (fs.isFile(path)) return false
+        }
+        return true
+    }
 
     fun indexNotes(root: DocumentFile): List<IndexedFile> {
         val candidates = mutableListOf<Pair<String, DocumentFile>>()

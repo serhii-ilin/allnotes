@@ -13,6 +13,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
@@ -26,6 +28,7 @@ import org.qosp.notes.preferences.CloudService
 /**
  * Scenario-level sync classification using production [SynchronizeNotes] + vault helpers (no SAF).
  */
+@RunWith(RobolectricTestRunner::class)
 class VaultSyncIntegrationScenariosTest {
 
     @get:Rule
@@ -55,9 +58,11 @@ class VaultSyncIntegrationScenariosTest {
     }
 
     @Test
-    fun onlyBinnedNote_activeMappedPathsEmpty_scanCanSucceed() {
-        val paths = emptySet<String>()
-        assertEquals(0, paths.size)
+    fun onlyBinnedNote_activeMappedPathsEmpty_scanCanSucceed() = runTest {
+        val h = VaultFolderTestHarness()
+        h.seedNoteFile("Active.md", "Active", "still here")
+        val scan = h.backend.getAll(emptySet())
+        assertFalse(scan.isNullOrEmpty())
     }
 
     @Test

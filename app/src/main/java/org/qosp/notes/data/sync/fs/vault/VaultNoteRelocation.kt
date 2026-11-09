@@ -47,6 +47,26 @@ object VaultNoteRelocation {
      * only when empty afterward.
      */
     fun relocateOwnedAssets(
+        fs: VaultFs,
+        fromNotePath: String,
+        toNotePath: String,
+        ownedVaultRelPaths: Set<String>,
+    ) {
+        val oldDir = VaultPaths.assetDirectoryForNote(fromNotePath)
+        val newDir = VaultPaths.assetDirectoryForNote(toNotePath)
+        if (oldDir == newDir || ownedVaultRelPaths.isEmpty()) return
+        fs.ensureDirectory(newDir)
+        val ownedRel = ownedVaultRelPaths.map { VaultPaths.toVaultRelative(it) }.toSet()
+        for (rel in ownedRel) {
+            if (!rel.startsWith("$oldDir/")) continue
+            val fileName = VaultPaths.fileName(rel)
+            val targetRel = VaultPaths.normalize("$newDir/$fileName")
+            moveAssetIfNeeded(fs, rel, targetRel)
+        }
+        pruneEmptyAssetDirectoryFs(fs, oldDir, ownedRel)
+    }
+
+    fun relocateOwnedAssets(
         context: Context,
         root: DocumentFile,
         fromNotePath: String,
@@ -105,6 +125,41 @@ object VaultNoteRelocation {
             throw IOException("Verify failed for $targetRel")
         }
         DocumentsContract.deleteDocument(context.contentResolver, source.uri)
+    }
+
+    private fun moveAssetIfNeeded(fs: VaultFs, sourceRel: String, targetRel: String) {
+        if (sourceRel == targetRel) return
+        if (!fs.isFile(sourceRel)) return
+        val existingTarget = if (fs.isFile(targetRel)) targetRel else null
+        val sourceBytes = fs.openRead(sourceRel)?.use { it.readBytes() } ?: return
+        val sourceHash = VaultContentHash.ofBytes(sourceBytes)
+        if (existingTarget != null) {
+            val targetBytes = fs.openRead(targetRel)?.use { it.readBytes() }
+            val sameBytes = targetBytes != null && VaultContentHash.ofBytes(targetBytes) == sourceHash
+            if (sameBytes) {
+                fs.delete(sourceRel)
+            }
+            return
+        }
+        fs.writeBytes(targetRel, sourceBytes, VaultFs.mimeForPath(targetRel))
+        val written = fs.openRead(targetRel)?.use { it.readBytes() }
+        if (written == null || VaultContentHash.ofBytes(written) != sourceHash) {
+            fs.delete(targetRel)
+            throw IOException("Verify failed for $targetRel")
+        }
+        fs.delete(sourceRel)
+    }
+
+    private fun pruneEmptyAssetDirectoryFs(fs: VaultFs, oldAssetDir: String, ownedRelUnderOld: Set<String>) {
+        for (rel in ownedRelUnderOld) {
+            if (rel.startsWith("$oldAssetDir/") && fs.isFile(rel)) {
+                fs.delete(rel)
+            }
+        }
+        val children = fs.listChildren(oldAssetDir)
+        if (children.isEmpty()) {
+            fs.delete(oldAssetDir)
+        }
     }
 
     private fun pruneEmptyAssetDirectory(

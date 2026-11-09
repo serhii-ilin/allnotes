@@ -21,7 +21,11 @@ import org.qosp.notes.data.sync.fs.vault.VaultMediaWriter
 import org.qosp.notes.data.sync.fs.vault.VaultNoteDocument
 import org.qosp.notes.data.sync.fs.vault.VaultNoteRelocation
 import org.qosp.notes.data.sync.fs.vault.VaultStreamHashes
+import org.qosp.notes.data.sync.fs.vault.FsVaultWriteStore
+import org.qosp.notes.data.sync.fs.vault.InMemoryVaultFs
 import org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore
+import org.qosp.notes.data.sync.fs.vault.SafVaultFs
+import org.qosp.notes.data.sync.fs.vault.VaultFs
 import org.qosp.notes.data.sync.fs.vault.VaultPaths
 import org.qosp.notes.data.sync.fs.vault.VaultMappingState
 import org.qosp.notes.data.sync.fs.vault.VaultRecoveryService
@@ -40,18 +44,41 @@ class StorageBackend(
     private val config: StorageConfig,
     private val notebookDao: NotebookDao,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
+    /** When set, all vault tree I/O uses this filesystem (Robolectric / unit harness). */
+    private val vaultFsOverride: VaultFs? = null,
 ) : ISyncBackend {
-
-    companion object {
-        private const val TAG = "StorageBackend"
-    }
 
     private val quarantinedNotePaths = mutableSetOf<String>()
 
     override val type: CloudService = CloudService.FILE_STORAGE
 
+    companion object {
+        private const val TAG = "StorageBackend"
+
+        fun withInMemoryVault(
+            context: Context,
+            config: StorageConfig,
+            notebookDao: NotebookDao,
+            vaultSyncCoordinator: VaultSyncCoordinator,
+            vaultFs: InMemoryVaultFs = InMemoryVaultFs(),
+        ): StorageBackend = StorageBackend(
+            context,
+            config,
+            notebookDao,
+            vaultSyncCoordinator,
+            vaultFsOverride = vaultFs,
+        )
+    }
+
     override suspend fun isAvailable(): AvailabilityStatus {
         return try {
+            vaultFsOverride?.let {
+                return if (it.canRead() && it.canWrite()) {
+                    AvailabilityStatus.Available
+                } else {
+                    AvailabilityStatus.Unavailable("In-memory vault not writable")
+                }
+            }
             val root = getRootDocumentFile()
             when {
                 root == null -> AvailabilityStatus.Unavailable("Storage location not accessible")
@@ -66,6 +93,16 @@ class StorageBackend(
     }
 
     override suspend fun createNote(note: Note): SyncNote {
+        val fs = vaultFs()
+        if (fs != null) {
+            val desired = VaultPaths.titleToNotePath(note.title, note.isMarkdownEnabled)
+            val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+            linkableExistingPathFs(fs, note, desired, notebookName)?.let { existing ->
+                return pathToSyncNote(fs, existing)
+            }
+            val relativePath = uniqueNotePathFs(fs, desired)
+            return writeNoteAt(null, relativePath, note, mapping = null)
+        }
         val root = getRootDocumentFile() ?: throw IOException("Unable to access storage location")
         val desired = VaultPaths.titleToNotePath(note.title, note.isMarkdownEnabled)
         val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
@@ -80,7 +117,9 @@ class StorageBackend(
     }
 
     override suspend fun updateNote(note: Note, mapping: IdMapping): IdMapping {
-        val root = getRootDocumentFile() ?: throw IOException("Unable to access storage location")
+        val fs = vaultFs()
+        val root = if (fs == null) getRootDocumentFile() else null
+        if (fs == null && root == null) throw IOException("Unable to access storage location")
         val currentPath = mapping.storageUri?.let { VaultPaths.normalizeNotePath(it) }
             ?: throw IllegalArgumentException("Vault path missing in mapping")
         val desiredPath = VaultPaths.titleToNotePath(
@@ -89,18 +128,26 @@ class StorageBackend(
             parentDir = VaultPaths.parentPath(currentPath),
         )
         val targetPath = if (desiredPath != currentPath) {
-            uniqueNotePath(root, desiredPath, exclude = currentPath)
+            if (fs != null) uniqueNotePathFs(fs, desiredPath, exclude = currentPath)
+            else uniqueNotePath(root!!, desiredPath, exclude = currentPath)
         } else {
             currentPath
         }
         var mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
-        val oldRaw = VaultDocumentTree.findByRelativePath(root, currentPath)?.let { readFileContent(it) }
+        val oldRaw = when {
+            fs != null -> fs.readText(currentPath)
+            else -> VaultDocumentTree.findByRelativePath(root!!, currentPath)?.let { readFileContent(it) }
+        }
         val notebookNameForCheck = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
         if (mappingState != null && !oldRaw.isNullOrBlank() &&
             mappingState.baselineHash.isNotEmpty()
         ) {
-            val diskFile = VaultDocumentTree.findByRelativePath(root, currentPath)
-            val diskSync = diskFile?.let { fileToSyncNote(it, currentPath) }
+            val diskSync = when {
+                fs != null && fs.isFile(currentPath) -> pathToSyncNote(fs, currentPath)
+                root != null -> VaultDocumentTree.findByRelativePath(root, currentPath)
+                    ?.let { fileToSyncNote(it, currentPath) }
+                else -> null
+            }
             if (diskSync != null) {
                 val diskHash = VaultSyncImport.logicalHashFromRemoteFile(
                     diskSync,
@@ -108,7 +155,11 @@ class StorageBackend(
                     currentPath,
                     notebookNameForCheck,
                 )
-                if (diskHash != mappingState.baselineHash) {
+                val diskRawHash = VaultContentHash.ofText(diskSync.content.orEmpty())
+                val rawBaseline = mappingState.baselineRawHash
+                val rawDiffers = rawBaseline.isNotEmpty() && diskRawHash != rawBaseline
+                val logicalDiffers = diskHash != mappingState.baselineHash
+                if (rawDiffers && logicalDiffers) {
                     val conflictPath = createConflictCopy(diskSync)
                     mappingState = mappingState.copy(
                         conflictRemoteHash = diskHash,
@@ -122,34 +173,36 @@ class StorageBackend(
         } else {
             note
         }
+        val ownedBeforeRemap = mappingState?.vaultAttachmentPathSet.orEmpty()
         if (targetPath != currentPath && mappingState != null) {
             val remappedPaths = mappingState.vaultAttachmentPaths.map {
                 VaultNoteRelocation.remapVaultRelPath(it, currentPath, targetPath)
             }
             mappingState = mappingState.copy(vaultAttachmentPaths = remappedPaths)
-            VaultNoteRelocation.relocateOwnedAssets(
-                context,
-                root,
-                currentPath,
-                targetPath,
-                remappedPaths.toSet(),
-            )
-        } else if (targetPath != currentPath) {
-            VaultNoteRelocation.relocateOwnedAssets(
-                context,
-                root,
-                currentPath,
-                targetPath,
-                mappingState?.vaultAttachmentPathSet.orEmpty(),
-            )
+        }
+        if (targetPath != currentPath) {
+            if (fs != null) {
+                VaultNoteRelocation.relocateOwnedAssets(fs, currentPath, targetPath, ownedBeforeRemap)
+            } else {
+                VaultNoteRelocation.relocateOwnedAssets(
+                    context,
+                    root!!,
+                    currentPath,
+                    targetPath,
+                    ownedBeforeRemap,
+                )
+            }
         }
         val mappingForWrite = mappingState?.let {
             mapping.copy(extras = VaultMappingState.encode(it))
         } ?: mapping
         val syncNote = writeNoteAt(root, targetPath, noteForWrite, mappingForWrite, preservedDiskRaw = oldRaw)
         if (targetPath != currentPath) {
-            VaultDocumentTree.findByRelativePath(root, currentPath)?.let { old ->
-                DocumentsContract.deleteDocument(context.contentResolver, old.uri)
+            when {
+                fs != null -> fs.delete(currentPath)
+                root != null -> VaultDocumentTree.findByRelativePath(root, currentPath)?.let { old ->
+                    DocumentsContract.deleteDocument(context.contentResolver, old.uri)
+                }
             }
         }
         val gen = vaultSyncCoordinator.currentGeneration()
@@ -167,29 +220,58 @@ class StorageBackend(
     }
 
     override suspend fun deleteNote(mapping: IdMapping, removeAssets: Boolean): Boolean {
-        val root = getRootDocumentFile() ?: return false
+        val fs = vaultFs()
+        val root = if (fs == null) getRootDocumentFile() else null
+        if (fs == null && root == null) return false
         val path = mapping.storageUri ?: return false
         val mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
         if (removeAssets) {
-            VaultNoteRelocation.deleteOwnedAssets(
-                context,
-                root,
-                path,
-                mappingState?.vaultAttachmentPathSet.orEmpty(),
-            )
+            if (fs != null) {
+                deleteOwnedAssetsFs(fs, path, mappingState?.vaultAttachmentPathSet.orEmpty())
+            } else {
+                VaultNoteRelocation.deleteOwnedAssets(
+                    context,
+                    root!!,
+                    path,
+                    mappingState?.vaultAttachmentPathSet.orEmpty(),
+                )
+            }
         }
-        val file = VaultDocumentTree.findByRelativePath(root, path) ?: return false
-        return DocumentsContract.deleteDocument(context.contentResolver, file.uri)
+        return when {
+            fs != null -> fs.delete(path)
+            else -> {
+                val file = VaultDocumentTree.findByRelativePath(root!!, path) ?: return false
+                DocumentsContract.deleteDocument(context.contentResolver, file.uri)
+            }
+        }
     }
 
     override suspend fun getNote(mapping: IdMapping): SyncNote? {
         val path = mapping.storageUri ?: return null
+        vaultFs()?.let { fs ->
+            if (!fs.isFile(path)) return null
+            return pathToSyncNote(fs, path)
+        }
         val root = getRootDocumentFile() ?: return null
         val file = VaultDocumentTree.findByRelativePath(root, path) ?: return null
         return fileToSyncNote(file, path)
     }
 
     override suspend fun getAll(knownMappedPaths: Set<String>): List<SyncNote>? {
+        vaultFs()?.let { fs ->
+            if (!fs.canRead()) return null
+            return try {
+                val indexed = VaultDocumentTree.indexNotes(fs)
+                if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexed, knownMappedPaths)) {
+                    Log.w(TAG, "getAll: mapped note visible but missing from index; failing scan")
+                    return null
+                }
+                indexed.map { file -> pathToSyncNote(fs, file.relativePath) }
+            } catch (e: Exception) {
+                Log.e(TAG, "getAll: scan failed", e)
+                null
+            }
+        }
         val root = getRootDocumentFile() ?: return null
         if (!root.canRead()) return null
         if (!runVaultRecoveryPrelude(root)) {
@@ -227,17 +309,20 @@ class StorageBackend(
     }
 
     suspend fun createConflictCopy(remote: SyncNote): String? {
-        val root = getRootDocumentFile() ?: return null
+        val fs = vaultFs()
         val original = remote.idStr
         val conflictPath = VaultPaths.conflictPath(original, remote.lastModified)
-        val unique = uniqueNotePath(root, conflictPath)
+        val unique = if (fs != null) uniqueNotePathFs(fs, conflictPath) else {
+            val root = getRootDocumentFile() ?: return null
+            uniqueNotePath(root, conflictPath)
+        }
         val content = remote.content ?: return null
-        writeRaw(root, unique, content)
+        writeRaw(getRootDocumentFile(), unique, content)
         return unique
     }
 
     private suspend fun writeNoteAt(
-        root: DocumentFile,
+        root: DocumentFile?,
         relativePath: String,
         note: Note,
         mapping: IdMapping?,
@@ -245,10 +330,18 @@ class StorageBackend(
     ): SyncNote {
         val path = VaultPaths.normalizeNotePath(relativePath)
         val mappingState = mapping?.extras?.let { VaultMappingState.resolve(it) }
-        val vaultAttachments = materializeAttachments(root, path, note.attachments, mappingState)
+        val fs = vaultFs()
+        val vaultAttachments = if (fs != null) {
+            materializeAttachmentsFs(fs, path, note.attachments, mappingState)
+        } else {
+            materializeAttachments(root!!, path, note.attachments, mappingState)
+        }
         val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
         val existingRaw = preservedDiskRaw
-            ?: VaultDocumentTree.findByRelativePath(root, path)?.let { readFileContent(it) }
+            ?: when {
+                fs != null -> fs.readText(path)
+                else -> VaultDocumentTree.findByRelativePath(root!!, path)?.let { readFileContent(it) }
+            }
         var doc = VaultNoteDocument.fromNote(
             note.copy(attachments = vaultAttachments),
             path,
@@ -269,16 +362,89 @@ class StorageBackend(
         val fullText = doc.renderFullText()
         val hash = VaultContentHash.ofText(fullText)
         writeRaw(root, path, fullText)
-        val file = VaultDocumentTree.findByRelativePath(root, path)
-            ?: throw IOException("Written file not found: $path")
+        val lastModified = when {
+            fs != null -> fs.lastModifiedEpochSec(path)
+            else -> VaultDocumentTree.findByRelativePath(root!!, path)
+                ?.lastModified()?.div(1000)
+                ?: throw IOException("Written file not found: $path")
+        }
         return SyncNote(
             id = 0,
             idStr = path,
             title = note.title,
             content = fullText,
-            lastModified = file.lastModified() / 1000,
+            lastModified = lastModified,
             extra = hash,
         )
+    }
+
+    private fun materializeAttachmentsFs(
+        fs: VaultFs,
+        noteRelativePath: String,
+        attachments: List<Attachment>,
+        mappingState: VaultMappingState?,
+    ): List<Attachment> {
+        val assetDir = VaultPaths.assetDirectoryForNote(noteRelativePath)
+        if (attachments.any { VaultPaths.isVaultRelativeAttachment(it.path) }) {
+            fs.ensureDirectory(assetDir)
+        }
+        return attachments.map { att ->
+            if (VaultPaths.isVaultRelativeAttachment(att.path)) att else att
+        }
+    }
+
+    private fun deleteOwnedAssetsFs(fs: VaultFs, noteRelativePath: String, ownedVaultRelPaths: Set<String>) {
+        val assetDir = VaultPaths.assetDirectoryForNote(noteRelativePath)
+        val ownedRel = ownedVaultRelPaths.map { VaultPaths.toVaultRelative(it) }.toSet()
+        for (rel in ownedRel) {
+            if (rel.startsWith("$assetDir/")) fs.delete(rel)
+        }
+        if (fs.listChildren(assetDir).isEmpty()) {
+            fs.delete(assetDir)
+        }
+    }
+
+    private fun uniqueNotePathFs(fs: VaultFs, desired: String, exclude: String? = null): String {
+        var candidate = VaultPaths.normalizeNotePath(desired)
+        var i = 2
+        while (fs.isFile(candidate) && candidate != exclude) {
+            val base = VaultPaths.noteBaseName(desired)
+            val parent = VaultPaths.parentPath(desired)
+            val ext = if (desired.endsWith(".txt", ignoreCase = true)) ".txt" else ".md"
+            candidate = VaultPaths.normalize(
+                if (parent.isEmpty()) "$base-$i$ext" else "$parent/$base-$i$ext",
+            )
+            i++
+        }
+        return candidate
+    }
+
+    private suspend fun linkableExistingPathFs(
+        fs: VaultFs,
+        note: Note,
+        desired: String,
+        notebookName: String?,
+    ): String? {
+        val desiredHash = VaultSyncImport.canonicalFileHash(note, desired, notebookName, preservedYamlBaseline = null)
+        val desiredBase = VaultPaths.noteBaseName(desired)
+        val indexed = VaultDocumentTree.indexNotes(fs)
+        for (file in indexed) {
+            val rel = file.relativePath
+            val raw = fs.readText(rel) ?: continue
+            val sync = pathToSyncNote(fs, rel)
+            val imported = VaultSyncImport.noteFromRemote(sync, note)
+            val onDiskHash = VaultSyncImport.canonicalFileHash(
+                imported,
+                rel,
+                notebookName,
+                VaultNoteDocument.parse(raw).frontMatter.preservedYaml,
+            )
+            if (onDiskHash != desiredHash) continue
+            val baseMatch = VaultPaths.noteBaseName(rel) == desiredBase
+            val parentMatch = VaultPaths.parentPath(rel) == VaultPaths.parentPath(desired)
+            if (baseMatch || parentMatch || rel == desired) return rel
+        }
+        return null
     }
 
     private fun materializeAttachments(
@@ -357,15 +523,26 @@ class StorageBackend(
             .getOrDefault(att)
     }
 
-    private suspend fun writeRaw(root: DocumentFile, relativePath: String, text: String) {
-        if (!runVaultRecoveryPrelude(root)) {
+    private suspend fun writeRaw(root: DocumentFile?, relativePath: String, text: String) {
+        val path = VaultPaths.normalizeNotePath(relativePath)
+        vaultFs()?.let { fs ->
+            val store = FsVaultWriteStore(fs)
+            val generationAtCapture = vaultSyncCoordinator.currentGeneration()
+            val writeContext = VaultWriteContext(store.vaultScopeId(), generationAtCapture)
+            VaultRecoverableWrite(store).write(path, text, writeContext)
+            if (vaultSyncCoordinator.isStaleMapping(generationAtCapture)) {
+                throw IOException("Vault generation changed during write; refusing to treat result as committed")
+            }
+            return
+        }
+        val safRoot = root ?: throw IOException("Vault recovery incomplete; refusing write to $relativePath")
+        if (!runVaultRecoveryPrelude(safRoot)) {
             throw IOException("Vault recovery incomplete; refusing write to $relativePath")
         }
-        val path = VaultPaths.normalizeNotePath(relativePath)
-        val store = SafVaultWriteStore(context, root)
+        val store = SafVaultWriteStore(context, safRoot)
         val generationAtCapture = vaultSyncCoordinator.currentGeneration()
-        val context = VaultWriteContext(store.vaultScopeId(), generationAtCapture)
-        VaultRecoverableWrite(store).write(path, text, context)
+        val writeContext = VaultWriteContext(store.vaultScopeId(), generationAtCapture)
+        VaultRecoverableWrite(store).write(path, text, writeContext)
         if (vaultSyncCoordinator.isStaleMapping(generationAtCapture)) {
             throw IOException("Vault generation changed during write; refusing to treat result as committed")
         }
@@ -440,7 +617,22 @@ class StorageBackend(
         return candidate
     }
 
+    private fun vaultFs(): VaultFs? = vaultFsOverride
+
+    private fun pathToSyncNote(fs: VaultFs, relativePath: String): SyncNote {
+        val raw = fs.readText(relativePath) ?: throw IOException("Cannot read $relativePath")
+        return SyncNote(
+            id = 0,
+            idStr = relativePath,
+            content = raw,
+            title = VaultPaths.noteBaseName(relativePath),
+            lastModified = fs.lastModifiedEpochSec(relativePath),
+            extra = VaultContentHash.ofText(raw),
+        )
+    }
+
     private fun getRootDocumentFile(): DocumentFile? {
+        if (vaultFsOverride != null) return null
         return DocumentFile.fromTreeUri(context, config.location)
     }
 
