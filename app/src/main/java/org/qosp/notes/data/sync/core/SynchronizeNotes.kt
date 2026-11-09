@@ -59,9 +59,11 @@ class SynchronizeNotes(
                     .mapNotNull { it.storageUri }
                     .map { VaultPaths.normalizeNotePath(it) }
                     .toMutableSet()
+                val sharedClaimedPaths = claimedRemotePaths
 
                 // Process local notes
                 for (localNote in localNotes) {
+                    if (localNote.isDeleted) continue
                     val mapping = localToRemoteMap[localNote.id]
 
                     if (mapping != null) {
@@ -206,26 +208,57 @@ class SynchronizeNotes(
                 for (remoteNote in remoteNotes) {
                     val mapping = remoteToLocalMap[remoteNote.idStr]
                     if (mapping != null) {
-                        // Remote note has a mapping to a local note
                         val localNote = localNotesMap[mapping.localNoteId]
-
+                        val binnedPath = VaultMappingState.resolve(mapping.extras)?.binnedVaultPath
                         when {
+                            localNote != null && localNote.isDeleted -> {
+                                logDebug("Vault file returned; restoring binned note: ${remoteNote.title}")
+                                localUpdates.add(NoteAction.Update(localNote, remoteNote))
+                                if (mapping.isDeletedLocally && binnedPath == remoteNote.idStr) {
+                                    mappingUpdates.add(
+                                        mapping.copy(
+                                            isDeletedLocally = false,
+                                            storageUri = remoteNote.idStr,
+                                            extras = VaultMappingState.encode(
+                                                (VaultMappingState.resolve(mapping.extras)
+                                                    ?: VaultMappingState(baselineHash = ""))
+                                                    .copy(binnedVaultPath = null),
+                                            ),
+                                        ),
+                                    )
+                                }
+                            }
                             localNote == null -> {
                                 val dummyLocalNote = Note(id = mapping.localNoteId)
                                 logDebug("Local note deleted. Deleting remotely: ${remoteNote.title}")
                                 remoteUpdates.add(NoteAction.Delete(dummyLocalNote, remoteNote))
                             }
+                            mapping.isDeletedLocally &&
+                                binnedPath == VaultPaths.normalizeNotePath(remoteNote.idStr) -> {
+                                logDebug("Re-link binned mapping to returned file: ${remoteNote.title}")
+                                mappingUpdates.add(
+                                    mapping.copy(
+                                        isDeletedLocally = false,
+                                        storageUri = remoteNote.idStr,
+                                        extras = VaultMappingState.encode(
+                                            (VaultMappingState.resolve(mapping.extras)
+                                                ?: VaultMappingState(baselineHash = ""))
+                                                .copy(binnedVaultPath = null),
+                                        ),
+                                    ),
+                                )
+                            }
                             mapping.isDeletedLocally -> {
                                 logDebug("Remote note ignored for binned local: ${remoteNote.title}")
                             }
                         }
-                        // If the local note exists, it was already handled in the local notes loop
                     } else {
                         val linked = VaultNoteLinker.linkRemoteImportToLocal(
                             remoteNote,
-                            localNotes,
+                            localNotes.filterNot { it.isDeleted },
                             localToRemoteMap,
                             claimedLocalIds,
+                            sharedClaimedPaths,
                         )
                         if (linked != null) {
                             logDebug("Link remote import to local: ${linked.title}")

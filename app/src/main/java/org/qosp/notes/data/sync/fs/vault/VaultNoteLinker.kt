@@ -14,35 +14,57 @@ object VaultNoteLinker {
         locals: List<Note>,
         mappingsByLocalId: Map<Long, IdMapping>,
         claimedLocalIds: MutableSet<Long>,
+        claimedRemotePaths: MutableSet<String>,
     ): Note? {
         val path = VaultPaths.normalizeNotePath(remote.idStr)
         val remoteNote = VaultSyncImport.noteFromRemote(remote)
-        val notebookName = remoteNote.notebookId?.let { null }
+        val parsed = VaultNoteDocument.parse(remote.content.orEmpty())
+        val notebookName = parsed.frontMatter.notebook?.takeIf { it.isNotBlank() }
         val remoteHash = VaultSyncImport.logicalHashFromRemoteFile(remote, remoteNote, path, notebookName)
+        val remoteBodyHash = VaultContentHash.ofText(parsed.body)
+        val remoteTitle = parsed.frontMatter.title?.takeIf { it.isNotBlank() }
+            ?: VaultPaths.noteBaseName(path)
         val pathMatch = locals.firstOrNull { local ->
             if (local.id in claimedLocalIds) return@firstOrNull false
             if (mappingsByLocalId[local.id] != null) return@firstOrNull false
             val desired = VaultPaths.titleToNotePath(local.title, local.isMarkdownEnabled)
             VaultPaths.normalizeNotePath(desired) == path
         }
-        if (pathMatch != null) {
-            val localHash = VaultSyncImport.canonicalFileHash(pathMatch, path, notebookName, null)
-            if (localHash == remoteHash) {
-                claimedLocalIds.add(pathMatch.id)
-                return pathMatch
-            }
+        if (pathMatch != null &&
+            contentMatchesLocal(pathMatch, path, remoteTitle, remoteBodyHash, notebookName, remoteHash)
+        ) {
+            claimedLocalIds.add(pathMatch.id)
+            claimedRemotePaths.add(path)
+            return pathMatch
         }
         val hashMatch = locals.firstOrNull { local ->
             if (local.id in claimedLocalIds) return@firstOrNull false
             if (mappingsByLocalId[local.id] != null) return@firstOrNull false
             val desired = VaultPaths.titleToNotePath(local.title, local.isMarkdownEnabled)
-            val localHash = VaultSyncImport.canonicalFileHash(local, desired, notebookName, null)
-            localHash == remoteHash
+            contentMatchesLocal(local, path, remoteTitle, remoteBodyHash, notebookName, remoteHash) ||
+                contentMatchesLocal(local, desired, remoteTitle, remoteBodyHash, notebookName, remoteHash)
         }
         if (hashMatch != null) {
             claimedLocalIds.add(hashMatch.id)
+            claimedRemotePaths.add(path)
         }
         return hashMatch
+    }
+
+    private fun contentMatchesLocal(
+        local: Note,
+        pathForHash: String,
+        remoteTitle: String,
+        remoteBodyHash: String,
+        notebookName: String?,
+        remoteHash: String,
+    ): Boolean {
+        val localBodyHash = VaultContentHash.ofText(local.content)
+        val titleOk = local.title.equals(remoteTitle, ignoreCase = true) ||
+            VaultPaths.noteBaseName(pathForHash).equals(remoteTitle, ignoreCase = true)
+        if (titleOk && localBodyHash == remoteBodyHash) return true
+        val localHash = VaultSyncImport.canonicalFileHash(local, pathForHash, notebookName, null)
+        return localHash == remoteHash
     }
 
     fun linkLocalExportToRemote(

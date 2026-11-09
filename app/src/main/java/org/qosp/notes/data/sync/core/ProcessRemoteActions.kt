@@ -205,7 +205,18 @@ class ProcessRemoteActions(
         } else {
             base
         }
-        idMappingDao.insert(toInsert)
+        val existing = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)
+        if (existing != null) {
+            idMappingDao.update(
+                toInsert.copy(
+                    mappingId = existing.mappingId,
+                    isDeletedLocally = false,
+                    storageUri = toInsert.storageUri ?: existing.storageUri,
+                ),
+            )
+        } else {
+            idMappingDao.insert(toInsert)
+        }
         upgradeAttachmentPathsAfterPush(note.id, syncProvider)
         noteDao.updateLastModified(note.id, created.lastModified)
         val live = noteDao.getById(note.id).first() ?: note

@@ -157,7 +157,7 @@ class NoteRepositoryImpl(
             try {
                 val vaultMappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
                     .associateBy { it.localNoteId }
-                val localNotes = getAll().first().filterNot { it.isDeleted }
+                val localNotes = getAll().first()
 
                 // Get all remote notes and convert to metadata
                 val activeMappings = if (syncProvider.type == CloudService.FILE_STORAGE) {
@@ -217,7 +217,7 @@ class NoteRepositoryImpl(
                 )
 
                 // Caller holds [vaultSyncCoordinator.withVaultLock]; do not re-enter.
-                syncResult.newMappings.forEach { idMappingDao.insert(it) }
+                syncResult.newMappings.forEach { upsertVaultMapping(it) }
                 applyLocalUpdates(syncResult.localUpdates, syncProvider, vaultLockHeld = true)
                 handleVaultConflicts(syncResult.vaultConflicts, syncProvider)
                 refreshVaultAttachmentIndex(syncProvider)
@@ -268,7 +268,11 @@ class NoteRepositoryImpl(
 
                     is NoteAction.Update -> {
                         val current = getById(action.note.id).first() ?: continue
-                        if (current.isDeleted || current.modifiedDate != action.note.modifiedDate) {
+                        if (current.isDeleted && syncProvider.type == CloudService.FILE_STORAGE) {
+                            noteDao.update(
+                                current.toEntity().copy(isDeleted = false, deletionDate = null),
+                            )
+                        } else if (current.isDeleted || current.modifiedDate != action.note.modifiedDate) {
                             Log.d(tag, "applyLocalUpdates: stale pull skipped for ${action.note.id}")
                             continue
                         }
@@ -344,7 +348,7 @@ class NoteRepositoryImpl(
     }
 
     private suspend fun applyMappingChanges(syncResult: SyncNotesResult, syncProvider: ISyncBackend) {
-        syncResult.newMappings.forEach { idMappingDao.insert(it) }
+        syncResult.newMappings.forEach { upsertVaultMapping(it) }
         syncResult.localUpdates.filterIsInstance<NoteAction.Update>().map {
             it.remoteNote.getMapping(it.note.id, syncProvider.type)
         }.forEach { idMappingDao.insert(it) }
@@ -507,6 +511,16 @@ class NoteRepositoryImpl(
 
     override suspend fun deleteIdMappingsForCloudService(cloudService: CloudService) =
         idMappingDao.deleteAllMappingsFor(cloudService)
+
+    private suspend fun upsertVaultMapping(mapping: IdMapping) {
+        val provider = mapping.provider ?: return
+        val existing = idMappingDao.getByLocalIdAndProvider(mapping.localNoteId, provider)
+        if (existing != null) {
+            idMappingDao.update(mapping.copy(mappingId = existing.mappingId))
+        } else {
+            idMappingDao.insert(mapping)
+        }
+    }
 
     private suspend fun handleVaultConflicts(
         conflicts: List<org.qosp.notes.data.sync.core.VaultSyncConflict>,

@@ -52,7 +52,7 @@ data class VaultNoteDocument(
         )
 
         fun parse(raw: String): VaultNoteDocument {
-            val match = frontMatterRegex.find(raw.trim())
+            val match = frontMatterRegex.find(raw)
             if (match == null) {
                 return VaultNoteDocument(VaultFrontMatter(), raw)
             }
@@ -184,8 +184,8 @@ data class VaultNoteDocument(
                             "hidden" -> hidden = trimmed.substringAfter(":").trim().toBooleanStrictOrNull()
                             "isList" -> isList = trimmed.substringAfter(":").trim().toBooleanStrictOrNull()
                             "markdown" -> markdown = trimmed.substringAfter(":").trim().toBooleanStrictOrNull()
-                            "title" -> title = trimmed.substringAfter(":").trim().trim('"')
-                            "notebook" -> notebook = trimmed.substringAfter(":").trim().trim('"')
+                            "title" -> title = unescapeYamlScalar(trimmed.substringAfter(":").trim())
+                            "notebook" -> notebook = unescapeYamlScalar(trimmed.substringAfter(":").trim())
                             "created" -> created = trimmed.substringAfter(":").trim().toLongOrNull()
                             "modified" -> modified = trimmed.substringAfter(":").trim().toLongOrNull()
                             "color" -> {
@@ -266,5 +266,35 @@ data class VaultNoteDocument(
         }
 
         private fun escape(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
+
+        private fun unescapeYamlScalar(raw: String): String {
+            val t = raw.trim()
+            if (t.startsWith('"') && t.endsWith('"') && t.length >= 2) {
+                return unescape(t.substring(1, t.length - 1))
+            }
+            if (t.startsWith('\'') && t.endsWith('\'') && t.length >= 2) {
+                return t.substring(1, t.length - 1).replace("''", "'")
+            }
+            return t
+        }
+
+        private fun unescape(s: String) = buildString {
+            var i = 0
+            while (i < s.length) {
+                if (s[i] == '\\' && i + 1 < s.length) {
+                    when (s[i + 1]) {
+                        '\\' -> append('\\')
+                        '"' -> append('"')
+                        'n' -> append('\n')
+                        't' -> append('\t')
+                        else -> { append(s[i + 1]) }
+                    }
+                    i += 2
+                } else {
+                    append(s[i])
+                    i++
+                }
+            }
+        }
     }
 }

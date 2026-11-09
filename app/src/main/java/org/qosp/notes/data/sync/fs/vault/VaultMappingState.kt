@@ -10,6 +10,8 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class VaultMappingState(
     val baselineHash: String,
+    /** SHA-256 of last verified on-disk file bytes (conflict checks). */
+    val baselineRawHash: String = "",
     val preservedYaml: String = "",
     val vaultAttachmentPaths: List<String> = emptyList(),
     val vaultGeneration: Long = 0L,
@@ -63,6 +65,7 @@ data class VaultMappingState(
             )
             return VaultMappingState(
                 baselineHash = logicalHash,
+                baselineRawHash = VaultContentHash.ofText(rawFileContent),
                 preservedYaml = preserved,
                 vaultAttachmentPaths = sortedPaths,
                 vaultGeneration = vaultGeneration,
