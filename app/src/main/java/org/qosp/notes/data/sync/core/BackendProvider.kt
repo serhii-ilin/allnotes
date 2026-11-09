@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.stateIn
 import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.sync.fs.StorageBackend
 import org.qosp.notes.data.sync.fs.StorageConfig
+import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.nextcloud.NextcloudAPIProvider
 import org.qosp.notes.data.sync.nextcloud.NextcloudBackend
 import org.qosp.notes.data.sync.nextcloud.NextcloudConfig
@@ -26,6 +27,7 @@ class BackendProvider(
     syncingScope: SyncScope,
     private val connectionManager: ConnectionManager,
     private val notebookDao: NotebookDao,
+    private val vaultSyncCoordinator: VaultSyncCoordinator,
 ) {
     private val syncService: Flow<CloudService> = preferenceRepository.getAll().map { it.cloudService }
     private val pref: StateFlow<AppPreferences?> =
@@ -39,7 +41,9 @@ class BackendProvider(
         when (service) {
             CloudService.DISABLED -> null
             CloudService.NEXTCLOUD -> nextcloudConfig?.let { NextcloudBackend(nextcloudApiProvider, it) }
-            CloudService.FILE_STORAGE -> storageConfig?.let { StorageBackend(context, it, notebookDao) }
+            CloudService.FILE_STORAGE -> storageConfig?.let {
+                StorageBackend(context, it, notebookDao, vaultSyncCoordinator)
+            }
         }
     }.stateIn(syncingScope, SharingStarted.Eagerly, null)
 

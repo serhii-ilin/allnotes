@@ -8,12 +8,40 @@ import java.io.IOException
 
 /**
  * SAF-backed [VaultWriteStore]. No atomic rename guarantee across providers;
- * [VaultRecoverableWrite] keeps backups until publish verifies.
+ * durable journal + isolated backup namespace per vault tree URI.
  */
 class SafVaultWriteStore(
     private val context: Context,
     private val root: DocumentFile,
+    private val scopeId: String = vaultScopeFromRoot(root),
 ) : VaultWriteStore {
+
+    override fun vaultScopeId(): String = scopeId
+
+    override fun readJournal(): VaultRecoveryJournal? {
+        val file = VaultDocumentTree.findByRelativePath(root, VaultPaths.JOURNAL_RELATIVE) ?: return null
+        val raw = context.contentResolver.openInputStream(file.uri)?.use { it.bufferedReader().readText() }
+        return VaultRecoveryJournalCodec.decode(raw)
+    }
+
+    override fun writeJournal(journal: VaultRecoveryJournal?) {
+        val recoveryDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.RECOVERY_DIR)
+        val existing = recoveryDir.findFile("journal.json")
+        if (journal == null) {
+            existing?.let { DocumentsContract.deleteDocument(context.contentResolver, it.uri) }
+            return
+        }
+        val encoded = VaultRecoveryJournalCodec.encode(journal)
+        val parent = VaultDocumentTree.ensureDirectory(root, VaultPaths.RECOVERY_DIR)
+        val target = parent.findFile("journal.json")
+            ?: parent.createFile("application/json", "journal")?.also {
+                if (it.name != "journal.json") it.renameTo("journal.json")
+            }
+            ?: throw IOException("cannot create recovery journal")
+        context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
+            out.write(encoded.encodeToByteArray())
+        } ?: throw IOException("cannot write recovery journal")
+    }
 
     override fun readVerified(relativePath: String): String? {
         val file = VaultDocumentTree.findByRelativePath(root, relativePath) ?: return null
@@ -23,13 +51,13 @@ class SafVaultWriteStore(
     }
 
     override fun writeToStaging(relativePath: String, content: String): VaultWriteStore.RecoveryTicket? {
-        val stagingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.STAGING_DIR)
-        val token = "w_${VaultContentHash.ofText(relativePath + content.length).take(16)}"
-        val mime = if (relativePath.endsWith(".txt", ignoreCase = true)) "text/plain" else "text/markdown"
-        stagingDir.findFile(token)?.let {
+        val pendingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR)
+        val token = "st_${VaultContentHash.ofText(relativePath + content.length).take(16)}"
+        pendingDir.findFile(token)?.let {
             DocumentsContract.deleteDocument(context.contentResolver, it.uri)
         }
-        val file = stagingDir.createFile(mime, token) ?: return null
+        val mime = if (relativePath.endsWith(".txt", ignoreCase = true)) "text/plain" else "text/markdown"
+        val file = pendingDir.createFile(mime, token) ?: return null
         context.contentResolver.openOutputStream(file.uri)?.use { out ->
             val bytes = content.encodeToByteArray()
             out.write(bytes)
@@ -39,20 +67,18 @@ class SafVaultWriteStore(
     }
 
     override fun readStaging(ticket: VaultWriteStore.RecoveryTicket): String? {
-        val stagingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.STAGING_DIR)
-        val file = stagingDir.findFile(ticket.token) ?: return null
+        val pendingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR)
+        val file = pendingDir.findFile(ticket.token) ?: return null
         return context.contentResolver.openInputStream(file.uri)?.use { it.bufferedReader().readText() }
     }
 
     override fun publishFromStaging(relativePath: String, staging: VaultWriteStore.RecoveryTicket) {
         val path = VaultPaths.normalizeNotePath(relativePath)
-        val stagingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.STAGING_DIR)
-        val staged = stagingDir.findFile(staging.token) ?: throw IOException("staging missing")
-        val body = readStaging(staging) ?: throw IOException("staging unreadable")
+        val staged = readStaging(staging) ?: throw IOException("staging unreadable")
         val existing = VaultDocumentTree.findByRelativePath(root, path)
         if (existing != null && existing.isFile) {
             context.contentResolver.openOutputStream(existing.uri, "wt")?.use { out ->
-                out.write(body.encodeToByteArray())
+                out.write(staged.encodeToByteArray())
             } ?: throw IOException("cannot publish truncate $path")
         } else {
             val parentPath = VaultPaths.parentPath(path)
@@ -63,33 +89,57 @@ class SafVaultWriteStore(
                 ?: parent.createFile(mime, fileName.substringBeforeLast('.'))
                 ?: throw IOException("cannot create $fileName")
             context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
-                out.write(body.encodeToByteArray())
+                out.write(staged.encodeToByteArray())
             } ?: throw IOException("cannot write $fileName")
             if (target.name != fileName) target.renameTo(fileName)
         }
-        DocumentsContract.deleteDocument(context.contentResolver, staged.uri)
+        val pendingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR)
+        pendingDir.findFile(staging.token)?.let {
+            DocumentsContract.deleteDocument(context.contentResolver, it.uri)
+        }
     }
 
     override fun saveBackup(relativePath: String, content: String): VaultWriteStore.RecoveryTicket {
-        return writeToStaging("${VaultPaths.RECOVERY_DIR}/$relativePath", content)
-            ?: throw IOException("backup staging failed")
+        val backupDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.BACKUP_DIR)
+        val token = "bk_${VaultContentHash.ofText(relativePath + content).take(16)}"
+        backupDir.findFile(token)?.let {
+            DocumentsContract.deleteDocument(context.contentResolver, it.uri)
+        }
+        val file = backupDir.createFile("text/plain", token)
+            ?: throw IOException("backup create failed")
+        context.contentResolver.openOutputStream(file.uri)?.use { out ->
+            out.write(content.encodeToByteArray())
+        } ?: throw IOException("backup write failed")
+        return VaultWriteStore.RecoveryTicket(relativePath, token)
     }
 
-    override fun readRecovery(ticket: VaultWriteStore.RecoveryTicket): String? = readStaging(ticket)
+    override fun readBackup(ticket: VaultWriteStore.RecoveryTicket): String? {
+        val backupDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.BACKUP_DIR)
+        val file = backupDir.findFile(ticket.token) ?: return null
+        return context.contentResolver.openInputStream(file.uri)?.use { it.bufferedReader().readText() }
+    }
+
+    override fun readRecovery(ticket: VaultWriteStore.RecoveryTicket): String? =
+        readStaging(ticket) ?: readBackup(ticket)
 
     override fun restoreFromBackup(relativePath: String, backup: VaultWriteStore.RecoveryTicket) {
-        val body = readRecovery(backup) ?: return
-        writeToStaging(relativePath, body)?.let { publishFromStaging(relativePath, it) }
+        val body = readBackup(backup) ?: return
+        val staged = writeToStaging(relativePath, body)
+            ?: throw IOException("restore staging failed")
+        publishFromStaging(relativePath, staged)
     }
 
     override fun clearRecovery(ticket: VaultWriteStore.RecoveryTicket) {
-        val stagingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.RECOVERY_DIR)
-        stagingDir.findFile(ticket.token)?.let {
+        VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR).findFile(ticket.token)?.let {
             DocumentsContract.deleteDocument(context.contentResolver, it.uri)
         }
-        val mainStaging = VaultDocumentTree.ensureDirectory(root, VaultPaths.STAGING_DIR)
-        mainStaging.findFile(ticket.token)?.let {
+        VaultDocumentTree.ensureDirectory(root, VaultPaths.BACKUP_DIR).findFile(ticket.token)?.let {
             DocumentsContract.deleteDocument(context.contentResolver, it.uri)
         }
+    }
+
+    companion object {
+        fun vaultScopeFromRoot(root: DocumentFile): String =
+            VaultContentHash.ofText(root.uri.toString())
     }
 }

@@ -3,12 +3,15 @@ package org.qosp.notes.data.sync.fs.vault
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 
-/** In-memory [VaultWriteStore] with injectable fault points for unit tests. */
-class MemoryVaultWriteStore : VaultWriteStore {
-    private val files = mutableMapOf<String, String>()
+/** In-memory [VaultWriteStore] with injectable fault points and durable journal snapshot. */
+class MemoryVaultWriteStore(
+    private val scopeId: String = "test-scope",
+) : VaultWriteStore {
+    val files = mutableMapOf<String, String>()
     private val staging = mutableMapOf<String, String>()
     private val backups = mutableMapOf<String, String>()
     private val idGen = AtomicInteger()
+    private var journal: VaultRecoveryJournal? = null
 
     var failStagingOpen = false
     var failPublish = false
@@ -17,6 +20,14 @@ class MemoryVaultWriteStore : VaultWriteStore {
 
     fun seedVerified(relativePath: String, content: String) {
         files[relativePath] = content
+    }
+
+    override fun vaultScopeId(): String = scopeId
+
+    override fun readJournal(): VaultRecoveryJournal? = journal
+
+    override fun writeJournal(journal: VaultRecoveryJournal?) {
+        this.journal = journal
     }
 
     override fun readVerified(relativePath: String): String? = files[relativePath]
@@ -44,8 +55,10 @@ class MemoryVaultWriteStore : VaultWriteStore {
         return VaultWriteStore.RecoveryTicket(relativePath, token)
     }
 
+    override fun readBackup(ticket: VaultWriteStore.RecoveryTicket): String? = backups[ticket.token]
+
     override fun readRecovery(ticket: VaultWriteStore.RecoveryTicket): String? =
-        staging[ticket.token] ?: backups[ticket.token]
+        readStaging(ticket) ?: readBackup(ticket)
 
     override fun clearRecovery(ticket: VaultWriteStore.RecoveryTicket) {
         staging.remove(ticket.token)

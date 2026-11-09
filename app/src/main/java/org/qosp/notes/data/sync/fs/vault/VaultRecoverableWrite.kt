@@ -4,8 +4,8 @@ import java.io.IOException
 
 /**
  * Provider-agnostic recoverable write: never discard last verified content until a new
- * verified version is published. SAF does not guarantee atomic rename; callers may leave
- * [VaultWriteStore.RecoveryTicket] for restart.
+ * verified version is published. SAF does not guarantee atomic rename; a durable
+ * [VaultRecoveryJournal] survives process restart.
  */
 class VaultRecoverableWrite(private val store: VaultWriteStore) {
 
@@ -14,7 +14,10 @@ class VaultRecoverableWrite(private val store: VaultWriteStore) {
         val recovery: VaultWriteStore.RecoveryTicket?,
     )
 
-    fun write(relativePath: String, newText: String): Outcome {
+    fun write(relativePath: String, newText: String, context: VaultWriteContext): Outcome {
+        require(context.vaultScopeId == store.vaultScopeId()) {
+            "Vault write context scope mismatch"
+        }
         val expectedHash = VaultContentHash.ofText(newText)
         val bytes = newText.encodeToByteArray()
         if (bytes.isEmpty()) throw IOException("Refusing to write empty content to $relativePath")
@@ -36,7 +39,28 @@ class VaultRecoverableWrite(private val store: VaultWriteStore) {
             throw IOException("Staging short write for $relativePath")
         }
 
+        persistJournal(
+            VaultRecoveryJournalEntry(
+                notePath = relativePath,
+                stagingToken = staged.token,
+                backupToken = backup?.token,
+                expectedContentHash = expectedHash,
+                phase = VaultRecoveryJournalEntry.PHASE_STAGED,
+            ),
+            context,
+        )
+
         return try {
+            persistJournal(
+                VaultRecoveryJournalEntry(
+                    notePath = relativePath,
+                    stagingToken = staged.token,
+                    backupToken = backup?.token,
+                    expectedContentHash = expectedHash,
+                    phase = VaultRecoveryJournalEntry.PHASE_PUBLISHING,
+                ),
+                context,
+            )
             store.publishFromStaging(relativePath, staged)
             val onDisk = store.readVerified(relativePath)
                 ?: throw IOException("Missing after publish: $relativePath")
@@ -44,6 +68,8 @@ class VaultRecoverableWrite(private val store: VaultWriteStore) {
                 throw IOException("Publish verify failed for $relativePath")
             }
             backup?.let { store.clearRecovery(it) }
+            store.clearRecovery(staged)
+            clearJournalEntry(relativePath, context)
             Outcome(published = true, recovery = null)
         } catch (e: IOException) {
             if (prior != null && backup != null) {
@@ -53,12 +79,51 @@ class VaultRecoverableWrite(private val store: VaultWriteStore) {
         }
     }
 
-    fun resumePending(recovery: VaultWriteStore.RecoveryTicket): Boolean {
-        val body = store.readRecovery(recovery) ?: return false
+    fun resumePending(ticket: VaultWriteStore.RecoveryTicket, context: VaultWriteContext): Boolean {
+        val body = store.readStaging(ticket) ?: return false
+        val expectedHash = VaultContentHash.ofText(body)
         return runCatching {
-            write(recovery.relativePath, body)
+            persistJournal(
+                VaultRecoveryJournalEntry(
+                    notePath = ticket.relativePath,
+                    stagingToken = ticket.token,
+                    backupToken = null,
+                    expectedContentHash = expectedHash,
+                    phase = VaultRecoveryJournalEntry.PHASE_PUBLISHING,
+                ),
+                context,
+            )
+            store.publishFromStaging(ticket.relativePath, ticket)
+            val onDisk = store.readVerified(ticket.relativePath)
+                ?: throw IOException("Missing after resume publish")
+            if (VaultContentHash.ofText(onDisk) != expectedHash) {
+                throw IOException("Resume publish verify failed")
+            }
+            store.clearRecovery(ticket)
+            clearJournalEntry(ticket.relativePath, context)
             true
         }.getOrDefault(false)
+    }
+
+    private fun persistJournal(entry: VaultRecoveryJournalEntry, context: VaultWriteContext) {
+        val existing = store.readJournal()
+        val base = when {
+            existing == null -> VaultRecoveryJournal(context.vaultScopeId, context.vaultGeneration)
+            existing.vaultScopeId != context.vaultScopeId ->
+                VaultRecoveryJournal(context.vaultScopeId, context.vaultGeneration)
+            else -> existing.copy(vaultGeneration = context.vaultGeneration)
+        }
+        val merged = base.copy(
+            entries = base.entries.filterNot { it.notePath == entry.notePath } + entry,
+        )
+        store.writeJournal(merged)
+    }
+
+    private fun clearJournalEntry(notePath: String, context: VaultWriteContext) {
+        val existing = store.readJournal() ?: return
+        if (existing.vaultScopeId != context.vaultScopeId) return
+        val next = existing.copy(entries = existing.entries.filterNot { it.notePath == notePath })
+        store.writeJournal(if (next.entries.isEmpty()) null else next)
     }
 }
 
@@ -66,11 +131,16 @@ class VaultRecoverableWrite(private val store: VaultWriteStore) {
 interface VaultWriteStore {
     data class RecoveryTicket(val relativePath: String, val token: String)
 
+    fun vaultScopeId(): String
+    fun readJournal(): VaultRecoveryJournal?
+    fun writeJournal(journal: VaultRecoveryJournal?)
+
     fun readVerified(relativePath: String): String?
     fun writeToStaging(relativePath: String, content: String): RecoveryTicket?
     fun readStaging(ticket: RecoveryTicket): String?
     fun publishFromStaging(relativePath: String, staging: RecoveryTicket)
     fun saveBackup(relativePath: String, content: String): RecoveryTicket
+    fun readBackup(ticket: RecoveryTicket): String?
     fun readRecovery(ticket: RecoveryTicket): String?
     fun clearRecovery(ticket: RecoveryTicket)
     fun restoreFromBackup(relativePath: String, backup: RecoveryTicket)

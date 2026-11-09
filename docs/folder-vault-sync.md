@@ -104,7 +104,7 @@ Vault-backed attachments use `path` prefix `vaultrel:` + normalized relative pat
 - Persisted SAF tree URI + permission check before destructive ops.
 - `getAll()` returns `null` on unreadable vault → sync aborts **without** treating missing files as deletions.
 - External edit detection: compare `VaultContentHash` to `VaultMappingState.baselineHash`; divergent local+remote → conflict file on disk.
-- **Recoverable writes:** `VaultRecoverableWrite` stages + verifies before publish; SAF has **no** atomic rename — prior verified bytes restored from backup on failure; staging ticket may be resumed (`resumePending`).
+- **Recoverable writes:** `VaultRecoverableWrite` persists a vault-scoped `journal.json` (generation + scope id); `VaultRecoveryService.recoverPending` runs in `StorageBackend` **before every scan and write**; quarantined partial publishes are excluded from `getAll()` and block further writes until resolved. SAF has **no** atomic rename — backups live under `.quillpad-staging/recovery/backups` (never applied across scope mismatch).
 - **Vault serialization:** `VaultSyncCoordinator.withVaultLock` serializes vault pull/push/refresh and folder change; `VAULT_GENERATION` fence drops stale push Room apply after folder switch.
 - No GC of vault files except when app deletes a vault-backed note.
 
@@ -131,7 +131,7 @@ Vault-backed attachments use `path` prefix `vaultrel:` + normalized relative pat
 
 ## Acceptance tests (automated)
 
-`VaultPathsTest`, `VaultLinkResolverTest`, `VaultNoteDocumentTest`, `VaultContentHashTest`, `VaultSyncImportTest`, `VaultAttachmentsTest`, `VaultAttachmentDirtyRefreshTest`, `VaultRecoverableWriteTest` (fault injection via `MemoryVaultWriteStore`), `VaultSyncCoordinatorTest`, `TaskListMarkwonBindingsTest`, extensions to `SynchronizeNotesTest`.
+`VaultPathsTest`, `VaultLinkResolverTest`, `VaultNoteDocumentTest`, `VaultContentHashTest`, `VaultSyncImportTest`, `VaultAttachmentsTest`, `VaultAttachmentDirtyRefreshTest`, `VaultRecoverableWriteTest`, `VaultRecoveryPersistenceTest` (`FileVaultWriteStore` restart), `VaultSyncOrchestrationTest` (production `SynchronizeNotes`), `VaultGenerationFenceTest`, `VaultSyncCoordinatorTest`, `TaskListMarkwonBindingsTest`, extensions to `SynchronizeNotesTest`.
 
 Commands (agent env):
 

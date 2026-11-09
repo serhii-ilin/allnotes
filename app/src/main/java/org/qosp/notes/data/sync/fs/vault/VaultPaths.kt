@@ -116,5 +116,8 @@ object VaultPaths {
 
     const val VAULT_REL_PREFIX = "vaultrel:"
     const val STAGING_DIR = ".quillpad-staging"
+    const val PENDING_DIR = ".quillpad-staging/pending"
     const val RECOVERY_DIR = ".quillpad-staging/recovery"
+    const val BACKUP_DIR = ".quillpad-staging/recovery/backups"
+    const val JOURNAL_RELATIVE = ".quillpad-staging/recovery/journal.json"
 }

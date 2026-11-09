@@ -21,7 +21,10 @@ import org.qosp.notes.data.sync.fs.vault.VaultMediaWriter
 import org.qosp.notes.data.sync.fs.vault.VaultNoteDocument
 import org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore
 import org.qosp.notes.data.sync.fs.vault.VaultPaths
+import org.qosp.notes.data.sync.fs.vault.VaultRecoveryService
 import org.qosp.notes.data.sync.fs.vault.VaultRecoverableWrite
+import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
+import org.qosp.notes.data.sync.fs.vault.VaultWriteContext
 import org.qosp.notes.data.sync.nextcloud.BackendValidationResult
 import org.qosp.notes.preferences.CloudService
 import java.io.FileNotFoundException
@@ -32,11 +35,14 @@ class StorageBackend(
     private val context: Context,
     private val config: StorageConfig,
     private val notebookDao: NotebookDao,
+    private val vaultSyncCoordinator: VaultSyncCoordinator,
 ) : ISyncBackend {
 
     companion object {
         private const val TAG = "StorageBackend"
     }
+
+    private val quarantinedNotePaths = mutableSetOf<String>()
 
     override val type: CloudService = CloudService.FILE_STORAGE
 
@@ -102,8 +108,13 @@ class StorageBackend(
     override suspend fun getAll(): List<SyncNote>? {
         val root = getRootDocumentFile() ?: return null
         if (!root.canRead()) return null
+        if (!runVaultRecoveryPrelude(root)) {
+            Log.w(TAG, "getAll: vault recovery blocked authoritative scan")
+            return null
+        }
         return try {
             val indexed = VaultDocumentTree.indexNotes(root)
+                .filter { (rel, _) -> rel !in quarantinedNotePaths }
             if (indexed.isEmpty() && root.listFiles().isNotEmpty()) {
                 Log.w(TAG, "getAll: note index empty but root has children; treating scan as failed")
                 return null
@@ -196,15 +207,30 @@ class StorageBackend(
         }
     }
 
-    private fun writeRaw(root: DocumentFile, relativePath: String, text: String) {
+    private suspend fun writeRaw(root: DocumentFile, relativePath: String, text: String) {
+        if (!runVaultRecoveryPrelude(root)) {
+            throw IOException("Vault recovery incomplete; refusing write to $relativePath")
+        }
         val path = VaultPaths.normalizeNotePath(relativePath)
         val store = SafVaultWriteStore(context, root)
-        val outcome = VaultRecoverableWrite(store).write(path, text)
-        if (!outcome.published) {
-            throw IOException(
-                "Recoverable write did not publish for $path (SAF may lack atomic rename; recovery=${outcome.recovery?.token})",
-            )
+        val generationAtCapture = vaultSyncCoordinator.currentGeneration()
+        val context = VaultWriteContext(store.vaultScopeId(), generationAtCapture)
+        VaultRecoverableWrite(store).write(path, text, context)
+        if (vaultSyncCoordinator.isStaleMapping(generationAtCapture)) {
+            throw IOException("Vault generation changed during write; refusing to treat result as committed")
         }
+    }
+
+    private suspend fun runVaultRecoveryPrelude(root: DocumentFile): Boolean {
+        val store = SafVaultWriteStore(context, root)
+        val generation = vaultSyncCoordinator.currentGeneration()
+        val outcome = VaultRecoveryService.recoverPending(store, generation)
+        quarantinedNotePaths.clear()
+        quarantinedNotePaths.addAll(outcome.quarantinedPaths)
+        if (outcome.writesBlocked) {
+            Log.e(TAG, "Vault recovery: writes blocked for quarantined partial publishes")
+        }
+        return !outcome.writesBlocked
     }
 
     private fun fileToSyncNote(file: DocumentFile, relativePath: String): SyncNote? {

@@ -92,7 +92,9 @@ class SynchronizeNotes(
                                     remoteHash != baseline &&
                                     remoteHash != localHash
                                 if (divergent) {
-                                    if (parsedExtras.conflictRemoteHash == remoteHash) {
+                                    val alreadyRecorded = mappingState?.conflictRemoteHash == remoteHash ||
+                                        parsedExtras.conflictRemoteHash == remoteHash
+                                    if (alreadyRecorded) {
                                         logDebug("Vault conflict already recorded for ${localNote.title}")
                                     } else {
                                         logDebug("Vault conflict: ${localNote.title} at $vaultPath")

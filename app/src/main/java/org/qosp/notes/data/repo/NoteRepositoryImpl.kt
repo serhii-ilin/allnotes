@@ -407,19 +407,21 @@ class NoteRepositoryImpl(
             val mapping = idMappingDao.getByLocalIdAndProvider(conflict.local.id, CloudService.FILE_STORAGE)
                 ?: continue
             val remoteHash = conflict.remote.extra.orEmpty()
+            val mappingState = VaultMappingState.resolve(mapping.extras)
             val parsed = VaultMappingExtras.parse(mapping.extras)
-            if (parsed.conflictRemoteHash == remoteHash && !parsed.conflictCopyPath.isNullOrEmpty()) {
+            val existingRemote = mappingState?.conflictRemoteHash ?: parsed.conflictRemoteHash
+            val existingPath = mappingState?.conflictCopyPath ?: parsed.conflictCopyPath
+            if (existingRemote == remoteHash && !existingPath.isNullOrEmpty()) {
                 continue
             }
             val conflictPath = backend.createConflictCopy(conflict.remote) ?: continue
+            val baseline = mappingState?.baselineHash ?: parsed.baselineHash ?: remoteHash
+            val next = (mappingState ?: VaultMappingState(baselineHash = baseline)).copy(
+                conflictRemoteHash = remoteHash,
+                conflictCopyPath = conflictPath,
+            )
             idMappingDao.update(
-                mapping.copy(
-                    extras = VaultMappingExtras.withConflict(
-                        parsed.baselineHash ?: mapping.extras,
-                        remoteHash,
-                        conflictPath,
-                    ),
-                ),
+                mapping.copy(extras = VaultMappingState.encode(next)),
             )
             toaster.showLong("Edit conflict for ${conflict.local.title}; a copy was saved in the vault.")
         }
