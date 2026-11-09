@@ -112,59 +112,6 @@ class VaultFolderSyncHarness(
 
     suspend fun getNote(id: Long): Note? = noteDao.getById(id).first()
 
-    /** Direct vault write (same code paths as [ProcessRemoteActions], without debounce). */
-    suspend fun vaultPushCreate(note: Note): IdMapping {
-        val created = backend.createNote(note)
-        val mapping = created.getMapping(note.id, CloudService.FILE_STORAGE).copy(
-            storageUri = created.idStr,
-            extras = VaultMappingState.encode(
-                VaultMappingState.fromDiskSync(
-                    created.content.orEmpty(),
-                    note,
-                    created.idStr,
-                    VaultSyncImport.vaultPathsFromNote(note),
-                    1L,
-                    null,
-                ),
-            ),
-        )
-        upsertMapping(mapping)
-        noteDao.update(note.copy(isLocalOnly = false).toEntity())
-        return mapping
-    }
-
-    suspend fun vaultPushUpdate(note: Note): IdMapping {
-        val mapping = idMappingDao.getByLocalIdAndProvider(note.id, CloudService.FILE_STORAGE)
-            ?: error("no mapping for note ${note.id}")
-        val updated = backend.updateNote(note, mapping)
-        idMappingDao.update(updated)
-        val live = noteDao.getById(note.id).first() ?: note
-        val state = VaultMappingState.resolve(updated.extras)
-        if (state != null) {
-            noteDao.update(live.copy(attachments = note.attachments).toEntity())
-        }
-        return updated
-    }
-
-    suspend fun vaultPushDelete(note: Note, removeAssets: Boolean = true) {
-        val mapping = idMappingDao.getByLocalIdAndProvider(note.id, CloudService.FILE_STORAGE) ?: return
-        backend.deleteNote(mapping, removeAssets)
-        if (!removeAssets) {
-            val path = VaultPaths.vaultMappingPath(mapping.storageUri)
-            val state = VaultMappingState.resolve(mapping.extras)
-                ?: VaultMappingState(baselineHash = "")
-            idMappingDao.update(
-                mapping.copy(
-                    storageUri = null,
-                    isDeletedLocally = true,
-                    extras = VaultMappingState.encode(state.copy(binnedVaultPath = path)),
-                ),
-            )
-        } else {
-            idMappingDao.deleteByLocalId(note.id)
-        }
-    }
-
     suspend fun upsertMapping(mapping: IdMapping) {
         val provider = mapping.provider ?: return
         val existing = idMappingDao.getByLocalIdAndProvider(mapping.localNoteId, provider)

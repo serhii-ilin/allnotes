@@ -27,7 +27,6 @@ import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.preferences.DateFormat
 import org.qosp.notes.preferences.DefaultEditorMode
 import org.qosp.notes.preferences.MoveCheckedItems
-import org.qosp.notes.preferences.NewNotesSyncable
 import org.qosp.notes.preferences.OpenMediaIn
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.preferences.ShowDate
@@ -100,7 +99,7 @@ class EditorViewModel(
                         notebookId = newNoteNotebookId,
                         isList = newNoteIsList,
                         attachments = newNoteAttachments,
-                        isLocalOnly = preferenceRepository.get<NewNotesSyncable>().first() == NewNotesSyncable.NO
+                        isLocalOnly = false
                     ),
                 )
             }

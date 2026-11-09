@@ -82,7 +82,7 @@ object VaultRecoveryService {
         return Outcome(
             quarantinedPaths = quarantined,
             recoveredPaths = recovered,
-            writesBlocked = quarantined.isNotEmpty(),
+            writesBlocked = false,
             scanBlocked = false,
         )
     }

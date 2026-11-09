@@ -50,9 +50,11 @@ class SynchronizeNotes(
                 // Maps for local note ID to remote note ID and vice versa
                 val localToRemoteMap = allMappings.associateBy { it.localNoteId }
                 val remoteToLocalMap = allMappings
-                    .filterNot { it.isDeletedLocally }
                     .mapNotNull { m ->
-                        VaultPaths.vaultMappingPath(m.storageUri)?.let { it to m }
+                        val path = VaultPaths.vaultMappingPath(m.storageUri)
+                            ?: VaultMappingState.resolve(m.extras)?.binnedVaultPath
+                                ?.let(VaultPaths::vaultMappingPath)
+                        path?.let { VaultPaths.normalizeNotePath(it) to m }
                     }
                     .toMap()
                 val claimedLocalIds = mutableSetOf<Long>()

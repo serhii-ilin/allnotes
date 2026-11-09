@@ -8,7 +8,22 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * In-memory vault tree for integration tests (no SAF).
  */
-class InMemoryVaultFs(override val scopeId: String = "mem-vault") : VaultFs {
+class InMemoryVaultFs(
+    override val scopeId: String = "mem-vault",
+    private val caseInsensitive: Boolean = false,
+) : VaultFs {
+
+    /** Tests: simulate missing storage permissions or offline vault. */
+    @Volatile
+    var writable: Boolean = true
+
+    /** Tests: simulate a single failed publish/write then succeed on retry. */
+    @Volatile
+    var failNextWrite: Boolean = false
+
+    override fun canWrite(): Boolean = writable
+
+    override fun canRead(): Boolean = true
 
     private data class Node(
         var bytes: ByteArray? = null,
@@ -23,7 +38,20 @@ class InMemoryVaultFs(override val scopeId: String = "mem-vault") : VaultFs {
         nodes[""] = Node(isDir = true)
     }
 
-    private fun norm(path: String): String = VaultPaths.normalize(path)
+    private val canonicalPath = mutableMapOf<String, String>()
+
+    private fun norm(path: String): String {
+        val n = VaultPaths.normalize(path)
+        if (!caseInsensitive) return n
+        val key = n.lowercase()
+        return canonicalPath.getOrPut(key) { n }
+    }
+
+    private fun resolveKey(path: String): String {
+        val n = VaultPaths.normalize(path)
+        if (!caseInsensitive) return n
+        return canonicalPath[n.lowercase()] ?: n
+    }
 
     private fun parent(path: String): String = VaultPaths.parentPath(path)
 
@@ -68,7 +96,7 @@ class InMemoryVaultFs(override val scopeId: String = "mem-vault") : VaultFs {
     }
 
     override fun isFile(relativePath: String): Boolean =
-        nodes[norm(relativePath)]?.let { !it.isDir && it.bytes != null } == true
+        nodes[resolveKey(relativePath)]?.let { !it.isDir && it.bytes != null } == true
 
     override fun isDirectory(relativePath: String): Boolean {
         val n = norm(relativePath)
@@ -77,10 +105,10 @@ class InMemoryVaultFs(override val scopeId: String = "mem-vault") : VaultFs {
     }
 
     override fun readText(relativePath: String): String? =
-        nodes[norm(relativePath)]?.bytes?.toString(Charsets.UTF_8)
+        nodes[resolveKey(relativePath)]?.bytes?.toString(Charsets.UTF_8)
 
     override fun openRead(relativePath: String): InputStream? {
-        val b = nodes[norm(relativePath)]?.bytes ?: return null
+        val b = nodes[resolveKey(relativePath)]?.bytes ?: return null
         return ByteArrayInputStream(b)
     }
 
@@ -89,6 +117,10 @@ class InMemoryVaultFs(override val scopeId: String = "mem-vault") : VaultFs {
     }
 
     override fun writeBytes(relativePath: String, bytes: ByteArray, mimeType: String) {
+        if (failNextWrite) {
+            failNextWrite = false
+            throw IOException("simulated vault write failure")
+        }
         val path = norm(relativePath)
         ensureParents(path)
         nodes[path] = Node(bytes = bytes, mime = mimeType, mtimeSec = System.currentTimeMillis() / 1000)
@@ -102,15 +134,16 @@ class InMemoryVaultFs(override val scopeId: String = "mem-vault") : VaultFs {
     }
 
     override fun delete(relativePath: String): Boolean {
-        val path = norm(relativePath)
+        val path = resolveKey(relativePath)
+        canonicalPath.remove(path.lowercase())
         return nodes.remove(path) != null
     }
 
     override fun lastModifiedEpochSec(relativePath: String): Long =
-        nodes[norm(relativePath)]?.mtimeSec ?: 0L
+        nodes[resolveKey(relativePath)]?.mtimeSec ?: 0L
 
     override fun copyFile(fromRelative: String, toRelative: String, deleteSource: Boolean) {
-        val from = norm(fromRelative)
+        val from = resolveKey(fromRelative)
         val to = norm(toRelative)
         val src = nodes[from] ?: throw IOException("missing $from")
         val bytes = src.bytes
@@ -120,6 +153,14 @@ class InMemoryVaultFs(override val scopeId: String = "mem-vault") : VaultFs {
     }
 
     override fun renameFile(fromRelative: String, toRelative: String) {
+        val from = resolveKey(fromRelative)
+        val to = norm(toRelative)
+        if (caseInsensitive && from.equals(to, ignoreCase = true) && from != to) {
+            val temp = norm("$from.__case_rename__")
+            copyFile(from, temp, deleteSource = true)
+            copyFile(temp, to, deleteSource = true)
+            return
+        }
         copyFile(fromRelative, toRelative, deleteSource = true)
     }
 

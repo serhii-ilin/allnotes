@@ -4,7 +4,8 @@ import java.text.Normalizer
 
 object VaultPaths {
     private val illegalChars = Regex("""[\\/:*?"<>|\x00-\x1f]""")
-    private const val MAX_SEGMENT_LENGTH = 120
+    /** Max UTF-8 bytes per path segment (room for `-2.md`, conflict suffixes on SAF). */
+    private const val MAX_SEGMENT_BYTES = 200
 
     /** Normalizes to forward slashes, no leading slash, collapses repeated slashes. */
     fun normalize(relativePath: String): String {
@@ -102,15 +103,37 @@ object VaultPaths {
         val nfd = Normalizer.normalize(original, Normalizer.Form.NFC)
         var name = illegalChars.replace(nfd, "_").trim().trimEnd('.')
         if (name.isBlank()) name = fallback
-        if (name.length > MAX_SEGMENT_LENGTH) {
-            val dot = name.lastIndexOf('.')
-            name = if (dot > 0) {
-                name.take(MAX_SEGMENT_LENGTH - (name.length - dot)) + name.substring(dot)
-            } else {
-                name.take(MAX_SEGMENT_LENGTH)
-            }
-        }
+        name = truncateUtf8BytesPreservingExtension(name, MAX_SEGMENT_BYTES)
         return name
+    }
+
+    fun truncateUtf8BytesPreservingExtension(name: String, maxBytes: Int): String {
+        val utf8 = name.toByteArray(Charsets.UTF_8)
+        if (utf8.size <= maxBytes) return name
+        val dot = name.lastIndexOf('.')
+        if (dot > 0) {
+            val ext = name.substring(dot)
+            val extBytes = ext.toByteArray(Charsets.UTF_8).size
+            val stemBudget = (maxBytes - extBytes).coerceAtLeast(1)
+            return truncateUtf8Bytes(name.substring(0, dot), stemBudget) + ext
+        }
+        return truncateUtf8Bytes(name, maxBytes)
+    }
+
+    private fun truncateUtf8Bytes(s: String, maxBytes: Int): String {
+        var used = 0
+        val out = StringBuilder()
+        var i = 0
+        while (i < s.length) {
+            val cp = s.codePointAt(i)
+            val chunk = String(Character.toChars(cp))
+            val chunkBytes = chunk.toByteArray(Charsets.UTF_8).size
+            if (used + chunkBytes > maxBytes) break
+            used += chunkBytes
+            out.append(chunk)
+            i += Character.charCount(cp)
+        }
+        return out.toString().ifBlank { "file" }
     }
 
     fun uniqueName(base: String, existing: Set<String>): String {

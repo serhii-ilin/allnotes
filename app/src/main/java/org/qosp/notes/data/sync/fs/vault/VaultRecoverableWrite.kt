@@ -63,9 +63,12 @@ class VaultRecoverableWrite(private val store: VaultWriteStore) {
             clearJournalEntry(relativePath, context)
             Outcome(published = true, recovery = null)
         } catch (e: IOException) {
+            store.clearRecovery(staged)
+            backup?.let { store.clearRecovery(it) }
             if (prior != null && backup != null) {
                 store.restoreFromBackup(relativePath, backup)
             }
+            clearJournalEntry(relativePath, context)
             throw e
         }
     }

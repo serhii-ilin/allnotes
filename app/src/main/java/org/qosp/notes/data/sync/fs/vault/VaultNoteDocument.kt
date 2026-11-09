@@ -20,6 +20,8 @@ data class VaultFrontMatter(
     val markdown: Boolean? = null,
     /** Unparsed / foreign YAML (Obsidian keys, nested blocks) preserved verbatim on round-trip. */
     val preservedYaml: String = "",
+    /** Known Quillpad keys whose on-disk formatting must round-trip verbatim (Obsidian-style). */
+    val knownKeysVerbatim: String = "",
 )
 
 data class VaultNoteDocument(
@@ -27,10 +29,18 @@ data class VaultNoteDocument(
     val body: String,
 ) {
     fun renderFullText(): String {
-        val fm = buildFrontMatterYaml(frontMatter)
+        val skipKeys = frontMatter.knownKeysVerbatim.lines()
+            .mapNotNull { line ->
+                line.trim().substringBefore(':').trim().takeIf { it.isNotEmpty() }
+            }
+            .toSet()
         return buildString {
             append("---\n")
-            append(fm)
+            if (frontMatter.knownKeysVerbatim.isNotBlank()) {
+                append(frontMatter.knownKeysVerbatim.trimEnd())
+                append('\n')
+            }
+            append(buildFrontMatterYaml(frontMatter, skipKeys))
             if (frontMatter.preservedYaml.isNotBlank()) {
                 append(frontMatter.preservedYaml.trimEnd())
                 append('\n')
@@ -134,9 +144,13 @@ data class VaultNoteDocument(
 
         fun mergePreservedFromDisk(existingRaw: String?, document: VaultNoteDocument): VaultNoteDocument {
             if (existingRaw.isNullOrBlank()) return document
-            val preserved = parse(existingRaw).frontMatter.preservedYaml
-            if (preserved.isBlank()) return document
-            return document.copy(frontMatter = document.frontMatter.copy(preservedYaml = preserved))
+            val prior = parse(existingRaw).frontMatter
+            return document.copy(
+                frontMatter = document.frontMatter.copy(
+                    preservedYaml = prior.preservedYaml,
+                    knownKeysVerbatim = prior.knownKeysVerbatim,
+                ),
+            )
         }
 
         private fun String.mdToTaskList(): List<NoteTask> {
@@ -166,6 +180,7 @@ data class VaultNoteDocument(
             var modified: Long? = null
             var tags: List<String>? = null
             val preserved = StringBuilder()
+            val knownVerbatim = StringBuilder()
             val lines = yaml.lines()
             var i = 0
             while (i < lines.size) {
@@ -186,8 +201,24 @@ data class VaultNoteDocument(
                             "markdown" -> markdown = trimmed.substringAfter(":").trim().toBooleanStrictOrNull()
                             "title" -> title = unescapeYamlScalar(trimmed.substringAfter(":").trim())
                             "notebook" -> notebook = unescapeYamlScalar(trimmed.substringAfter(":").trim())
-                            "created" -> created = trimmed.substringAfter(":").trim().toLongOrNull()
-                            "modified" -> modified = trimmed.substringAfter(":").trim().toLongOrNull()
+                            "created" -> {
+                                val rawVal = trimmed.substringAfter(":").trim()
+                                created = parseEpoch(rawVal)
+                                if (rawVal.toLongOrNull() == null && created != null) {
+                                    knownVerbatim.appendLine(line)
+                                } else if (created == null) {
+                                    knownVerbatim.appendLine(line)
+                                }
+                            }
+                            "modified" -> {
+                                val rawVal = trimmed.substringAfter(":").trim()
+                                modified = parseEpoch(rawVal)
+                                if (rawVal.toLongOrNull() == null && modified != null) {
+                                    knownVerbatim.appendLine(line)
+                                } else if (modified == null) {
+                                    knownVerbatim.appendLine(line)
+                                }
+                            }
                             "color" -> {
                                 val raw = trimmed.substringAfter(":").trim().trim('"')
                                 color = runCatching { NoteColor.valueOf(raw) }.getOrNull()
@@ -196,8 +227,9 @@ data class VaultNoteDocument(
                                 tags = if ('[' in trimmed) {
                                     val rest = trimmed.substringAfter("[").substringBeforeLast("]")
                                     VaultYamlTags.parseInlineList(rest)
-                                } else {
+                                } else if (trimmed.substringAfter(":").trim().isEmpty()) {
                                     val collected = mutableListOf<String>()
+                                    val blockStart = i
                                     i++
                                     while (i < lines.size && (lines[i].startsWith(" ") || lines[i].startsWith("-"))) {
                                         val item = lines[i].trim().removePrefix("-").trim().trim('"')
@@ -205,7 +237,14 @@ data class VaultNoteDocument(
                                         i++
                                     }
                                     i--
+                                    val block = lines.subList(blockStart, i + 1).joinToString("\n")
+                                    knownVerbatim.appendLine(block)
                                     collected
+                                } else {
+                                    val scalar = unescapeYamlScalar(trimmed.substringAfter(":").trim())
+                                    tags = listOf(scalar).filter { it.isNotEmpty() }.ifEmpty { null }
+                                    knownVerbatim.appendLine(line)
+                                    tags
                                 }
                             }
                         }
@@ -233,7 +272,17 @@ data class VaultNoteDocument(
                 created = created,
                 modified = modified,
                 markdown = markdown,
+                knownKeysVerbatim = knownVerbatim.toString().trimEnd(),
             ) to preserved.toString().trimEnd()
+        }
+
+        private fun parseEpoch(raw: String): Long? {
+            val t = raw.trim().trim('"')
+            t.toLongOrNull()?.let { return it }
+            return runCatching { java.time.Instant.parse(t).epochSecond }.getOrNull()
+                ?: runCatching {
+                    java.time.LocalDate.parse(t).atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
+                }.getOrNull()
         }
 
         private fun isYamlContinuation(line: String): Boolean {
@@ -242,27 +291,31 @@ data class VaultNoteDocument(
             return line.startsWith(" ") || line.startsWith("\t") || t.startsWith("-")
         }
 
-        private fun buildFrontMatterYaml(fm: VaultFrontMatter): String = buildString {
-            fm.title?.let { append("title: \"${escape(it)}\"\n") }
-            append("pinned: ${fm.pinned ?: false}\n")
-            append("archived: ${fm.archived ?: false}\n")
-            append("hidden: ${fm.hidden ?: false}\n")
-            append("isList: ${fm.isList ?: false}\n")
-            append("markdown: ${fm.markdown ?: true}\n")
-            append("color: \"${(fm.color ?: NoteColor.Default).name}\"\n")
-            if (fm.notebook != null) append("notebook: \"${escape(fm.notebook)}\"\n")
-            val tagList = fm.tags
-            if (tagList != null) {
-                if (tagList.isEmpty()) {
-                    append("tags: []\n")
-                } else {
-                    append("tags: [")
-                    append(tagList.joinToString(", ") { "\"${escape(it)}\"" })
-                    append("]\n")
+        private fun buildFrontMatterYaml(fm: VaultFrontMatter, skipKeys: Set<String> = emptySet()): String = buildString {
+            if ("title" !in skipKeys) {
+                fm.title?.let { append("title: \"${escape(it)}\"\n") }
+            }
+            if ("pinned" !in skipKeys) append("pinned: ${fm.pinned ?: false}\n")
+            if ("archived" !in skipKeys) append("archived: ${fm.archived ?: false}\n")
+            if ("hidden" !in skipKeys) append("hidden: ${fm.hidden ?: false}\n")
+            if ("isList" !in skipKeys) append("isList: ${fm.isList ?: false}\n")
+            if ("markdown" !in skipKeys) append("markdown: ${fm.markdown ?: true}\n")
+            if ("color" !in skipKeys) append("color: \"${(fm.color ?: NoteColor.Default).name}\"\n")
+            if ("notebook" !in skipKeys && fm.notebook != null) append("notebook: \"${escape(fm.notebook)}\"\n")
+            if ("tags" !in skipKeys) {
+                val tagList = fm.tags
+                if (tagList != null) {
+                    if (tagList.isEmpty()) {
+                        append("tags: []\n")
+                    } else {
+                        append("tags: [")
+                        append(tagList.joinToString(", ") { "\"${escape(it)}\"" })
+                        append("]\n")
+                    }
                 }
             }
-            fm.created?.let { append("created: $it\n") }
-            fm.modified?.let { append("modified: $it\n") }
+            if ("created" !in skipKeys) fm.created?.let { append("created: $it\n") }
+            if ("modified" !in skipKeys) fm.modified?.let { append("modified: $it\n") }
         }
 
         private fun escape(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")

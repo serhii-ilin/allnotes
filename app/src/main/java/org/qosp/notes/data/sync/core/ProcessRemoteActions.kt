@@ -155,9 +155,18 @@ class ProcessRemoteActions(
                     mapping.copy(
                         storageUri = null,
                         isDeletedLocally = true,
-                        extras = VaultMappingState.encode(state),
+                        extras = VaultMappingState.encode(state.copy(pendingVaultDelete = false)),
                     ),
                 )
+            } else if (syncProvider.type == CloudService.FILE_STORAGE) {
+                val prior = VaultMappingState.resolve(mapping.extras)
+                if (prior?.pendingVaultDelete == true) {
+                    idMappingDao.update(
+                        mapping.copy(
+                            extras = VaultMappingState.encode(prior.copy(pendingVaultDelete = false)),
+                        ),
+                    )
+                }
             }
         }
     } catch (e: Exception) {

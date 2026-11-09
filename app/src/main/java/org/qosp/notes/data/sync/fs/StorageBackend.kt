@@ -480,6 +480,9 @@ class StorageBackend(
         if (!runVaultRecoveryPrelude()) {
             throw IOException("Vault recovery incomplete; refusing write to $relativePath")
         }
+        if (quarantinedNotePaths.any { VaultPaths.normalizeNotePath(it) == path }) {
+            throw IOException("Vault path quarantined; refusing write to $path")
+        }
         val store = vaultWriteStore(fs)
         val generationAtCapture = vaultSyncCoordinator.currentGeneration()
         val writeContext = VaultWriteContext(store.vaultScopeId(), generationAtCapture)
@@ -500,7 +503,7 @@ class StorageBackend(
         if (outcome.scanBlocked || outcome.writesBlocked) {
             Log.e(TAG, "Vault recovery blocked scan/writes quarantine=${outcome.quarantinedPaths}")
         }
-        return !outcome.scanBlocked && !outcome.writesBlocked
+        return !outcome.scanBlocked
     }
 
     private fun pathToSyncNote(fs: VaultFs, relativePath: String): SyncNote {
