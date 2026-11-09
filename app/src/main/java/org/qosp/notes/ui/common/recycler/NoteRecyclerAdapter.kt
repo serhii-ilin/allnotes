@@ -21,6 +21,14 @@ class NoteRecyclerAdapter(
     private val attachmentsViewPool = RecyclerView.RecycledViewPool()
 
     var vaultRelativePaths: Map<Long, String> = emptyMap()
+        set(value) {
+            if (field != value) {
+                field = value
+                if (itemCount > 0) {
+                    notifyItemRangeChanged(0, itemCount, Payload.VaultPathChanged)
+                }
+            }
+        }
 
     var showHiddenNotes: Boolean = false
         set(value) {
@@ -56,7 +64,7 @@ class NoteRecyclerAdapter(
         if (combinedPayloads.isEmpty()) {
             super.onBindViewHolder(holder, position, payloads)
         } else {
-            holder.runPayloads(note, combinedPayloads)
+            holder.runPayloads(note, combinedPayloads, vaultRelativePaths[note.id])
         }
     }
 
@@ -122,6 +130,7 @@ class NoteRecyclerAdapter(
         RemindersChanged,
         AttachmentsChanged,
         TasksChanged,
+        VaultPathChanged,
     }
 
     companion object {

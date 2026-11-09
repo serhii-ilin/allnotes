@@ -18,7 +18,9 @@ data class VaultRecoveryJournal(
 data class VaultRecoveryJournalEntry(
     val notePath: String,
     val stagingToken: String,
+    val stagingStorageName: String = stagingToken,
     val backupToken: String? = null,
+    val backupStorageName: String? = null,
     val expectedContentHash: String,
     val phase: String,
 ) {

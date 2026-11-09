@@ -1,12 +1,27 @@
 package org.qosp.notes.data.sync.core
 
 import org.qosp.notes.data.model.Note
+import org.qosp.notes.data.sync.fs.vault.VaultFileOpFence
 
 // Sealed class to represent remote operations
 sealed class RemoteOperation {
-    data class Create(val note: Note, val import: Boolean = false) : RemoteOperation()
-    data class Update(val note: Note) : RemoteOperation()
-    data class Delete(val note: Note) : RemoteOperation()
+    abstract val vaultFence: VaultFileOpFence?
+
+    data class Create(
+        val note: Note,
+        val import: Boolean = false,
+        override val vaultFence: VaultFileOpFence? = null,
+    ) : RemoteOperation()
+
+    data class Update(
+        val note: Note,
+        override val vaultFence: VaultFileOpFence? = null,
+    ) : RemoteOperation()
+
+    data class Delete(
+        val note: Note,
+        override val vaultFence: VaultFileOpFence? = null,
+    ) : RemoteOperation()
 }
 
 enum class SyncMethod {

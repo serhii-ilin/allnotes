@@ -39,28 +39,19 @@ class VaultRecoverableWrite(private val store: VaultWriteStore) {
             throw IOException("Staging short write for $relativePath")
         }
 
-        persistJournal(
-            VaultRecoveryJournalEntry(
-                notePath = relativePath,
-                stagingToken = staged.token,
-                backupToken = backup?.token,
-                expectedContentHash = expectedHash,
-                phase = VaultRecoveryJournalEntry.PHASE_STAGED,
-            ),
-            context,
+        val journalEntry = VaultRecoveryJournalEntry(
+            notePath = relativePath,
+            stagingToken = staged.token,
+            stagingStorageName = staged.storageName,
+            backupToken = backup?.token,
+            backupStorageName = backup?.storageName,
+            expectedContentHash = expectedHash,
+            phase = VaultRecoveryJournalEntry.PHASE_STAGED,
         )
+        persistJournal(journalEntry, context)
 
         return try {
-            persistJournal(
-                VaultRecoveryJournalEntry(
-                    notePath = relativePath,
-                    stagingToken = staged.token,
-                    backupToken = backup?.token,
-                    expectedContentHash = expectedHash,
-                    phase = VaultRecoveryJournalEntry.PHASE_PUBLISHING,
-                ),
-                context,
-            )
+            persistJournal(journalEntry.copy(phase = VaultRecoveryJournalEntry.PHASE_PUBLISHING), context)
             store.publishFromStaging(relativePath, staged)
             val onDisk = store.readVerified(relativePath)
                 ?: throw IOException("Missing after publish: $relativePath")
@@ -87,7 +78,7 @@ class VaultRecoverableWrite(private val store: VaultWriteStore) {
                 VaultRecoveryJournalEntry(
                     notePath = ticket.relativePath,
                     stagingToken = ticket.token,
-                    backupToken = null,
+                    stagingStorageName = ticket.storageName,
                     expectedContentHash = expectedHash,
                     phase = VaultRecoveryJournalEntry.PHASE_PUBLISHING,
                 ),
@@ -129,7 +120,12 @@ class VaultRecoverableWrite(private val store: VaultWriteStore) {
 
 /** Testable storage surface; [org.qosp.notes.data.sync.fs.StorageBackend] adapts SAF. */
 interface VaultWriteStore {
-    data class RecoveryTicket(val relativePath: String, val token: String)
+    data class RecoveryTicket(
+        val relativePath: String,
+        val token: String,
+        /** Actual SAF document name (may differ from [token] when provider appends an extension). */
+        val storageName: String = token,
+    )
 
     fun vaultScopeId(): String
     fun readJournal(): VaultRecoveryJournal?

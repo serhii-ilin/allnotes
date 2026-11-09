@@ -67,6 +67,21 @@ object VaultSyncImport {
     fun hasPendingLocalMedia(note: Note): Boolean =
         note.attachments.any { !VaultPaths.isVaultRelativeAttachment(it.path) }
 
+    fun isAttachmentMembershipDirty(note: Note, mappingState: VaultMappingState?): Boolean {
+        if (mappingState == null) return false
+        val baseline = mappingState.vaultAttachmentPathSet
+        if (baseline.isEmpty() && note.attachments.none { VaultPaths.isVaultRelativeAttachment(it.path) }) {
+            return false
+        }
+        return vaultPathsFromNote(note).toSet() != baseline
+    }
+
+    fun removedVaultAttachmentPaths(note: Note, mappingState: VaultMappingState?): Set<String> {
+        val baseline = mappingState?.vaultAttachmentPathSet.orEmpty()
+        val current = vaultPathsFromNote(note).toSet()
+        return baseline - current
+    }
+
     fun isLocallyDirty(
         note: Note,
         relativePath: String,
@@ -76,6 +91,7 @@ object VaultSyncImport {
         val baseline = mappingState?.baselineHash ?: VaultMappingExtras.baselineHash(null)
         if (baseline.isNullOrEmpty()) return false
         if (hasPendingLocalMedia(note)) return true
+        if (isAttachmentMembershipDirty(note, mappingState)) return true
         val preserved = mappingState?.preservedYaml
         val localHash = canonicalFileHash(note, relativePath, assignedNotebookName, preserved)
         return localHash != baseline

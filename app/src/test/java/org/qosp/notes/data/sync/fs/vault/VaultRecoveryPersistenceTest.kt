@@ -100,6 +100,7 @@ class VaultRecoveryPersistenceTest {
         store.failPublish = true
         val outcome = VaultRecoveryService.recoverPending(store, 1L)
         assertTrue(path in outcome.quarantinedPaths)
+        assertTrue(outcome.scanBlocked)
     }
 
     private fun assertNotNullJournal(store: FileVaultWriteStore) {

@@ -112,15 +112,17 @@ class VaultSyncOrchestrationTest {
 
     @Test
     fun repeatSyncWhenUnchanged_staysClean() = runTest {
-        val local = Note(id = 1L, title = "t", content = "Body", modifiedDate = 100L)
+        val remote = remoteBody("Body")
+        val imported = VaultSyncImport.noteFromRemote(remote)
+        val local = imported.copy(id = 1L, modifiedDate = 100L)
         val baseline = VaultSyncImport.canonicalFileHash(local, path, null, "")
         val state = VaultMappingState(baselineHash = baseline)
         coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping(state))
-        val remote = remoteBody("Body", extra = baseline).copy(lastModified = local.modifiedDate)
-        val first = synchronizeNotes(listOf(local), listOf(remote), CloudService.FILE_STORAGE)
+        val syncedRemote = remote.copy(lastModified = local.modifiedDate)
+        val first = synchronizeNotes(listOf(local), listOf(syncedRemote), CloudService.FILE_STORAGE)
         assertEquals(0, first.localUpdates.size)
         assertEquals(0, first.remoteUpdates.size)
-        val second = synchronizeNotes(listOf(local), listOf(remote), CloudService.FILE_STORAGE)
+        val second = synchronizeNotes(listOf(local), listOf(syncedRemote), CloudService.FILE_STORAGE)
         assertEquals(0, second.localUpdates.size)
         assertEquals(0, second.remoteUpdates.size)
         assertEquals(0, second.vaultConflicts.size)
@@ -141,8 +143,14 @@ class VaultSyncOrchestrationTest {
         val remote = remoteBody("Remote", extra = VaultContentHash.ofText(remoteBody("Remote").content!!))
         val first = synchronizeNotes(listOf(local), listOf(remote), CloudService.FILE_STORAGE)
         assertEquals(1, first.vaultConflicts.size)
+        val remoteHash = VaultSyncImport.canonicalFileHash(
+            VaultSyncImport.noteFromRemote(remote, local),
+            path,
+            null,
+            "",
+        )
         val recorded = state.copy(
-            conflictRemoteHash = remote.extra,
+            conflictRemoteHash = remoteHash,
             conflictCopyPath = "Work/Note (conflict).md",
         )
         coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns
@@ -187,24 +195,9 @@ class VaultSyncOrchestrationTest {
     }
 
     @Test
-    fun staleVaultGenerationBlocksRemotePushDecision() = runTest {
-        val local = Note(id = 1L, title = "t", content = "Pushed", modifiedDate = 500L)
-        val state = VaultMappingState(
-            baselineHash = VaultSyncImport.canonicalFileHash(Note(title = "t", content = "Old"), path, null, ""),
-            vaultGeneration = 1L,
-        )
-        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping(state))
-        val remote = remoteBody("Old", extra = state.baselineHash,).copy(lastModified = 100L)
-        // Folder switch bumped generation to 2 in prefs — mapping still gen 1: push must not win on mtime alone
-        val result = synchronizeNotes(
-            listOf(local.copy(modifiedDate = 500L)),
-            listOf(remote),
-            CloudService.FILE_STORAGE,
-        )
-        // Local is dirty vs baseline — should push, but not conflict
-        assertTrue(
-            result.remoteUpdates.isNotEmpty() ||
-                VaultSyncImport.isLocallyDirty(local, path, state, null),
-        )
+    fun vaultFileOpFence_staleByTreeUri() {
+        val fence = VaultFileOpFence(1L, "content://vault-a")
+        assertTrue(fence.isStale(1L, "content://vault-b"))
+        assertFalse(fence.isStale(1L, "content://vault-a"))
     }
 }

@@ -43,16 +43,24 @@ data class VaultMappingState(
         }
 
         fun fromDiskSync(
-            fileHash: String,
             rawFileContent: String,
+            note: org.qosp.notes.data.model.Note,
+            relativePath: String,
             vaultAttachmentPaths: List<String>,
             vaultGeneration: Long,
+            assignedNotebookName: String? = null,
             existing: VaultMappingState? = null,
         ): VaultMappingState {
             val preserved = VaultNoteDocument.parse(rawFileContent).frontMatter.preservedYaml
             val sortedPaths = vaultAttachmentPaths.distinct().sorted()
+            val logicalHash = VaultSyncImport.canonicalFileHash(
+                note,
+                relativePath,
+                assignedNotebookName,
+                preserved,
+            )
             return VaultMappingState(
-                baselineHash = fileHash,
+                baselineHash = logicalHash,
                 preservedYaml = preserved,
                 vaultAttachmentPaths = sortedPaths,
                 vaultGeneration = vaultGeneration,

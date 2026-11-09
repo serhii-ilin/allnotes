@@ -265,7 +265,7 @@ class SynchronizeNotesTest {
             idStr = "file://path/to/note.txt",
             title = "Remote Note",
             lastModified = 100L,
-            content = null
+            content = "---\n---\nLocal Note\n",
         )
         val mapping = IdMapping(
             localNoteId = 1L,

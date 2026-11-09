@@ -57,18 +57,20 @@ class SafVaultWriteStore(
             DocumentsContract.deleteDocument(context.contentResolver, it.uri)
         }
         val mime = if (relativePath.endsWith(".txt", ignoreCase = true)) "text/plain" else "text/markdown"
-        val file = pendingDir.createFile(mime, token) ?: return null
+        val created = pendingDir.createFile(mime, token) ?: return null
+        val storageName = ensureStorageName(pendingDir, created, token)
+        val file = pendingDir.findFile(storageName) ?: created
         context.contentResolver.openOutputStream(file.uri)?.use { out ->
             val bytes = content.encodeToByteArray()
             out.write(bytes)
             if (bytes.isEmpty()) throw IOException("empty write")
         } ?: return null
-        return VaultWriteStore.RecoveryTicket(relativePath, token)
+        return VaultWriteStore.RecoveryTicket(relativePath, token, storageName)
     }
 
     override fun readStaging(ticket: VaultWriteStore.RecoveryTicket): String? {
         val pendingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR)
-        val file = pendingDir.findFile(ticket.token) ?: return null
+        val file = pendingDir.findFile(ticket.storageName) ?: pendingDir.findFile(ticket.token) ?: return null
         return context.contentResolver.openInputStream(file.uri)?.use { it.bufferedReader().readText() }
     }
 
@@ -94,7 +96,7 @@ class SafVaultWriteStore(
             if (target.name != fileName) target.renameTo(fileName)
         }
         val pendingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR)
-        pendingDir.findFile(staging.token)?.let {
+        pendingDir.findFile(staging.storageName)?.let {
             DocumentsContract.deleteDocument(context.contentResolver, it.uri)
         }
     }
@@ -105,17 +107,19 @@ class SafVaultWriteStore(
         backupDir.findFile(token)?.let {
             DocumentsContract.deleteDocument(context.contentResolver, it.uri)
         }
-        val file = backupDir.createFile("text/plain", token)
+        val created = backupDir.createFile("text/plain", token)
             ?: throw IOException("backup create failed")
+        val storageName = ensureStorageName(backupDir, created, token)
+        val file = backupDir.findFile(storageName) ?: created
         context.contentResolver.openOutputStream(file.uri)?.use { out ->
             out.write(content.encodeToByteArray())
         } ?: throw IOException("backup write failed")
-        return VaultWriteStore.RecoveryTicket(relativePath, token)
+        return VaultWriteStore.RecoveryTicket(relativePath, token, storageName)
     }
 
     override fun readBackup(ticket: VaultWriteStore.RecoveryTicket): String? {
         val backupDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.BACKUP_DIR)
-        val file = backupDir.findFile(ticket.token) ?: return null
+        val file = backupDir.findFile(ticket.storageName) ?: backupDir.findFile(ticket.token) ?: return null
         return context.contentResolver.openInputStream(file.uri)?.use { it.bufferedReader().readText() }
     }
 
@@ -130,11 +134,21 @@ class SafVaultWriteStore(
     }
 
     override fun clearRecovery(ticket: VaultWriteStore.RecoveryTicket) {
-        VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR).findFile(ticket.token)?.let {
+        VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR).findFile(ticket.storageName)?.let {
             DocumentsContract.deleteDocument(context.contentResolver, it.uri)
         }
-        VaultDocumentTree.ensureDirectory(root, VaultPaths.BACKUP_DIR).findFile(ticket.token)?.let {
+        VaultDocumentTree.ensureDirectory(root, VaultPaths.BACKUP_DIR).findFile(ticket.storageName)?.let {
             DocumentsContract.deleteDocument(context.contentResolver, it.uri)
+        }
+    }
+
+    private fun ensureStorageName(dir: DocumentFile, created: DocumentFile, desired: String): String {
+        val current = created.name ?: desired
+        return if (current == desired) {
+            current
+        } else {
+            created.renameTo(desired)
+            dir.findFile(desired)?.name ?: desired
         }
     }
 

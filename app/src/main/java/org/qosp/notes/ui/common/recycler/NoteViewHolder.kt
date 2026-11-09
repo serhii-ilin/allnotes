@@ -179,8 +179,16 @@ class NoteViewHolder(
         }
     }
 
-    fun runPayloads(note: Note, payloads: Set<NoteRecyclerAdapter.Payload>) {
+    fun runPayloads(note: Note, payloads: Set<NoteRecyclerAdapter.Payload>, vaultPath: String? = vaultRelativePath) {
         if (NoteRecyclerAdapter.Payload.TitleChanged in payloads) setTitle(note)
+        if (NoteRecyclerAdapter.Payload.VaultPathChanged in payloads) {
+            vaultRelativePath = vaultPath
+            setTextContent(note)
+            tasksAdapter.vaultRelativePath = vaultRelativePath
+            if (note.isList && note.taskList.isNotEmpty() && !note.isCompactPreview) {
+                setTasks(note, useDiff = true)
+            }
+        }
         if (NoteRecyclerAdapter.Payload.ContentChanged in payloads ||
             NoteRecyclerAdapter.Payload.MarkdownChanged in payloads
         ) {

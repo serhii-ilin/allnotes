@@ -63,6 +63,8 @@ class VaultGenerationFenceTest {
         val outcome = VaultRecoveryService.recoverPending(store, vaultGeneration = 2L)
         org.junit.Assert.assertEquals("old", store.readVerified("Work/Note.md"))
         assertTrue(outcome.recoveredPaths.isEmpty())
+        assertTrue(outcome.scanBlocked)
+        assertTrue(outcome.quarantinedPaths.contains("Work/Note.md"))
     }
 
 }

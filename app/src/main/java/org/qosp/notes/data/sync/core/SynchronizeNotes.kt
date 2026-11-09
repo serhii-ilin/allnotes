@@ -69,11 +69,17 @@ class SynchronizeNotes(
                                 val mappingState = VaultMappingState.resolve(mapping.extras)
                                 val parsedExtras = VaultMappingExtras.parse(mapping.extras)
                                 val baseline = mappingState?.baselineHash ?: parsedExtras.baselineHash.orEmpty()
-                                val remoteHash = remoteNote.extra.orEmpty()
                                 val notebookName = localNote.notebookId?.let {
                                     notebookDao.getById(it).firstOrNull()?.name
                                 }
                                 val preservedBaseline = mappingState?.preservedYaml
+                                val remoteSnapshot = VaultSyncImport.noteFromRemote(remoteNote, localNote)
+                                val remoteHash = VaultSyncImport.canonicalFileHash(
+                                    remoteSnapshot,
+                                    vaultPath,
+                                    notebookName,
+                                    preservedBaseline,
+                                )
                                 val localHash = VaultSyncImport.canonicalFileHash(
                                     localNote,
                                     vaultPath,
@@ -100,8 +106,14 @@ class SynchronizeNotes(
                                         logDebug("Vault conflict: ${localNote.title} at $vaultPath")
                                         vaultConflicts.add(VaultSyncConflict(localNote, remoteNote))
                                     }
+                                } else if (dirty) {
+                                    if (localHash != baseline && localNote.modifiedDate >= remoteNote.lastModified) {
+                                        logDebug("Vault push while dirty: ${localNote.title}")
+                                        remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
+                                    }
                                 } else {
-                                    val hashChanged = remoteHash.isNotEmpty() && remoteHash != baseline && !dirty
+                                    val hashChanged = baseline.isNotEmpty() &&
+                                        remoteHash.isNotEmpty() && remoteHash != baseline
                                     val mtimeChanged = abs(localNote.modifiedDate - remoteNote.lastModified) > 1
                                     when {
                                         hashChanged && (mtimeChanged || localHash == baseline) -> {

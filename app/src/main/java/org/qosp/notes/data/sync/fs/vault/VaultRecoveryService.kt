@@ -14,6 +14,7 @@ object VaultRecoveryService {
         val quarantinedPaths: Set<String>,
         val recoveredPaths: Set<String>,
         val writesBlocked: Boolean,
+        val scanBlocked: Boolean,
     )
 
     fun recoverPending(
@@ -22,12 +23,23 @@ object VaultRecoveryService {
     ): Outcome {
         val journal = store.readJournal()
         if (journal == null || journal.entries.isEmpty()) {
-            return Outcome(emptySet(), emptySet(), writesBlocked = false)
+            return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
         }
         val scope = store.vaultScopeId()
         if (journal.vaultScopeId != scope) {
             Log.w(TAG, "Ignoring recovery journal for foreign vault scope")
-            return Outcome(emptySet(), emptySet(), writesBlocked = false)
+            return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
+        }
+
+        if (journal.vaultGeneration != vaultGeneration) {
+            val paths = journal.entries.map { it.notePath }.toSet()
+            Log.w(TAG, "Stale recovery journal gen=${journal.vaultGeneration} active=$vaultGeneration; quarantine $paths")
+            return Outcome(
+                quarantinedPaths = paths,
+                recoveredPaths = emptySet(),
+                writesBlocked = true,
+                scanBlocked = true,
+            )
         }
 
         val writer = VaultRecoverableWrite(store)
@@ -35,29 +47,35 @@ object VaultRecoveryService {
         val recovered = mutableSetOf<String>()
         val remaining = mutableListOf<VaultRecoveryJournalEntry>()
 
-        if (journal.vaultGeneration != vaultGeneration) {
-            Log.i(TAG, "Skipping recovery journal for stale generation ${journal.vaultGeneration} (active=$vaultGeneration)")
-            return Outcome(emptySet(), emptySet(), writesBlocked = false)
-        }
-
         for (entry in journal.entries) {
-            val staged = VaultWriteStore.RecoveryTicket(entry.notePath, entry.stagingToken)
+            val ticketStaging = entry.toStagingTicket()
+            val onDisk = store.readVerified(entry.notePath)
+            val onDiskHash = onDisk?.let { VaultContentHash.ofText(it) }
+
+            if (onDiskHash == entry.expectedContentHash) {
+                finalizeEntry(store, entry)
+                recovered += entry.notePath
+                continue
+            }
+
+            val stagingBody = store.readStaging(ticketStaging)
             val completed = when {
-                resumeStaged(writer, store, staged, entry.expectedContentHash, vaultGeneration) -> true
+                stagingBody != null &&
+                    VaultContentHash.ofText(stagingBody) == entry.expectedContentHash &&
+                    resumeStaged(writer, store, ticketStaging, entry.expectedContentHash, vaultGeneration) -> true
+                onDisk == null -> false
                 entry.backupToken != null -> {
-                    val backup = VaultWriteStore.RecoveryTicket(entry.notePath, entry.backupToken)
-                    restoreVerifiedBackup(store, entry.notePath, backup)
+                    val backup = entry.toBackupTicket()
+                    restoreVerifiedBackup(store, entry.notePath, backup, entry.expectedContentHash)
                 }
                 else -> false
             }
+
             if (completed) {
+                finalizeEntry(store, entry)
                 recovered += entry.notePath
-                store.clearRecovery(staged)
-                entry.backupToken?.let { store.clearRecovery(VaultWriteStore.RecoveryTicket(entry.notePath, it)) }
             } else {
-                if (isPartialPublish(store, entry)) {
-                    quarantined += entry.notePath
-                }
+                quarantined += entry.notePath
                 remaining += entry
             }
         }
@@ -65,9 +83,13 @@ object VaultRecoveryService {
         val next = if (remaining.isEmpty()) null else journal.copy(entries = remaining)
         store.writeJournal(next)
 
-        val blockWrites = quarantined.isNotEmpty() &&
-            remaining.any { quarantined.contains(it.notePath) }
-        return Outcome(quarantined, recovered, writesBlocked = blockWrites)
+        val blocked = quarantined.isNotEmpty() || remaining.isNotEmpty()
+        return Outcome(quarantined, recovered, writesBlocked = blocked, scanBlocked = blocked)
+    }
+
+    private fun finalizeEntry(store: VaultWriteStore, entry: VaultRecoveryJournalEntry) {
+        store.clearRecovery(entry.toStagingTicket())
+        entry.backupToken?.let { store.clearRecovery(entry.toBackupTicket()) }
     }
 
     private fun resumeStaged(
@@ -88,18 +110,23 @@ object VaultRecoveryService {
         store: VaultWriteStore,
         notePath: String,
         backup: VaultWriteStore.RecoveryTicket,
+        expectedHash: String,
     ): Boolean {
+        val onDisk = store.readVerified(notePath)
+        if (onDisk != null && VaultContentHash.ofText(onDisk) == expectedHash) {
+            return true
+        }
         val prior = store.readBackup(backup) ?: return false
         return runCatching {
             store.restoreFromBackup(notePath, backup)
-            val onDisk = store.readVerified(notePath) ?: throw IOException("missing after restore")
-            VaultContentHash.ofText(onDisk) == VaultContentHash.ofText(prior)
+            val after = store.readVerified(notePath) ?: throw IOException("missing after restore")
+            VaultContentHash.ofText(after) == VaultContentHash.ofText(prior)
         }.getOrDefault(false)
     }
 
-    private fun isPartialPublish(store: VaultWriteStore, entry: VaultRecoveryJournalEntry): Boolean {
-        val onDisk = store.readVerified(entry.notePath) ?: return false
-        val hash = VaultContentHash.ofText(onDisk)
-        return hash != entry.expectedContentHash
-    }
+    private fun VaultRecoveryJournalEntry.toStagingTicket() =
+        VaultWriteStore.RecoveryTicket(notePath, stagingToken, stagingStorageName)
+
+    private fun VaultRecoveryJournalEntry.toBackupTicket() =
+        VaultWriteStore.RecoveryTicket(notePath, backupToken!!, backupStorageName ?: backupToken!!)
 }

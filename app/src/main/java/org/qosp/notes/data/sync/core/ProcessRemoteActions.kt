@@ -14,12 +14,15 @@ import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.sync.core.RemoteOperation.Create
 import org.qosp.notes.data.sync.core.RemoteOperation.Delete
 import org.qosp.notes.data.sync.core.RemoteOperation.Update
+import kotlinx.coroutines.flow.first
+import org.qosp.notes.data.sync.fs.vault.VaultFileOpFence
 import org.qosp.notes.data.sync.fs.vault.VaultMappingState
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.di.SyncScope
 import org.qosp.notes.preferences.CloudService
+import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.ui.utils.Toaster
 import java.util.concurrent.ConcurrentHashMap
 
@@ -31,6 +34,7 @@ class ProcessRemoteActions(
     private val toaster: Toaster,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
     private val notebookDao: NotebookDao,
+    private val preferenceRepository: PreferenceRepository,
 ) {
     private val tag = "ProcessRemoteActions"
 
@@ -73,28 +77,35 @@ class ProcessRemoteActions(
 
                 while (true) {
                     val action = operationQueue.remove(noteId) ?: break
-                    val provider = backendProvider.syncProvider.value
-                    val runOp: suspend () -> Unit = {
+                    val runOp: suspend () -> Unit = runOp@{
+                        val provider = backendProvider.syncProvider.value ?: return@runOp
+                        if (provider.type == CloudService.FILE_STORAGE &&
+                            !validateVaultFence(action.vaultFence)
+                        ) {
+                            Log.w(tag, "Stale vault push aborted for note $noteId")
+                            return@runOp
+                        }
                         when (action) {
                             is Create -> {
                                 last = action.note.content.takeLast(4)
                                 Log.d(tag, "insertRemoteNote: for note ID=$noteId ending ...$last")
-                                provider?.let { insertRemote(it, action.note) }
+                                insertRemote(provider, action.note)
                             }
 
                             is Update -> {
                                 last = action.note.content.takeLast(4)
                                 Log.d(tag, "updateRemoteNote: for note ID=$noteId ending ...$last")
-                                provider?.let { updateRemote(action.note, it) }
+                                updateRemote(action.note, provider)
                             }
 
                             is Delete -> {
                                 last = action.note.content.takeLast(4)
                                 Log.d(tag, "deleteRemoteNotes: for $noteId ending ...$last")
-                                provider?.let { deleteRemoteNotes(action.note, it) }
+                                deleteRemoteNotes(action.note, provider)
                             }
                         }
                     }
+                    val provider = backendProvider.syncProvider.value
                     if (provider?.type == CloudService.FILE_STORAGE) {
                         vaultSyncCoordinator.withVaultLock { runOp() }
                     } else {
@@ -124,9 +135,32 @@ class ProcessRemoteActions(
         Log.e(tag, "processRemoteOperation: Failed to delete notes: ${e.message}", e)
     }
 
+    private suspend fun validateVaultFence(fence: VaultFileOpFence?): Boolean {
+        if (fence == null) return true
+        val currentUri = preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
+        val currentGen = vaultSyncCoordinator.currentGeneration()
+        return !fence.isStale(currentGen, currentUri)
+    }
+
     private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) = try {
         val created = syncProvider.createNote(note)
-        idMappingDao.insert(created.getMapping(note.id, syncProvider.type))
+        val base = created.getMapping(note.id, syncProvider.type)
+        val toInsert = if (syncProvider.type == CloudService.FILE_STORAGE) {
+            val gen = vaultSyncCoordinator.currentGeneration()
+            val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+            val state = VaultMappingState.fromDiskSync(
+                created.content.orEmpty(),
+                note,
+                created.idStr,
+                VaultSyncImport.vaultPathsFromNote(note),
+                gen,
+                notebookName,
+            )
+            base.copy(extras = VaultMappingState.encode(state))
+        } else {
+            base
+        }
+        idMappingDao.insert(toInsert)
         noteDao.updateLastModified(note.id, created.lastModified)
         applyVaultPushResult(note, syncProvider)
     } catch (e: Exception) {
@@ -167,10 +201,12 @@ class ProcessRemoteActions(
         noteDao.updateLastModified(note.id, remote.lastModified)
         val gen = vaultSyncCoordinator.currentGeneration()
         val state = VaultMappingState.fromDiskSync(
-            remote.extra.orEmpty(),
             remote.content.orEmpty(),
+            patched,
+            path,
             VaultSyncImport.vaultPathsFromNote(patched),
             gen,
+            notebookName,
             mappingState,
         )
         idMappingDao.update(

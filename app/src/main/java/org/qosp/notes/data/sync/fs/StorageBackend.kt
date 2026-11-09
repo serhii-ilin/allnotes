@@ -21,7 +21,9 @@ import org.qosp.notes.data.sync.fs.vault.VaultMediaWriter
 import org.qosp.notes.data.sync.fs.vault.VaultNoteDocument
 import org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore
 import org.qosp.notes.data.sync.fs.vault.VaultPaths
+import org.qosp.notes.data.sync.fs.vault.VaultMappingState
 import org.qosp.notes.data.sync.fs.vault.VaultRecoveryService
+import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
 import org.qosp.notes.data.sync.fs.vault.VaultRecoverableWrite
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultWriteContext
@@ -114,11 +116,6 @@ class StorageBackend(
         }
         return try {
             val indexed = VaultDocumentTree.indexNotes(root)
-                .filter { (rel, _) -> rel !in quarantinedNotePaths }
-            if (indexed.isEmpty() && root.listFiles().isNotEmpty()) {
-                Log.w(TAG, "getAll: note index empty but root has children; treating scan as failed")
-                return null
-            }
             indexed.map { (rel, file) ->
                 fileToSyncNote(file, rel)
                     ?: throw IOException("Cannot read note file: $rel")
@@ -170,7 +167,16 @@ class StorageBackend(
             exportNotebookExplicitly = true,
         )
         doc = VaultNoteDocument.mergePreservedFromDisk(existingRaw, doc)
-        val bodyWithLinks = VaultAttachments.mergeAttachmentLinks(doc.body, path, vaultAttachments)
+        val mappingState = mapping?.extras?.let { VaultMappingState.resolve(it) }
+        val removedPaths = VaultSyncImport.removedVaultAttachmentPaths(
+            note.copy(attachments = vaultAttachments),
+            mappingState,
+        )
+        var body = doc.body
+        if (removedPaths.isNotEmpty()) {
+            body = VaultAttachments.removeVaultLinksForPaths(body, path, removedPaths)
+        }
+        val bodyWithLinks = VaultAttachments.mergeAttachmentLinks(body, path, vaultAttachments)
         doc = doc.copy(body = bodyWithLinks)
         val fullText = doc.renderFullText()
         val hash = VaultContentHash.ofText(fullText)
@@ -227,10 +233,10 @@ class StorageBackend(
         val outcome = VaultRecoveryService.recoverPending(store, generation)
         quarantinedNotePaths.clear()
         quarantinedNotePaths.addAll(outcome.quarantinedPaths)
-        if (outcome.writesBlocked) {
-            Log.e(TAG, "Vault recovery: writes blocked for quarantined partial publishes")
+        if (outcome.scanBlocked || outcome.writesBlocked) {
+            Log.e(TAG, "Vault recovery blocked scan/writes quarantine=${outcome.quarantinedPaths}")
         }
-        return !outcome.writesBlocked
+        return !outcome.scanBlocked && !outcome.writesBlocked
     }
 
     private fun fileToSyncNote(file: DocumentFile, relativePath: String): SyncNote? {

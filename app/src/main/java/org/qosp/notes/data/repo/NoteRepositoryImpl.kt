@@ -11,6 +11,7 @@ import org.qosp.notes.data.dao.NoteDao
 import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.dao.ReminderDao
 import org.qosp.notes.data.sync.fs.vault.VaultMappingExtras
+import org.qosp.notes.data.sync.fs.vault.VaultFileOpFence
 import org.qosp.notes.data.sync.fs.vault.VaultMappingState
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
@@ -61,6 +62,14 @@ class NoteRepositoryImpl(
 ) : NoteRepository {
 
     private val tag = NoteRepositoryImpl::class.java.simpleName
+
+    private suspend fun captureVaultFence(): VaultFileOpFence? {
+        if (backendProvider.syncProvider.value?.type != CloudService.FILE_STORAGE) return null
+        return VaultFileOpFence(
+            vaultSyncCoordinator.currentGeneration(),
+            preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first(),
+        )
+    }
 
     private suspend fun cleanMappingsForLocalNotes(vararg notes: Note) {
         val n = notes.filter { it.isLocalOnly }
@@ -191,7 +200,16 @@ class NoteRepositoryImpl(
                             syncNote.toLocalNote(defaultPinned = false)
                         }
                         val noteId = insertNote(imported, sync = false)
-                        idMappingDao.insert(syncNote.getMapping(noteId, syncProvider.type))
+                        val mapping = syncNote.getMapping(noteId, syncProvider.type)
+                        val gen = vaultSyncCoordinator.currentGeneration()
+                        val state = VaultMappingState.fromDiskSync(
+                            syncNote.content.orEmpty(),
+                            imported,
+                            syncNote.idStr,
+                            VaultSyncImport.vaultPathsFromNote(imported),
+                            gen,
+                        )
+                        idMappingDao.insert(mapping.copy(extras = VaultMappingState.encode(state)))
                         if (syncProvider.type == CloudService.FILE_STORAGE) {
                             vaultPortableMetadata.applyFromRemote(noteId, syncNote)
                         }
@@ -213,11 +231,16 @@ class NoteRepositoryImpl(
                             val gen = vaultSyncCoordinator.currentGeneration()
                             val paths = VaultSyncImport.vaultPathsFromNote(note)
                             val raw = action.remoteNote.content.orEmpty()
+                            val notebookName = action.note.notebookId?.let {
+                                notebookDao.getById(it).firstOrNull()?.name
+                            }
                             val state = VaultMappingState.fromDiskSync(
-                                action.remoteNote.extra.orEmpty(),
                                 raw,
+                                note,
+                                action.remoteNote.idStr,
                                 paths,
                                 gen,
+                                notebookName,
                             )
                             idMappingDao.updateNoteExtras(
                                 localId = action.note.id,
@@ -249,9 +272,18 @@ class NoteRepositoryImpl(
         for (action in remoteUpdates) {
             try {
                 when (action) {
-                    is NoteAction.Create -> processRemoteActions(action.note.id, Create(action.note))
-                    is NoteAction.Update -> processRemoteActions(action.note.id, Update(action.note))
-                    is NoteAction.Delete -> processRemoteActions(action.note.id, Delete(action.note))
+                    is NoteAction.Create -> processRemoteActions(
+                        action.note.id,
+                        Create(action.note, vaultFence = captureVaultFence()),
+                    )
+                    is NoteAction.Update -> processRemoteActions(
+                        action.note.id,
+                        Update(action.note, vaultFence = captureVaultFence()),
+                    )
+                    is NoteAction.Delete -> processRemoteActions(
+                        action.note.id,
+                        Delete(action.note, vaultFence = captureVaultFence()),
+                    )
                 }
             } catch (e: Exception) {
                 Log.e(tag, "applyRemoteUpdates: Failed to apply action $action: ${e.message}")
@@ -274,7 +306,7 @@ class NoteRepositoryImpl(
         val noteId = noteDao.insert(note.toEntity())
         if (note.isLocalOnly.not() && backendProvider.isSyncing && sync) {
             val note1 = note.copy(id = noteId)
-            processRemoteActions(note1.id, Create(note1))
+            processRemoteActions(note1.id, Create(note1, vaultFence = captureVaultFence()))
         }
         return noteId
     }
@@ -285,7 +317,7 @@ class NoteRepositoryImpl(
         Log.d(tag, "updateNote: Updating note ID=${note.id}, title='${note.title}'")
         noteDao.update(note.toEntity())
         if (note.isLocalOnly.not() && backendProvider.isSyncing && sync) {
-            processRemoteActions(note.id, Update(note))
+            processRemoteActions(note.id, Update(note, vaultFence = captureVaultFence()))
         }
     }
 
@@ -298,7 +330,7 @@ class NoteRepositoryImpl(
         reminderDao.deleteIfNoteIdIn(notes.map { it.id })
         cleanMappingsForLocalNotes(*notes)
         notes.filterNot { it.isLocalOnly }.forEach {
-            if (sync) processRemoteActions(it.id, Delete(it))
+            if (sync) processRemoteActions(it.id, Delete(it, vaultFence = captureVaultFence()))
         }
     }
 
@@ -334,7 +366,7 @@ class NoteRepositoryImpl(
         val array = notes.map { it.toEntity() }.toTypedArray()
         noteDao.delete(*array)
         if (sync) notes.filterNot { it.isLocalOnly }.forEach {
-            processRemoteActions(it.id, Delete(it))
+            processRemoteActions(it.id, Delete(it, vaultFence = captureVaultFence()))
         }
     }
 
@@ -469,11 +501,14 @@ class NoteRepositoryImpl(
                 val noteEntity = local
                 val paths = VaultSyncImport.vaultPathsFromNote(noteEntity)
                 val raw = remote.content.orEmpty()
+                val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
                 val state = VaultMappingState.fromDiskSync(
-                    remote.extra.orEmpty(),
                     raw,
+                    noteEntity,
+                    path,
                     paths,
                     gen,
+                    notebookName,
                     mappingState,
                 )
                 val encoded = VaultMappingState.encode(state)
