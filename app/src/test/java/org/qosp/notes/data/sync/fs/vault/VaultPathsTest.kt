@@ -30,8 +30,8 @@ class VaultPathsTest {
     }
 
     @Test
-    fun resolveRelativeToNote_fromSubfolder() {
-        val abs = VaultPaths.resolveRelativeToNote("Work/Meeting.md", "Meeting/camera.jpg")
-        assertEquals("Work/Meeting/camera.jpg", abs)
+    fun linkResolver_bareImageInParentFolder() {
+        val abs = VaultLinkResolver.resolve("Work/Meeting.md", "photo.jpg")
+        assertEquals("Work/photo.jpg", abs)
     }
 }

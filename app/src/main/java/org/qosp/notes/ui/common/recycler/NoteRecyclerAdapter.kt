@@ -20,6 +20,8 @@ class NoteRecyclerAdapter(
     private val tasksViewPool = RecyclerView.RecycledViewPool()
     private val attachmentsViewPool = RecyclerView.RecycledViewPool()
 
+    var vaultRelativePaths: Map<Long, String> = emptyMap()
+
     var showHiddenNotes: Boolean = false
         set(value) {
             field = value
@@ -61,7 +63,7 @@ class NoteRecyclerAdapter(
     override fun onBindViewHolder(holder: NoteViewHolder, position: Int) {
         super.onBindViewHolder(holder, position)
         val note: Note = getItem(position)
-        holder.bind(note)
+        holder.bind(note, vaultRelativePaths[note.id])
     }
 
     override fun getItemId(position: Int) = getItem(position).id
@@ -126,12 +128,10 @@ class NoteRecyclerAdapter(
         fun flattenPayloads(payloads: List<Any>): Set<Payload> {
             val combinedPayloads = mutableSetOf<Payload>()
             for (payload in payloads) {
-                if (payload is List<*>) {
-                    for (item in payload) {
-                        if (item is Payload) {
-                            combinedPayloads.add(item)
-                        }
-                    }
+                when (payload) {
+                    is Payload -> combinedPayloads.add(payload)
+                    is List<*> -> payload.filterIsInstance<Payload>().forEach { combinedPayloads.add(it) }
+                    is Set<*> -> payload.filterIsInstance<Payload>().forEach { combinedPayloads.add(it) }
                 }
             }
             return combinedPayloads

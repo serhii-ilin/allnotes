@@ -153,6 +153,7 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
             listener = listener,
             markwon = markwon,
         ).apply {
+            vaultRelativePaths = activityModel.vaultRelativePaths.value
             stateRestorationPolicy = RecyclerView.Adapter.StateRestorationPolicy.PREVENT_WHEN_EMPTY
             showHiddenNotes = this@AbstractNotesFragment.showHiddenNotes
 
@@ -179,6 +180,21 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
 
             if (isSelectionEnabled) {
                 enableSelection(this@AbstractNotesFragment, ::onSelectionChanged)
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                activityModel.vaultRelativePaths.collect { paths ->
+                    recyclerAdapter.vaultRelativePaths = paths
+                    if (recyclerAdapter.itemCount > 0) {
+                        recyclerAdapter.notifyItemRangeChanged(
+                            0,
+                            recyclerAdapter.itemCount,
+                            setOf(NoteRecyclerAdapter.Payload.ContentChanged),
+                        )
+                    }
+                }
             }
         }
 

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -43,6 +44,8 @@ class EditorViewModel(
     var isNotInitialized = true
     var moveCheckedItems: Boolean = true
     private val noteIdFlow: MutableStateFlow<Long?> = MutableStateFlow(null)
+    private val _vaultRelativePath = MutableStateFlow<String?>(null)
+    val vaultRelativePath = _vaultRelativePath.asStateFlow()
     var selectedRange = 0 to 0
 
     val data = noteIdFlow
@@ -101,6 +104,9 @@ class EditorViewModel(
             }
 
             noteIdFlow.emit(id)
+            if (id > 0L) {
+                _vaultRelativePath.value = noteRepository.getVaultRelativePath(id)
+            }
 
             isNotInitialized = false
             moveCheckedItems = preferenceRepository.get<MoveCheckedItems>().first() == MoveCheckedItems.YES

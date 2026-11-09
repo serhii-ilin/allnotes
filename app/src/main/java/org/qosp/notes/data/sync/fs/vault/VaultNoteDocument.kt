@@ -5,22 +5,20 @@ import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.model.NoteColor
 import org.qosp.notes.data.model.NoteTask
 
-/**
- * Portable on-disk representation: YAML front matter + Markdown body.
- * See [docs/folder-vault-sync.md].
- */
 data class VaultFrontMatter(
     val title: String? = null,
     val pinned: Boolean? = null,
     val archived: Boolean? = null,
     val hidden: Boolean? = null,
     val color: NoteColor? = null,
-    val tags: List<String> = emptyList(),
+    val tags: List<String>? = null,
     val notebook: String? = null,
     val isList: Boolean? = null,
     val created: Long? = null,
     val modified: Long? = null,
     val markdown: Boolean? = null,
+    /** Unparsed / foreign YAML (Obsidian keys, nested blocks) preserved verbatim on round-trip. */
+    val preservedYaml: String = "",
 )
 
 data class VaultNoteDocument(
@@ -32,6 +30,10 @@ data class VaultNoteDocument(
         return buildString {
             append("---\n")
             append(fm)
+            if (frontMatter.preservedYaml.isNotBlank()) {
+                append(frontMatter.preservedYaml.trimEnd())
+                append('\n')
+            }
             append("---\n")
             append(body.trimEnd())
             append('\n')
@@ -44,6 +46,11 @@ data class VaultNoteDocument(
             RegexOption.MULTILINE,
         )
 
+        private val knownRootKeys = setOf(
+            "title", "pinned", "archived", "hidden", "isList", "markdown",
+            "color", "notebook", "created", "modified", "tags",
+        )
+
         fun parse(raw: String): VaultNoteDocument {
             val match = frontMatterRegex.find(raw.trim())
             if (match == null) {
@@ -51,21 +58,29 @@ data class VaultNoteDocument(
             }
             val yaml = match.groupValues[1]
             val body = match.groupValues[2]
-            return VaultNoteDocument(parseYaml(yaml), body)
+            val (fm, preserved) = parseYamlWithPreservation(yaml)
+            return VaultNoteDocument(fm.copy(preservedYaml = preserved), body)
         }
 
-        fun fromNote(note: Note, noteRelativePath: String): VaultNoteDocument {
+        fun fromNote(
+            note: Note,
+            noteRelativePath: String,
+            assignedNotebookName: String? = null,
+        ): VaultNoteDocument {
             val titleFromPath = VaultPaths.noteBaseName(noteRelativePath)
+            val pathNotebook = VaultPaths.parentPath(noteRelativePath)
+                .takeIf { it.isNotBlank() }
+                ?.substringAfterLast('/')
+            val notebookForYaml = assignedNotebookName
+                ?: pathNotebook?.takeIf { note.notebookId == null }
             val fm = VaultFrontMatter(
                 title = note.title.ifBlank { titleFromPath }.takeIf { it != titleFromPath },
-                pinned = note.isPinned.takeIf { it },
+                pinned = note.isPinned,
                 archived = note.isArchived.takeIf { it },
                 hidden = note.isHidden.takeIf { it },
                 color = note.color.takeIf { it != NoteColor.Default },
-                tags = note.tags.map { it.name },
-                notebook = VaultPaths.parentPath(noteRelativePath)
-                    .takeIf { it.isNotBlank() }
-                    ?.substringAfterLast('/'),
+                tags = note.tags.map { it.name }.ifEmpty { emptyList() },
+                notebook = notebookForYaml,
                 isList = note.isList.takeIf { it },
                 created = note.creationDate,
                 modified = note.modifiedDate,
@@ -80,27 +95,40 @@ data class VaultNoteDocument(
             noteRelativePath: String,
             lastModified: Long,
             attachments: List<Attachment> = emptyList(),
+            existing: Note? = null,
         ): Note {
             val fm = doc.frontMatter
             val title = fm.title?.takeIf { it.isNotBlank() }
                 ?: VaultPaths.noteBaseName(noteRelativePath)
-            val isList = fm.isList == true
+            val isList = when {
+                fm.isList == true -> true
+                fm.isList == false -> false
+                existing != null -> existing.isList
+                else -> false
+            }
             val content = if (isList) "" else doc.body
             val tasks = if (isList) doc.body.mdToTaskList() else emptyList()
             return Note(
                 title = title,
                 content = content,
                 isList = isList,
-                taskList = tasks,
-                isArchived = fm.archived == true,
-                isHidden = fm.hidden == true,
-                isPinned = fm.pinned == true,
-                isMarkdownEnabled = fm.markdown != false,
-                creationDate = fm.created ?: lastModified,
+                taskList = if (isList) tasks else existing?.taskList ?: emptyList(),
+                isArchived = fm.archived ?: existing?.isArchived ?: false,
+                isHidden = fm.hidden ?: existing?.isHidden ?: false,
+                isPinned = fm.pinned ?: existing?.isPinned ?: false,
+                isMarkdownEnabled = fm.markdown?.let { it } ?: existing?.isMarkdownEnabled ?: true,
+                creationDate = fm.created ?: existing?.creationDate ?: lastModified,
                 modifiedDate = fm.modified ?: lastModified,
-                color = fm.color ?: NoteColor.Default,
+                color = fm.color ?: existing?.color ?: NoteColor.Default,
                 attachments = attachments,
             )
+        }
+
+        fun mergePreservedFromDisk(existingRaw: String?, document: VaultNoteDocument): VaultNoteDocument {
+            if (existingRaw.isNullOrBlank()) return document
+            val preserved = parse(existingRaw).frontMatter.preservedYaml
+            if (preserved.isBlank()) return document
+            return document.copy(frontMatter = document.frontMatter.copy(preservedYaml = preserved))
         }
 
         private fun String.mdToTaskList(): List<NoteTask> {
@@ -117,7 +145,7 @@ data class VaultNoteDocument(
             return tasks
         }
 
-        private fun parseYaml(yaml: String): VaultFrontMatter {
+        private fun parseYamlWithPreservation(yaml: String): Pair<VaultFrontMatter, String> {
             var pinned: Boolean? = null
             var archived: Boolean? = null
             var hidden: Boolean? = null
@@ -128,26 +156,60 @@ data class VaultNoteDocument(
             var color: NoteColor? = null
             var created: Long? = null
             var modified: Long? = null
-            val tags = mutableListOf<String>()
-            yaml.lines().forEach { line ->
-                val t = line.trim()
+            var tags: List<String>? = null
+            val preserved = StringBuilder()
+            val lines = yaml.lines()
+            var i = 0
+            while (i < lines.size) {
+                val line = lines[i]
+                val trimmed = line.trim()
+                val rootKey = trimmed.substringBefore(':').trim()
                 when {
-                    t.startsWith("pinned:") -> pinned = t.substringAfter(":").trim().toBooleanStrictOrNull()
-                    t.startsWith("archived:") -> archived = t.substringAfter(":").trim().toBooleanStrictOrNull()
-                    t.startsWith("hidden:") -> hidden = t.substringAfter(":").trim().toBooleanStrictOrNull()
-                    t.startsWith("isList:") -> isList = t.substringAfter(":").trim().toBooleanStrictOrNull()
-                    t.startsWith("markdown:") -> markdown = t.substringAfter(":").trim().toBooleanStrictOrNull()
-                    t.startsWith("title:") -> title = t.substringAfter(":").trim().trim('"')
-                    t.startsWith("notebook:") -> notebook = t.substringAfter(":").trim().trim('"')
-                    t.startsWith("created:") -> created = t.substringAfter(":").trim().toLongOrNull()
-                    t.startsWith("modified:") -> modified = t.substringAfter(":").trim().toLongOrNull()
-                    t.startsWith("color:") -> {
-                        val raw = t.substringAfter(":").trim().trim('"')
-                        color = runCatching { NoteColor.valueOf(raw) }.getOrNull()
+                    trimmed.isEmpty() -> {
+                        preserved.appendLine(line)
+                        i++
                     }
-                    t.startsWith("tags:") -> {
-                        val rest = t.substringAfter("[").substringBefore("]")
-                        rest.split(',').map { it.trim().trim('"') }.filter { it.isNotEmpty() }.let { tags.addAll(it) }
+                    rootKey in knownRootKeys && !line.startsWith(" ") -> {
+                        when (rootKey) {
+                            "pinned" -> pinned = trimmed.substringAfter(":").trim().toBooleanStrictOrNull()
+                            "archived" -> archived = trimmed.substringAfter(":").trim().toBooleanStrictOrNull()
+                            "hidden" -> hidden = trimmed.substringAfter(":").trim().toBooleanStrictOrNull()
+                            "isList" -> isList = trimmed.substringAfter(":").trim().toBooleanStrictOrNull()
+                            "markdown" -> markdown = trimmed.substringAfter(":").trim().toBooleanStrictOrNull()
+                            "title" -> title = trimmed.substringAfter(":").trim().trim('"')
+                            "notebook" -> notebook = trimmed.substringAfter(":").trim().trim('"')
+                            "created" -> created = trimmed.substringAfter(":").trim().toLongOrNull()
+                            "modified" -> modified = trimmed.substringAfter(":").trim().toLongOrNull()
+                            "color" -> {
+                                val raw = trimmed.substringAfter(":").trim().trim('"')
+                                color = runCatching { NoteColor.valueOf(raw) }.getOrNull()
+                            }
+                            "tags" -> {
+                                tags = if ('[' in trimmed) {
+                                    val rest = trimmed.substringAfter("[").substringBefore("]")
+                                    rest.split(',').map { it.trim().trim('"') }.filter { it.isNotEmpty() }
+                                } else {
+                                    val collected = mutableListOf<String>()
+                                    i++
+                                    while (i < lines.size && (lines[i].startsWith(" ") || lines[i].startsWith("-"))) {
+                                        val item = lines[i].trim().removePrefix("-").trim().trim('"')
+                                        if (item.isNotEmpty()) collected.add(item)
+                                        i++
+                                    }
+                                    i--
+                                    collected
+                                }
+                            }
+                        }
+                        i++
+                    }
+                    else -> {
+                        preserved.appendLine(line)
+                        i++
+                        while (i < lines.size && isYamlContinuation(lines[i])) {
+                            preserved.appendLine(lines[i])
+                            i++
+                        }
                     }
                 }
             }
@@ -163,22 +225,33 @@ data class VaultNoteDocument(
                 created = created,
                 modified = modified,
                 markdown = markdown,
-            )
+            ) to preserved.toString().trimEnd()
+        }
+
+        private fun isYamlContinuation(line: String): Boolean {
+            val t = line.trim()
+            if (t.isEmpty()) return true
+            return line.startsWith(" ") || line.startsWith("\t") || t.startsWith("-")
         }
 
         private fun buildFrontMatterYaml(fm: VaultFrontMatter): String = buildString {
             fm.title?.let { append("title: \"${escape(it)}\"\n") }
-            fm.pinned?.let { append("pinned: $it\n") }
+            if (fm.pinned != null) append("pinned: ${fm.pinned}\n")
             fm.archived?.let { append("archived: $it\n") }
             fm.hidden?.let { append("hidden: $it\n") }
             fm.isList?.let { append("isList: $it\n") }
             fm.markdown?.let { append("markdown: $it\n") }
             fm.color?.let { append("color: \"${it.name}\"\n") }
             fm.notebook?.let { append("notebook: \"${escape(it)}\"\n") }
-            if (fm.tags.isNotEmpty()) {
-                append("tags: [")
-                append(fm.tags.joinToString(", ") { "\"${escape(it)}\"" })
-                append("]\n")
+            val tagList = fm.tags
+            if (tagList != null) {
+                if (tagList.isEmpty()) {
+                    append("tags: []\n")
+                } else {
+                    append("tags: [")
+                    append(tagList.joinToString(", ") { "\"${escape(it)}\"" })
+                    append("]\n")
+                }
             }
             fm.created?.let { append("created: $it\n") }
             fm.modified?.let { append("modified: $it\n") }

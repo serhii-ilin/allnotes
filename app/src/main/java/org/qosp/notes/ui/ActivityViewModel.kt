@@ -8,8 +8,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -30,6 +32,7 @@ import org.qosp.notes.preferences.GroupNotesWithoutNotebook
 import org.qosp.notes.preferences.LayoutMode
 import org.qosp.notes.preferences.NoteDeletionTime
 import org.qosp.notes.preferences.PreferenceRepository
+import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.preferences.SortMethod
 import org.qosp.notes.preferences.SortNavdrawerNotebooksMethod
 import org.qosp.notes.preferences.SortTagsMethod
@@ -65,7 +68,26 @@ class ActivityViewModel(
     var notesToBackup: Set<Note>? = null
     var tempPhotoUri: Uri? = null
 
-    fun syncAsync(): Deferred<BaseResult> = syncScope.async { noteRepository.syncNotes() }
+    private val _vaultRelativePaths = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val vaultRelativePaths: StateFlow<Map<Long, String>> = _vaultRelativePaths.asStateFlow()
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) { refreshVaultRelativePaths() }
+    }
+
+    suspend fun refreshVaultRelativePaths() {
+        _vaultRelativePaths.value = noteRepository.getNotesByCloudService(CloudService.FILE_STORAGE)
+            .mapNotNull { (mapping, _) ->
+                mapping.storageUri?.let { mapping.localNoteId to it }
+            }
+            .toMap()
+    }
+
+    fun syncAsync(): Deferred<BaseResult> = syncScope.async {
+        val result = noteRepository.syncNotes()
+        refreshVaultRelativePaths()
+        result
+    }
 
     fun discardEmptyNotesAsync() = viewModelScope.async(Dispatchers.IO) { noteRepository.discardEmptyNotes() }
 

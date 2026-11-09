@@ -355,6 +355,10 @@ class NoteRepositoryImpl(
         }
     }
 
+    override suspend fun getVaultRelativePath(noteId: Long): String? {
+        return idMappingDao.getByLocalIdAndProvider(noteId, CloudService.FILE_STORAGE)?.storageUri
+    }
+
     private suspend fun refreshVaultAttachmentIndex(syncProvider: ISyncBackend) {
         if (syncProvider.type != CloudService.FILE_STORAGE) return
         val mappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
@@ -362,14 +366,40 @@ class NoteRepositoryImpl(
             val path = mapping.storageUri ?: continue
             val remote = syncProvider.getNote(mapping) ?: continue
             val local = getById(mapping.localNoteId).first() ?: continue
-            val imported = VaultSyncImport.noteFromRemote(remote, local)
-            if (imported.attachments != local.attachments || imported.content != local.content) {
-                updateNote(imported, sync = false)
+            val dirty = VaultSyncImport.isLocallyDirty(local, path, mapping.extras)
+            if (dirty) {
+                val remoteAttachments = VaultSyncImport.attachmentsFromRemote(remote)
+                if (remoteAttachments != local.attachments) {
+                    updateNote(local.copy(attachments = remoteAttachments), sync = false)
+                }
+            } else {
+                val imported = VaultSyncImport.noteFromRemote(remote, local)
+                val bodyOrAttachmentsChanged = imported.content != local.content ||
+                    imported.attachments != local.attachments
+                val metadataChanged = imported.isPinned != local.isPinned ||
+                    imported.isArchived != local.isArchived ||
+                    imported.isHidden != local.isHidden ||
+                    imported.color != local.color ||
+                    imported.isList != local.isList ||
+                    imported.title != local.title
+                if (bodyOrAttachmentsChanged || metadataChanged) {
+                    updateNote(imported, sync = false)
+                    vaultPortableMetadata.applyFromRemote(mapping.localNoteId, remote)
+                } else if (remoteAttachmentsDifferFromDisk(local, remote)) {
+                    vaultPortableMetadata.applyFromRemote(mapping.localNoteId, remote)
+                }
             }
             val hash = remote.extra
-            if (hash != null && hash != mapping.extras) {
+            if (!dirty && hash != null && hash != mapping.extras) {
                 idMappingDao.update(mapping.copy(extras = hash))
             }
         }
+    }
+
+    private fun remoteAttachmentsDifferFromDisk(
+        local: Note,
+        remote: org.qosp.notes.data.sync.core.SyncNote,
+    ): Boolean {
+        return VaultSyncImport.attachmentsFromRemote(remote) != local.attachments
     }
 }

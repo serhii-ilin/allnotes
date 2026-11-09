@@ -22,6 +22,7 @@ import org.qosp.notes.ui.attachments.recycler.AttachmentViewHolder
 import org.qosp.notes.ui.attachments.recycler.AttachmentsAdapter
 import org.qosp.notes.ui.attachments.recycler.AttachmentsPreviewGridManager
 import org.qosp.notes.ui.editor.markdown.applyTo
+import org.qosp.notes.ui.utils.vault.VaultMarkwonContext
 import org.qosp.notes.ui.tasks.TasksAdapter
 import org.qosp.notes.ui.utils.dp
 import org.qosp.notes.ui.utils.ellipsize
@@ -42,6 +43,7 @@ class NoteViewHolder(
 
     private val defaultStrokeWidth = 1.dp(context)
     private val selectedStrokeWidth = 2.dp(context)
+    private var vaultRelativePath: String? = null
 
     init {
         binding.recyclerAttachments.apply {
@@ -123,7 +125,8 @@ class NoteViewHolder(
 
             if (note.isMarkdownEnabled && note.content.isNotBlank()) {
                 try {
-                    markwon.applyTo(textViewContent, note.content) {
+                    val vaultContext = vaultRelativePath?.let { VaultMarkwonContext(it) }
+                    markwon.applyTo(textViewContent, note.content, vaultContext) {
                         maximumTableColumns = 4
                         tableReplacement = { Code(context.getString(R.string.message_cannot_preview_table)) }
                     }
@@ -195,7 +198,8 @@ class NoteViewHolder(
         }
     }
 
-    fun bind(note: Note) {
+    fun bind(note: Note, vaultRelativePath: String? = null) {
+        this.vaultRelativePath = vaultRelativePath
         setTextContent(note)
         setTasks(note, useDiff = false)
         setTitle(note)

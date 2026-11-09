@@ -29,4 +29,6 @@ interface NoteRepository {
     fun getNotesWithoutNotebook(sortMethod: SortMethod = defaultOf()): Flow<List<Note>>
     suspend fun getNotesByCloudService(provider: CloudService): Map<IdMapping, Note?>
     suspend fun deleteIdMappingsForCloudService(cloudService: CloudService)
+
+    suspend fun getVaultRelativePath(noteId: Long): String?
 }

@@ -4,16 +4,13 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
-import androidx.documentfile.provider.DocumentFile
+import org.koin.java.KoinJavaComponent.getKoin
 import org.qosp.notes.App
 import org.qosp.notes.BuildConfig
 import org.qosp.notes.data.model.Attachment
-import org.qosp.notes.data.sync.fs.vault.VaultDocumentTree
 import org.qosp.notes.data.sync.fs.vault.VaultPaths
-import org.qosp.notes.preferences.PreferenceRepository
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import org.koin.java.KoinJavaComponent.getKoin
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
+import org.qosp.notes.data.sync.fs.vault.resolveVaultStoredPath
 import java.io.File
 
 fun getAttachmentFilename(context: Context, uri: Uri): String? {
@@ -43,7 +40,10 @@ fun Attachment.Companion.fromUri(context: Context, uri: Uri): Attachment {
 
 fun getAttachmentUri(context: Context, path: String, mediaFolder: String = App.MEDIA_FOLDER): Uri? {
     return when {
-        VaultPaths.isVaultRelativeAttachment(path) -> resolveVaultAttachmentUri(context, path)
+        VaultPaths.isVaultRelativeAttachment(path) -> {
+            val tree = getKoin().get<VaultTreeAccess>()
+            resolveVaultStoredPath(tree, path)
+        }
         path.startsWith("content://") || path.startsWith("file://") -> Uri.parse(path)
         else -> {
             runCatching {
@@ -52,18 +52,4 @@ fun getAttachmentUri(context: Context, path: String, mediaFolder: String = App.M
             }.getOrNull()
         }
     }
-}
-
-fun resolveVaultAttachmentUri(context: Context, vaultRelStoredPath: String): Uri? {
-    val relative = VaultPaths.toVaultRelative(vaultRelStoredPath)
-    val treeUri = runBlocking {
-        getKoin().get<PreferenceRepository>()
-            .getEncryptedString(PreferenceRepository.STORAGE_LOCATION)
-            .first()
-            .takeIf { it.isNotBlank() }
-            ?.let { Uri.parse(it) }
-    } ?: return null
-    val root = DocumentFile.fromTreeUri(context, treeUri) ?: return null
-    val file = VaultDocumentTree.findByRelativePath(root, relative) ?: return null
-    return file.uri
 }

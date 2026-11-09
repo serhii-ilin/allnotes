@@ -11,9 +11,6 @@ import org.qosp.notes.data.model.NoteTagJoin
 import org.qosp.notes.data.model.Tag
 import org.qosp.notes.data.sync.core.SyncNote
 
-/**
- * Applies portable YAML metadata to Room (tags, notebook). Does not trigger remote sync.
- */
 class VaultPortableMetadata(
     private val noteDao: NoteDao,
     private val notebookDao: NotebookDao,
@@ -25,32 +22,50 @@ class VaultPortableMetadata(
         val doc = VaultNoteDocument.parse(syncNote.content.orEmpty())
         val fm = doc.frontMatter
         applyNotebook(noteId, syncNote.idStr, fm)
-        applyTags(noteId, fm)
+        reconcileTags(noteId, fm)
     }
 
     private suspend fun applyNotebook(noteId: Long, relativePath: String, fm: VaultFrontMatter) {
-        val notebookName = fm.notebook?.takeIf { it.isNotBlank() }
-            ?: VaultPaths.parentPath(relativePath).takeIf { it.isNotBlank() }
-            ?: return
-        val segment = notebookName.substringAfterLast('/')
-        if (segment.isBlank()) return
-        val notebookId = notebookDao.getByName(segment).firstOrNull()?.id
-            ?: notebookDao.insert(Notebook(name = segment))
+        when {
+            fm.notebook != null && fm.notebook.isBlank() -> {
+                val entity = noteDao.getById(noteId).firstOrNull()?.toEntity() ?: return
+                if (entity.notebookId != null) {
+                    noteDao.update(entity.copy(notebookId = null))
+                }
+            }
+            fm.notebook != null -> {
+                assignNotebook(noteId, fm.notebook)
+            }
+            VaultPaths.parentPath(relativePath).isNotBlank() -> {
+                val segment = VaultPaths.parentPath(relativePath).substringAfterLast('/')
+                if (segment.isNotBlank()) assignNotebook(noteId, segment)
+            }
+        }
+    }
+
+    private suspend fun assignNotebook(noteId: Long, name: String) {
+        val notebookId = notebookDao.getByName(name).firstOrNull()?.id
+            ?: notebookDao.insert(Notebook(name = name))
         val entity = noteDao.getById(noteId).firstOrNull()?.toEntity() ?: return
         if (entity.notebookId == notebookId) return
         noteDao.update(entity.copy(notebookId = notebookId))
     }
 
-    private suspend fun applyTags(noteId: Long, fm: VaultFrontMatter) {
-        if (fm.tags.isEmpty()) return
-        val existing = noteTagDao.getByNoteId(noteId).firstOrNull().orEmpty().associateBy { it.name }
-        for (name in fm.tags) {
-            if (name.isBlank()) continue
-            val tagId = existing[name]?.id
+    private suspend fun reconcileTags(noteId: Long, fm: VaultFrontMatter) {
+        if (fm.tags == null) return
+        val desired = fm.tags.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val current = noteTagDao.getByNoteId(noteId).firstOrNull().orEmpty()
+        val currentByName = current.associateBy { it.name }
+        for (tag in current) {
+            if (tag.name !in desired) {
+                noteTagDao.delete(NoteTagJoin(tagId = tag.id, noteId = noteId))
+            }
+        }
+        for (name in desired) {
+            val tagId = currentByName[name]?.id
                 ?: tagDao.getByName(name).firstOrNull()?.id
                 ?: tagDao.insert(Tag(name = name))
-            val join = NoteTagJoin(tagId = tagId, noteId = noteId)
-            runCatching { noteTagDao.insert(join) }
+            noteTagDao.insert(NoteTagJoin(tagId = tagId, noteId = noteId))
         }
     }
 }

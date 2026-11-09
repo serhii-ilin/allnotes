@@ -863,7 +863,9 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
             if (isMarkdownEnabled) {
                 // Seems to be crashing often without wrapping it in a post { } call
                 textViewContentPreview.post {
-                    markwon.applyTo(textViewContentPreview, data.note.content) {
+                    val vaultPath = model.vaultRelativePath.value
+                    val vaultContext = vaultPath?.let { org.qosp.notes.ui.utils.vault.VaultMarkwonContext(it) }
+                    markwon.applyTo(textViewContentPreview, data.note.content, vaultContext) {
                         tableReplacement = { Code(getString(R.string.message_cannot_preview_table)) }
                         maximumTableColumns = 15
                     }

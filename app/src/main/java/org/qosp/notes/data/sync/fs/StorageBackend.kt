@@ -6,6 +6,8 @@ import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.flow.firstOrNull
+import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.model.Attachment
 import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
@@ -24,7 +26,11 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import kotlin.time.measureTimedValue
 
-class StorageBackend(private val context: Context, private val config: StorageConfig) : ISyncBackend {
+class StorageBackend(
+    private val context: Context,
+    private val config: StorageConfig,
+    private val notebookDao: NotebookDao,
+) : ISyncBackend {
 
     companion object {
         private const val TAG = "StorageBackend"
@@ -151,7 +157,14 @@ class StorageBackend(private val context: Context, private val config: StorageCo
     ): SyncNote {
         val path = VaultPaths.normalizeNotePath(relativePath)
         val vaultAttachments = materializeAttachments(root, path, note.attachments)
-        var doc = VaultNoteDocument.fromNote(note.copy(attachments = vaultAttachments), path)
+        val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        val existingRaw = VaultDocumentTree.findByRelativePath(root, path)?.let { readFileContent(it) }
+        var doc = VaultNoteDocument.fromNote(
+            note.copy(attachments = vaultAttachments),
+            path,
+            assignedNotebookName = notebookName,
+        )
+        doc = VaultNoteDocument.mergePreservedFromDisk(existingRaw, doc)
         val bodyWithLinks = VaultAttachments.mergeAttachmentLinks(doc.body, path, vaultAttachments)
         doc = doc.copy(body = bodyWithLinks)
         val fullText = doc.renderFullText()

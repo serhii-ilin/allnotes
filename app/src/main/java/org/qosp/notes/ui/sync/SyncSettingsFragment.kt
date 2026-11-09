@@ -7,7 +7,9 @@ import android.util.Log
 import android.view.View
 import androidx.appcompat.widget.Toolbar
 import androidx.core.net.toUri
+import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.R
 import org.qosp.notes.data.sync.fs.toFriendlyString
 import org.qosp.notes.databinding.FragmentSyncSettingsBinding
@@ -27,6 +29,7 @@ import org.qosp.notes.ui.utils.viewBinding
 class SyncSettingsFragment : BaseFragment(R.layout.fragment_sync_settings) {
     private val binding by viewBinding(FragmentSyncSettingsBinding::bind)
     private val model: SettingsViewModel by activityViewModel()
+    private val vaultTreeAccess: VaultTreeAccess by inject()
 
     override val hasMenu = false
     override val toolbar: Toolbar
@@ -55,6 +58,7 @@ class SyncSettingsFragment : BaseFragment(R.layout.fragment_sync_settings) {
             val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             context?.contentResolver?.takePersistableUriPermission(it, takeFlags)
+            vaultTreeAccess.invalidate()
         }
     }
 

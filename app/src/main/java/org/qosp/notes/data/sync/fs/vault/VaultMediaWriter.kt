@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import org.qosp.notes.data.model.Attachment
 import org.qosp.notes.ui.attachments.getAttachmentUri
-import org.qosp.notes.ui.attachments.resolveVaultAttachmentUri
 import java.io.IOException
 
 object VaultMediaWriter {
@@ -19,7 +18,7 @@ object VaultMediaWriter {
         val assetDir = VaultPaths.assetDirectoryForNote(noteRelativePath)
         VaultDocumentTree.ensureDirectory(root, assetDir)
         val dir = VaultDocumentTree.ensureDirectory(root, assetDir)
-        val sourceUri = resolveSource(context, attachment) ?: throw IOException("Cannot open attachment source")
+        val sourceUri = resolveSource(context, root, attachment) ?: throw IOException("Cannot open attachment source")
         val suggested = attachment.description.ifBlank { attachment.fileName }.ifBlank { "file" }
         val fileName = VaultPaths.uniqueName(suggested, existingNames)
         existingNames.add(fileName)
@@ -41,10 +40,12 @@ object VaultMediaWriter {
         )
     }
 
-    private fun resolveSource(context: Context, attachment: Attachment): Uri? {
+    private fun resolveSource(context: Context, root: DocumentFile, attachment: Attachment): Uri? {
         return when {
-            VaultPaths.isVaultRelativeAttachment(attachment.path) ->
-                resolveVaultAttachmentUri(context, attachment.path)
+            VaultPaths.isVaultRelativeAttachment(attachment.path) -> {
+                val rel = VaultPaths.toVaultRelative(attachment.path)
+                VaultDocumentTree.findByRelativePath(root, rel)?.uri
+            }
             else -> getAttachmentUri(context, attachment.path)
         }
     }

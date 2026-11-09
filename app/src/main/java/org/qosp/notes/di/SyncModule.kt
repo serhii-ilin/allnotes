@@ -9,6 +9,7 @@ import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.core.ProcessRemoteActions
 import org.qosp.notes.data.sync.core.SynchronizeNotes
 import org.qosp.notes.data.sync.fs.vault.VaultPortableMetadata
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 
 object SyncModule {
 
@@ -19,6 +20,7 @@ object SyncModule {
         singleOf(::ProcessRemoteActions)
         singleOf(::SynchronizeNotes)
         singleOf(::VaultPortableMetadata)
+        singleOf(::VaultTreeAccess)
     }
 }
 
