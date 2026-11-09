@@ -90,6 +90,18 @@ class ProcessRemoteActionsVaultFenceTest {
     fun tearDown() = unmockkAll()
 
     @Test
+    fun missingFence_rejectsVaultWrite() = runTest {
+        val backend = mockk<ISyncBackend>(relaxed = true) {
+            every { type } returns CloudService.FILE_STORAGE
+        }
+        every { backendProvider.syncProvider } returns MutableStateFlow(backend)
+        val note = Note(id = 1L, title = "t", content = "c")
+        processRemoteActions(1L, RemoteOperation.Update(note, vaultFence = null))
+        advanceTimeBy(Config.RemoteUpdateDebounceTime + 500.milliseconds)
+        coVerify(exactly = 0) { backend.updateNote(any(), any()) }
+    }
+
+    @Test
     fun staleFence_abortsBeforeBackendWrite() = runTest {
         val oldBackend = mockk<ISyncBackend>(relaxed = true) {
             every { type } returns CloudService.FILE_STORAGE

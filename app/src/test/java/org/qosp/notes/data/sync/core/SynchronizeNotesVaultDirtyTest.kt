@@ -73,6 +73,44 @@ class SynchronizeNotesVaultDirtyTest {
     }
 
     @Test
+    fun membershipDirty_sameModifiedDate_pushesWithoutPull() = runTest {
+        val vaultRel = "vaultrel:Work/Note/x.jpg"
+        val local = Note(
+            id = 1L,
+            title = "t",
+            content = "same",
+            modifiedDate = 100L,
+            attachments = emptyList(),
+        )
+        val baseline = VaultSyncImport.canonicalFileHash(local, path, null, "")
+        assertTrue(VaultSyncImport.isAttachmentMembershipDirty(local, VaultMappingState(
+            baselineHash = baseline,
+            vaultAttachmentPaths = listOf(vaultRel),
+        )))
+        val state = VaultMappingState(baselineHash = baseline, vaultAttachmentPaths = listOf(vaultRel))
+        val mapping = IdMapping(
+            localNoteId = 1L,
+            remoteNoteId = null,
+            provider = CloudService.FILE_STORAGE,
+            extras = VaultMappingState.encode(state),
+            isDeletedLocally = false,
+            storageUri = path,
+        )
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
+        val remote = SyncNote(
+            id = 0,
+            idStr = path,
+            title = "t",
+            content = "---\n---\nsame\n![x](Note/x.jpg)\n",
+            lastModified = 100L,
+            extra = baseline,
+        )
+        val result = synchronizeNotes(listOf(local), listOf(remote), CloudService.FILE_STORAGE)
+        assertEquals(0, result.localUpdates.size)
+        assertEquals(1, result.remoteUpdates.size)
+    }
+
+    @Test
     fun dirtyAttachmentMembership_newerRemoteMtime_doesNotPull() = runTest {
         val vaultRel = "vaultrel:Work/Note/x.jpg"
         val local = Note(

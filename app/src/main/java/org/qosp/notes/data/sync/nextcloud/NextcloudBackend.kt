@@ -94,7 +94,7 @@ class NextcloudBackend(
         return api.getNote(mapping.remoteNoteId, config).asSyncNote()
     }
 
-    override suspend fun getAll(): List<SyncNote>? = try {
+    override suspend fun getAll(knownMappedPaths: Set<String>): List<SyncNote>? = try {
         Log.d(tag, "getAll() from Nextcloud")
         val api = apiProvider.getAPI()
         api.getNotes(config).map { note -> note.asSyncNote() }

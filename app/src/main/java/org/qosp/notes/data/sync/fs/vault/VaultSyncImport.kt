@@ -97,6 +97,23 @@ object VaultSyncImport {
         return localHash != baseline
     }
 
+    /** Logical hash of on-disk bytes (uses file YAML + body, not Room-only fields like merged tags). */
+    fun logicalHashFromRemoteFile(
+        remote: org.qosp.notes.data.sync.core.SyncNote,
+        localNote: Note,
+        relativePath: String,
+        assignedNotebookName: String?,
+    ): String {
+        val raw = remote.content.orEmpty()
+        val doc = VaultNoteDocument.parse(raw)
+        val fm = doc.frontMatter
+        val imported = noteFromRemote(remote, localNote)
+        val fileTags = fm.tags?.map { org.qosp.notes.data.model.Tag(id = 0L, name = it) }
+        val snapshot = imported.copy(tags = fileTags ?: imported.tags)
+        val notebookName = fm.notebook?.takeIf { it.isNotBlank() } ?: assignedNotebookName
+        return canonicalFileHash(snapshot, relativePath, notebookName, fm.preservedYaml)
+    }
+
     /**
      * While dirty: local attachment membership wins; only late vault files not in baseline may be added.
      */

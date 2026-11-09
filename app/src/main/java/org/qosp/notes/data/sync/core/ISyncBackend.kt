@@ -18,5 +18,5 @@ interface ISyncBackend {
     suspend fun updateNote(note: Note, mapping: IdMapping): IdMapping
     suspend fun deleteNote(mapping: IdMapping): Boolean
     suspend fun getNote(mapping: IdMapping): SyncNote?
-    suspend fun getAll(): List<SyncNote>?
+    suspend fun getAll(knownMappedPaths: Set<String> = emptySet()): List<SyncNote>?
 }

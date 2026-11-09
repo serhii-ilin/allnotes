@@ -42,8 +42,7 @@ object VaultAttachments {
     }
 
     /**
-     * Removes markdown image/file links that resolve to [removedVaultRelPaths] (vaultrel:… paths).
-     * Does not delete vault bytes; only strips app-managed link syntax for user-removed attachments.
+     * Removes only vault markdown link tokens that resolve to [removedVaultRelPaths].
      */
     fun removeVaultLinksForPaths(
         body: String,
@@ -51,25 +50,17 @@ object VaultAttachments {
         removedVaultRelPaths: Set<String>,
     ): String {
         if (removedVaultRelPaths.isEmpty()) return body
-        val out = StringBuilder()
-        body.lineSequence().forEach { line ->
-            val keep = !line.matchesVaultLinks(noteRelativePath, removedVaultRelPaths)
-            if (keep) {
-                if (out.isNotEmpty()) out.append('\n')
-                out.append(line)
-            }
+        fun targetsRemoved(rawTarget: String): Boolean {
+            val resolved = VaultLinkResolver.resolve(noteRelativePath, rawTarget) ?: return false
+            return VaultPaths.vaultRelative(resolved) in removedVaultRelPaths
         }
-        return out.toString().trimEnd()
-    }
-
-    private fun String.matchesVaultLinks(notePath: String, removedVaultRelPaths: Set<String>): Boolean {
-        val targets = mutableListOf<String>()
-        imageLinkRegex.findAll(this).forEach { targets += it.groupValues[1] }
-        fileLinkRegex.findAll(this).forEach { targets += it.groupValues[1] }
-        return targets.any { raw ->
-            val resolved = VaultLinkResolver.resolve(notePath, raw) ?: return@any false
-            VaultPaths.vaultRelative(resolved) in removedVaultRelPaths
+        var result = imageLinkRegex.replace(body) { match ->
+            if (targetsRemoved(match.groupValues[1])) "" else match.value
         }
+        result = fileLinkRegex.replace(result) { match ->
+            if (targetsRemoved(match.groupValues[1])) "" else match.value
+        }
+        return result
     }
 
     fun mergeAttachmentLinks(body: String, noteRelativePath: String, attachments: List<Attachment>): String {

@@ -61,7 +61,12 @@ class VaultSyncOrchestrationTest {
         storageUri = path,
     )
 
-    private fun remoteBody(body: String, extra: String? = null): SyncNote {
+    private fun remoteBody(
+        body: String,
+        path: String = this.path,
+        notebook: String = "Journal",
+        extra: String? = null,
+    ): SyncNote {
         val yaml = """
             |---
             |pinned: false
@@ -71,7 +76,7 @@ class VaultSyncOrchestrationTest {
             |markdown: true
             |color: "Default"
             |tags: []
-            |notebook: "Journal"
+            |notebook: "$notebook"
             |---
             |$body
         """.trimMargin()
@@ -112,12 +117,19 @@ class VaultSyncOrchestrationTest {
 
     @Test
     fun repeatSyncWhenUnchanged_staysClean() = runTest {
-        val remote = remoteBody("Body")
+        val flatPath = "Note.md"
+        val remote = remoteBody("Body", path = flatPath, notebook = "")
         val imported = VaultSyncImport.noteFromRemote(remote)
         val local = imported.copy(id = 1L, modifiedDate = 100L)
-        val baseline = VaultSyncImport.canonicalFileHash(local, path, null, "")
-        val state = VaultMappingState(baselineHash = baseline)
-        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping(state))
+        val state = VaultMappingState.fromDiskSync(
+            remote.content.orEmpty(),
+            local,
+            flatPath,
+            emptyList(),
+            vaultGeneration = 1L,
+        )
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns
+            listOf(mapping(state).copy(storageUri = flatPath))
         val syncedRemote = remote.copy(lastModified = local.modifiedDate)
         val first = synchronizeNotes(listOf(local), listOf(syncedRemote), CloudService.FILE_STORAGE)
         assertEquals(0, first.localUpdates.size)
@@ -143,12 +155,7 @@ class VaultSyncOrchestrationTest {
         val remote = remoteBody("Remote", extra = VaultContentHash.ofText(remoteBody("Remote").content!!))
         val first = synchronizeNotes(listOf(local), listOf(remote), CloudService.FILE_STORAGE)
         assertEquals(1, first.vaultConflicts.size)
-        val remoteHash = VaultSyncImport.canonicalFileHash(
-            VaultSyncImport.noteFromRemote(remote, local),
-            path,
-            null,
-            "",
-        )
+        val remoteHash = VaultSyncImport.logicalHashFromRemoteFile(remote, local, path, null)
         val recorded = state.copy(
             conflictRemoteHash = remoteHash,
             conflictCopyPath = "Work/Note (conflict).md",

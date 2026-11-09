@@ -80,7 +80,7 @@ class ProcessRemoteActions(
                     val runOp: suspend () -> Unit = runOp@{
                         val provider = backendProvider.syncProvider.value ?: return@runOp
                         if (provider.type == CloudService.FILE_STORAGE &&
-                            !validateVaultFence(action.vaultFence)
+                            !validateVaultFence(action.vaultFence, provider.type)
                         ) {
                             Log.w(tag, "Stale vault push aborted for note $noteId")
                             return@runOp
@@ -135,7 +135,11 @@ class ProcessRemoteActions(
         Log.e(tag, "processRemoteOperation: Failed to delete notes: ${e.message}", e)
     }
 
-    private suspend fun validateVaultFence(fence: VaultFileOpFence?): Boolean {
+    private suspend fun validateVaultFence(fence: VaultFileOpFence?, provider: CloudService): Boolean {
+        if (provider == CloudService.FILE_STORAGE && fence == null) {
+            Log.w(tag, "Vault operation rejected: missing fence")
+            return false
+        }
         if (fence == null) return true
         val currentUri = preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
         val currentGen = vaultSyncCoordinator.currentGeneration()

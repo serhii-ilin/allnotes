@@ -10,7 +10,8 @@ object VaultDocumentTree {
     fun indexNotes(root: DocumentFile): List<IndexedFile> {
         val result = mutableListOf<IndexedFile>()
         fun walk(dir: DocumentFile, prefix: String) {
-            dir.listFiles().forEach { child ->
+            val children = dir.listFiles() ?: throw IOException("Cannot list vault directory: $prefix")
+            children.forEach { child ->
                 val name = child.name ?: return@forEach
                 when {
                     child.isDirectory -> {
@@ -28,6 +29,24 @@ object VaultDocumentTree {
         }
         walk(root, "")
         return result
+    }
+
+    /**
+     * A mapped path that [findByRelativePath] can open must appear in [indexed]; otherwise listing was incomplete.
+     */
+    fun isIndexCompleteForMappedPaths(
+        root: DocumentFile,
+        indexed: List<IndexedFile>,
+        knownMappedPaths: Set<String>,
+    ): Boolean {
+        if (knownMappedPaths.isEmpty()) return true
+        val indexedPaths = indexed.map { it.relativePath }.toSet()
+        for (path in knownMappedPaths) {
+            if (path in indexedPaths) continue
+            val direct = findByRelativePath(root, path)
+            if (direct != null && direct.isFile) return false
+        }
+        return true
     }
 
     fun findByRelativePath(root: DocumentFile, relativePath: String): DocumentFile? {

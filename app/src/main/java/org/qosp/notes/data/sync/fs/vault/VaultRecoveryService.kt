@@ -27,8 +27,14 @@ object VaultRecoveryService {
         }
         val scope = store.vaultScopeId()
         if (journal.vaultScopeId != scope) {
-            Log.w(TAG, "Ignoring recovery journal for foreign vault scope")
-            return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
+            val paths = journal.entries.map { it.notePath }.toSet()
+            Log.w(TAG, "Foreign-scope recovery journal in tree; blocking scan ($paths)")
+            return Outcome(
+                quarantinedPaths = paths,
+                recoveredPaths = emptySet(),
+                writesBlocked = true,
+                scanBlocked = true,
+            )
         }
 
         if (journal.vaultGeneration != vaultGeneration) {

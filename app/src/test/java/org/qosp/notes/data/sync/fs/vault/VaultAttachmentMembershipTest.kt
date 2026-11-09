@@ -1,5 +1,6 @@
 package org.qosp.notes.data.sync.fs.vault
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -49,4 +50,12 @@ class VaultAttachmentMembershipTest {
         assertFalse(stripped.contains("![x]"))
         assertTrue(stripped.contains("text"))
     }
+
+    @Test
+    fun exportStripsInlineLink_keepsSurroundingProse() {
+        val body = "See ![x](Note/x.jpg) please"
+        val stripped = VaultAttachments.removeVaultLinksForPaths(body, path, setOf(vaultRel))
+        assertEquals("See  please", stripped)
+    }
 }
+

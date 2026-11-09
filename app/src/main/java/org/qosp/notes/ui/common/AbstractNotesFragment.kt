@@ -192,6 +192,7 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
                             0,
                             recyclerAdapter.itemCount,
                             setOf(
+                                NoteRecyclerAdapter.Payload.VaultPathChanged,
                                 NoteRecyclerAdapter.Payload.ContentChanged,
                                 NoteRecyclerAdapter.Payload.TasksChanged,
                             ),

@@ -73,12 +73,11 @@ class SynchronizeNotes(
                                     notebookDao.getById(it).firstOrNull()?.name
                                 }
                                 val preservedBaseline = mappingState?.preservedYaml
-                                val remoteSnapshot = VaultSyncImport.noteFromRemote(remoteNote, localNote)
-                                val remoteHash = VaultSyncImport.canonicalFileHash(
-                                    remoteSnapshot,
+                                val remoteHash = VaultSyncImport.logicalHashFromRemoteFile(
+                                    remoteNote,
+                                    localNote,
                                     vaultPath,
                                     notebookName,
-                                    preservedBaseline,
                                 )
                                 val localHash = VaultSyncImport.canonicalFileHash(
                                     localNote,
@@ -107,9 +106,20 @@ class SynchronizeNotes(
                                         vaultConflicts.add(VaultSyncConflict(localNote, remoteNote))
                                     }
                                 } else if (dirty) {
-                                    if (localHash != baseline && localNote.modifiedDate >= remoteNote.lastModified) {
-                                        logDebug("Vault push while dirty: ${localNote.title}")
-                                        remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
+                                    val membershipDirty = VaultSyncImport.isAttachmentMembershipDirty(
+                                        localNote,
+                                        mappingState,
+                                    )
+                                    val contentDirty = localHash != baseline
+                                    when {
+                                        contentDirty && localNote.modifiedDate >= remoteNote.lastModified -> {
+                                            logDebug("Vault push while dirty: ${localNote.title}")
+                                            remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
+                                        }
+                                        membershipDirty && !contentDirty -> {
+                                            logDebug("Vault push attachment membership: ${localNote.title}")
+                                            remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
+                                        }
                                     }
                                 } else {
                                     val hashChanged = baseline.isNotEmpty() &&

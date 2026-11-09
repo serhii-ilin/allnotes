@@ -71,6 +71,31 @@ class NoteRepositoryImpl(
         )
     }
 
+  private suspend fun persistVaultMappingBaseline(
+        noteId: Long,
+        relativePath: String,
+        rawContent: String,
+        existing: VaultMappingState? = null,
+    ) {
+        val local = getById(noteId).first() ?: return
+        val gen = vaultSyncCoordinator.currentGeneration()
+        val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        val state = VaultMappingState.fromDiskSync(
+            rawContent,
+            local,
+            relativePath,
+            VaultSyncImport.vaultPathsFromNote(local),
+            gen,
+            notebookName,
+            existing,
+        )
+        idMappingDao.updateNoteExtras(
+            localId = noteId,
+            cloudService = CloudService.FILE_STORAGE,
+            extras = VaultMappingState.encode(state),
+        )
+    }
+
     private suspend fun cleanMappingsForLocalNotes(vararg notes: Note) {
         val n = notes.filter { it.isLocalOnly }
         Log.d(tag, "cleanMappingsForLocalNotes: Cleaning ${n.size} local-only notes from ${notes.size} total")
@@ -127,7 +152,14 @@ class NoteRepositoryImpl(
                 } else {
                     0
                 }
-                val scanResult = syncProvider.getAll()
+                val mappedPaths = if (syncProvider.type == CloudService.FILE_STORAGE) {
+                    idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
+                        .mapNotNull { it.storageUri }
+                        .toSet()
+                } else {
+                    emptySet()
+                }
+                val scanResult = syncProvider.getAll(mappedPaths)
                 val remoteScanSucceeded = when {
                     scanResult == null -> false
                     syncProvider.type == CloudService.FILE_STORAGE &&
@@ -200,18 +232,27 @@ class NoteRepositoryImpl(
                             syncNote.toLocalNote(defaultPinned = false)
                         }
                         val noteId = insertNote(imported, sync = false)
-                        val mapping = syncNote.getMapping(noteId, syncProvider.type)
-                        val gen = vaultSyncCoordinator.currentGeneration()
-                        val state = VaultMappingState.fromDiskSync(
-                            syncNote.content.orEmpty(),
-                            imported,
-                            syncNote.idStr,
-                            VaultSyncImport.vaultPathsFromNote(imported),
-                            gen,
-                        )
-                        idMappingDao.insert(mapping.copy(extras = VaultMappingState.encode(state)))
                         if (syncProvider.type == CloudService.FILE_STORAGE) {
                             vaultPortableMetadata.applyFromRemote(noteId, syncNote)
+                            vaultSyncCoordinator.withVaultLock {
+                                val local = getById(noteId).first() ?: return@withVaultLock
+                                val mapping = syncNote.getMapping(noteId, syncProvider.type)
+                                val gen = vaultSyncCoordinator.currentGeneration()
+                                val notebookName = local.notebookId?.let {
+                                    notebookDao.getById(it).firstOrNull()?.name
+                                }
+                                val state = VaultMappingState.fromDiskSync(
+                                    syncNote.content.orEmpty(),
+                                    local,
+                                    syncNote.idStr,
+                                    VaultSyncImport.vaultPathsFromNote(local),
+                                    gen,
+                                    notebookName,
+                                )
+                                idMappingDao.insert(mapping.copy(extras = VaultMappingState.encode(state)))
+                            }
+                        } else {
+                            idMappingDao.insert(syncNote.getMapping(noteId, syncProvider.type))
                         }
                     }
 
@@ -228,26 +269,19 @@ class NoteRepositoryImpl(
                             }
                         }
                         if (syncProvider.type == CloudService.FILE_STORAGE) {
-                            val gen = vaultSyncCoordinator.currentGeneration()
-                            val paths = VaultSyncImport.vaultPathsFromNote(note)
-                            val raw = action.remoteNote.content.orEmpty()
-                            val notebookName = action.note.notebookId?.let {
-                                notebookDao.getById(it).firstOrNull()?.name
-                            }
-                            val state = VaultMappingState.fromDiskSync(
-                                raw,
-                                note,
-                                action.remoteNote.idStr,
-                                paths,
-                                gen,
-                                notebookName,
-                            )
-                            idMappingDao.updateNoteExtras(
-                                localId = action.note.id,
-                                cloudService = syncProvider.type,
-                                extras = VaultMappingState.encode(state),
-                            )
+                            updateNote(note, sync = false)
                             vaultPortableMetadata.applyFromRemote(action.note.id, action.remoteNote)
+                            val prior = VaultMappingState.resolve(
+                                idMappingDao.getByLocalIdAndProvider(action.note.id, syncProvider.type)?.extras,
+                            )
+                            vaultSyncCoordinator.withVaultLock {
+                                persistVaultMappingBaseline(
+                                    action.note.id,
+                                    action.remoteNote.idStr,
+                                    action.remoteNote.content.orEmpty(),
+                                    prior,
+                                )
+                            }
                         } else {
                             idMappingDao.updateNoteExtras(
                                 localId = action.note.id,
@@ -255,7 +289,9 @@ class NoteRepositoryImpl(
                                 extras = action.remoteNote.extra,
                             )
                         }
-                        updateNote(note, sync = false)
+                        if (syncProvider.type != CloudService.FILE_STORAGE) {
+                            updateNote(note, sync = false)
+                        }
                     }
 
                     is NoteAction.Delete -> {
@@ -342,21 +378,8 @@ class NoteRepositoryImpl(
         noteDao.update(*array)
         cleanMappingsForLocalNotes(*notes)
         if (backendProvider.isSyncing) {
-            backendProvider.syncProvider.value?.let { syncProvider ->
-                syncingScope.launch {
-                    val syncableNotes = notes.filterNot { it.isLocalOnly }
-                    Log.d(tag, "restoreNotes: Re-syncing ${syncableNotes.size} restored notes to ${syncProvider.type}")
-                    try {
-                        syncableNotes
-                            .associateWith { syncProvider.createNote(it) }
-                            .forEach { (n, syncNote) ->
-                                idMappingDao.insert(syncNote.getMapping(n.id, syncProvider.type))
-                                noteDao.updateLastModified(n.id, syncNote.lastModified)
-                            }
-                    } catch (e: Exception) {
-                        Log.e(tag, "restoreNotes: Error re-syncing restored notes", e)
-                    }
-                }
+            notes.filterNot { it.isLocalOnly }.forEach { n ->
+                processRemoteActions(n.id, Create(n, vaultFence = captureVaultFence()))
             }
         }
     }
@@ -438,7 +461,14 @@ class NoteRepositoryImpl(
         for (conflict in conflicts) {
             val mapping = idMappingDao.getByLocalIdAndProvider(conflict.local.id, CloudService.FILE_STORAGE)
                 ?: continue
-            val remoteHash = conflict.remote.extra.orEmpty()
+            val path = mapping.storageUri.orEmpty()
+            val notebookName = conflict.local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+            val remoteHash = VaultSyncImport.logicalHashFromRemoteFile(
+                conflict.remote,
+                conflict.local,
+                path,
+                notebookName,
+            )
             val mappingState = VaultMappingState.resolve(mapping.extras)
             val parsed = VaultMappingExtras.parse(mapping.extras)
             val existingRemote = mappingState?.conflictRemoteHash ?: parsed.conflictRemoteHash
@@ -472,7 +502,8 @@ class NoteRepositoryImpl(
             val local = getById(mapping.localNoteId).first() ?: continue
             val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
             val mappingState = VaultMappingState.resolve(mapping.extras)
-            val dirty = VaultSyncImport.isLocallyDirty(local, path, mappingState, notebookName)
+            var dirty = VaultSyncImport.isLocallyDirty(local, path, mappingState, notebookName)
+            var noteForBaseline = local
             if (dirty) {
                 val baselinePaths = mappingState?.vaultAttachmentPathSet.orEmpty()
                 val merged = VaultSyncImport.attachmentsAfterDirtyRefresh(local.attachments, remote, baselinePaths)
@@ -492,23 +523,27 @@ class NoteRepositoryImpl(
                 if (bodyOrAttachmentsChanged || metadataChanged) {
                     updateNote(imported, sync = false)
                     vaultPortableMetadata.applyFromRemote(mapping.localNoteId, remote)
+                    noteForBaseline = getById(mapping.localNoteId).first() ?: imported
+                    dirty = VaultSyncImport.isLocallyDirty(noteForBaseline, path, mappingState, notebookName)
                 } else if (remoteAttachmentsDifferFromDisk(local, remote)) {
                     vaultPortableMetadata.applyFromRemote(mapping.localNoteId, remote)
+                    noteForBaseline = getById(mapping.localNoteId).first() ?: local
+                    dirty = VaultSyncImport.isLocallyDirty(noteForBaseline, path, mappingState, notebookName)
                 }
             }
             if (!dirty) {
                 val gen = vaultSyncCoordinator.currentGeneration()
-                val noteEntity = local
+                val noteEntity = noteForBaseline
                 val paths = VaultSyncImport.vaultPathsFromNote(noteEntity)
                 val raw = remote.content.orEmpty()
-                val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+                val nbName = noteEntity.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
                 val state = VaultMappingState.fromDiskSync(
                     raw,
                     noteEntity,
                     path,
                     paths,
                     gen,
-                    notebookName,
+                    nbName,
                     mappingState,
                 )
                 val encoded = VaultMappingState.encode(state)

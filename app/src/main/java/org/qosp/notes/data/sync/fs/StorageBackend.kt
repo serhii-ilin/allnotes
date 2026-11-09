@@ -107,7 +107,7 @@ class StorageBackend(
         return fileToSyncNote(file, path)
     }
 
-    override suspend fun getAll(): List<SyncNote>? {
+    override suspend fun getAll(knownMappedPaths: Set<String>): List<SyncNote>? {
         val root = getRootDocumentFile() ?: return null
         if (!root.canRead()) return null
         if (!runVaultRecoveryPrelude(root)) {
@@ -116,6 +116,10 @@ class StorageBackend(
         }
         return try {
             val indexed = VaultDocumentTree.indexNotes(root)
+            if (!VaultDocumentTree.isIndexCompleteForMappedPaths(root, indexed, knownMappedPaths)) {
+                Log.w(TAG, "getAll: mapped note visible but missing from index; failing scan")
+                return null
+            }
             indexed.map { (rel, file) ->
                 fileToSyncNote(file, rel)
                     ?: throw IOException("Cannot read note file: $rel")

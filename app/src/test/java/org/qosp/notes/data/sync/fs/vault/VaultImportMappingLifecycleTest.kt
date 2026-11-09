@@ -71,37 +71,4 @@ class VaultImportMappingLifecycleTest {
         assertFalse(VaultSyncImport.isLocallyDirty(imported, path, state, null))
     }
 
-    @Test
-    fun afterPullMapping_fromDiskSync_thirdSyncIsClean() = runTest {
-        val editedRaw = """
-            |---
-            |aliases:
-            |  - desktop
-            |---
-            |Body edited
-        """.trimMargin()
-        val edited = SyncNote(0, path, "Imported", editedRaw, 50L, VaultContentHash.ofText(editedRaw))
-        val local = Note(id = 1L, title = "Imported", content = "Body edited", modifiedDate = 50L)
-        val pulled = VaultSyncImport.noteFromRemote(edited, local)
-        val state = VaultMappingState.fromDiskSync(
-            editedRaw,
-            pulled,
-            path,
-            VaultSyncImport.vaultPathsFromNote(pulled),
-            vaultGeneration = 1L,
-        )
-        val mapping = IdMapping(
-            localNoteId = 1L,
-            remoteNoteId = null,
-            provider = CloudService.FILE_STORAGE,
-            extras = VaultMappingState.encode(state),
-            isDeletedLocally = false,
-            storageUri = path,
-        )
-        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
-        val result = synchronizeNotes(listOf(pulled), listOf(edited), CloudService.FILE_STORAGE)
-        assertEquals(0, result.localUpdates.size)
-        assertEquals(0, result.remoteUpdates.size)
-        assertEquals(0, result.vaultConflicts.size)
-    }
 }

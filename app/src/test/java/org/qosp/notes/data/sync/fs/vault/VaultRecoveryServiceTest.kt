@@ -76,6 +76,30 @@ class VaultRecoveryServiceTest {
     }
 
     @Test
+    fun foreignScopeJournal_blocksScan_leavesDiskUntouched() {
+        val store = MemoryVaultWriteStore()
+        store.seedVerified("Work/Note.md", "PARTIAL")
+        store.writeJournal(
+            VaultRecoveryJournal(
+                vaultScopeId = "other-scope-not-this-tree",
+                vaultGeneration = 1L,
+                entries = listOf(
+                    VaultRecoveryJournalEntry(
+                        notePath = "Work/Note.md",
+                        stagingToken = "st-1",
+                        expectedContentHash = VaultContentHash.ofText("EXPECTED"),
+                        phase = VaultRecoveryJournalEntry.PHASE_STAGED,
+                    ),
+                ),
+            ),
+        )
+        val outcome = VaultRecoveryService.recoverPending(store, 1L)
+        assertEquals("PARTIAL", store.readVerified("Work/Note.md"))
+        assertTrue(outcome.scanBlocked)
+        assertTrue(outcome.writesBlocked)
+    }
+
+    @Test
     fun missingTargetEntry_blocksScan() {
         val store = MemoryVaultWriteStore()
         store.writeJournal(
