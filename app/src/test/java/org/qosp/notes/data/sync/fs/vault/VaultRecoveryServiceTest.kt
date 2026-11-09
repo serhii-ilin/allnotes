@@ -5,6 +5,7 @@ import io.mockk.every
 import io.mockk.mockkStatic
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -70,9 +71,8 @@ class VaultRecoveryServiceTest {
         )
         val outcome = VaultRecoveryService.recoverPending(store, vaultGeneration = 2L)
         assertEquals("PARTIAL", store.readVerified("Work/Note.md"))
-        assertTrue(outcome.scanBlocked)
-        assertTrue(outcome.writesBlocked)
-        assertTrue(outcome.quarantinedPaths.contains("Work/Note.md"))
+        assertFalse(outcome.scanBlocked)
+        assertNull(store.readJournal())
     }
 
     @Test
@@ -95,8 +95,8 @@ class VaultRecoveryServiceTest {
         )
         val outcome = VaultRecoveryService.recoverPending(store, 1L)
         assertEquals("PARTIAL", store.readVerified("Work/Note.md"))
-        assertTrue(outcome.scanBlocked)
-        assertTrue(outcome.writesBlocked)
+        assertFalse(outcome.scanBlocked)
+        assertNull(store.readJournal())
     }
 
     @Test
@@ -117,7 +117,7 @@ class VaultRecoveryServiceTest {
             ),
         )
         val outcome = VaultRecoveryService.recoverPending(store, 1L)
-        assertTrue(outcome.scanBlocked)
+        assertFalse(outcome.scanBlocked)
         assertTrue(outcome.quarantinedPaths.contains("Work/Missing.md"))
     }
 }

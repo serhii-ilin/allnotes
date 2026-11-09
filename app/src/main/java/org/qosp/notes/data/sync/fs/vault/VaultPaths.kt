@@ -18,9 +18,12 @@ object VaultPaths {
             .joinToString("/") { decodeTraversal(it) }
     }
 
+    fun hasParentSegment(relativePath: String): Boolean =
+        normalize(relativePath).split('/').any { it == ".." }
+
     fun normalizeNotePath(relativePath: String): String {
         val norm = normalize(relativePath)
-        require(!norm.contains("..")) { "Path traversal rejected: $relativePath" }
+        require(!hasParentSegment(relativePath)) { "Path traversal rejected: $relativePath" }
         return norm
     }
 
@@ -52,7 +55,7 @@ object VaultPaths {
 
     fun resolveRelativeToNote(noteRelativePath: String, linkTarget: String): String {
         val target = linkTarget.trim()
-        require(!target.contains("..")) { "Traversal in link: $linkTarget" }
+        require(!hasParentSegment(target)) { "Traversal in link: $linkTarget" }
         if (target.startsWith("/")) error("Absolute link rejected: $linkTarget")
         return if ("/" in target || !target.contains(":")) {
             val parent = parentPath(noteRelativePath)

@@ -1,6 +1,8 @@
 package org.qosp.notes.ui.settings
 
+import android.content.Context
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +18,7 @@ import org.qosp.notes.preferences.PreferenceRepository
 import java.time.Instant
 
 class SettingsViewModel(
+    private val context: Context,
     private val preferenceRepository: PreferenceRepository,
     private val noteRepository: NoteRepository,
     private val vaultTreeAccess: VaultTreeAccess,
@@ -41,6 +44,13 @@ class SettingsViewModel(
 
     fun rebuildVaultIndex() = viewModelScope.launch(Dispatchers.IO) {
         noteRepository.syncNotes()
+    }
+
+    fun clearVaultRecoveryState() = viewModelScope.launch(Dispatchers.IO) {
+        val loc = preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
+        if (loc.isBlank()) return@launch
+        val root = DocumentFile.fromTreeUri(context, Uri.parse(loc)) ?: return@launch
+        org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore(context, root).clearAllRecoveryState()
     }
 
     /**

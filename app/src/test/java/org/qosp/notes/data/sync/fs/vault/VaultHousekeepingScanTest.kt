@@ -14,4 +14,10 @@ class VaultHousekeepingScanTest {
         }
         assertFalse(VaultHousekeeping.shouldSkipDirectory("Notes"))
     }
+
+    @Test
+    fun dotTitleNote_isIndexed() {
+        assertTrue(VaultHousekeeping.shouldIndexFile(".NET notes.md"))
+        assertFalse(VaultHousekeeping.shouldSkipDirectory(".hidden-project"))
+    }
 }

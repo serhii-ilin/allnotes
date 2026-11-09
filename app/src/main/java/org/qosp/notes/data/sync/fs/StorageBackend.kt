@@ -86,6 +86,7 @@ class StorageBackend(
             currentPath
         }
         val mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
+        val oldRaw = VaultDocumentTree.findByRelativePath(root, currentPath)?.let { readFileContent(it) }
         val noteForWrite = if (targetPath != currentPath) {
             VaultNoteRelocation.remapNoteAttachments(note, currentPath, targetPath)
         } else {
@@ -100,13 +101,24 @@ class StorageBackend(
                 mappingState?.vaultAttachmentPathSet.orEmpty(),
             )
         }
-        val syncNote = writeNoteAt(root, targetPath, noteForWrite, mapping)
+        val syncNote = writeNoteAt(root, targetPath, noteForWrite, mapping, preservedDiskRaw = oldRaw)
         if (targetPath != currentPath) {
             VaultDocumentTree.findByRelativePath(root, currentPath)?.let { old ->
                 DocumentsContract.deleteDocument(context.contentResolver, old.uri)
             }
         }
-        return mapping.copy(storageUri = targetPath, extras = syncNote.extra)
+        val gen = vaultSyncCoordinator.currentGeneration()
+        val notebookName = noteForWrite.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        val state = VaultMappingState.fromDiskSync(
+            syncNote.content.orEmpty(),
+            noteForWrite,
+            targetPath,
+            VaultSyncImport.vaultPathsFromNote(noteForWrite),
+            gen,
+            notebookName,
+            mappingState,
+        )
+        return mapping.copy(storageUri = targetPath, extras = VaultMappingState.encode(state))
     }
 
     override suspend fun deleteNote(mapping: IdMapping): Boolean {
@@ -176,12 +188,14 @@ class StorageBackend(
         relativePath: String,
         note: Note,
         mapping: IdMapping?,
+        preservedDiskRaw: String? = null,
     ): SyncNote {
         val path = VaultPaths.normalizeNotePath(relativePath)
         val mappingState = mapping?.extras?.let { VaultMappingState.resolve(it) }
         val vaultAttachments = materializeAttachments(root, path, note.attachments, mappingState)
         val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
-        val existingRaw = VaultDocumentTree.findByRelativePath(root, path)?.let { readFileContent(it) }
+        val existingRaw = preservedDiskRaw
+            ?: VaultDocumentTree.findByRelativePath(root, path)?.let { readFileContent(it) }
         var doc = VaultNoteDocument.fromNote(
             note.copy(attachments = vaultAttachments),
             path,

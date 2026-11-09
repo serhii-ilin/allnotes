@@ -124,6 +124,8 @@
     <string name="preferences_file_storage_info">Choose a vault folder (e.g. Syncthing). Markdown notes and attachment files live there; Room is only an index. Existing notes created before you select this folder are not copied into the vault automatically.</string>
     <string name="preferences_vault_rebuild_index">Rebuild vault index from folder</string>
     <string name="preferences_vault_rebuild_index_hint">Scan the vault and refresh the local index without deleting local-only notes.</string>
+    <string name="preferences_vault_clear_recovery">Clear vault recovery state</string>
+    <string name="preferences_vault_clear_recovery_hint">Deletes local staging/journal tickets for this vault (use if sync appears stuck).</string>
     <string name="preferences_file_storage_location">Storage location</string>
     <string name="preferences_file_storage_select">Select Storage location</string>
     <string name="vault_onboarding_title">Choose a notes folder</string>

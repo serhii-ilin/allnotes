@@ -24,6 +24,14 @@ class VaultNoteDocumentTest {
     }
 
     @Test
+    fun parse_hrInBody_notFrontMatter() {
+        val raw = "Intro\n\n---\n\nAfter rule"
+        val doc = VaultNoteDocument.parse(raw)
+        assertEquals(raw, doc.body)
+        assertEquals(null, doc.frontMatter.title)
+    }
+
+    @Test
     fun preservedForeignYaml_roundTrip() {
         val raw = """
             |---

@@ -269,6 +269,11 @@ class NoteRepositoryImpl(
                     }
 
                     is NoteAction.Update -> {
+                        val current = getById(action.note.id).first() ?: continue
+                        if (current.isDeleted || current.modifiedDate != action.note.modifiedDate) {
+                            Log.d(tag, "applyLocalUpdates: stale pull skipped for ${action.note.id}")
+                            continue
+                        }
                         val note = if (syncProvider.type == CloudService.FILE_STORAGE) {
                             VaultSyncImport.noteFromRemote(action.remoteNote, action.note)
                         } else {

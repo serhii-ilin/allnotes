@@ -13,13 +13,13 @@ object VaultHousekeeping {
 
     fun shouldSkipDirectory(name: String?): Boolean {
         if (name == null) return true
-        if (name.startsWith('.')) return true
+        if (name.startsWith(".quillpad")) return true
         return name in ignoredDirNames
     }
 
     fun shouldIndexFile(name: String?): Boolean {
         if (name == null) return false
-        if (name.startsWith('.')) return false
+        if (name.startsWith(".quillpad")) return false
         return name.endsWith(".md", ignoreCase = true) || name.endsWith(".txt", ignoreCase = true)
     }
 

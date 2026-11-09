@@ -190,6 +190,11 @@ class ProcessRemoteActions(
 
     private suspend fun applyVaultPushResult(note: Note, syncProvider: ISyncBackend) {
         if (syncProvider.type != CloudService.FILE_STORAGE) return
+        val live = noteDao.getById(note.id).first() ?: return
+        if (live.isDeleted || live.modifiedDate != note.modifiedDate) {
+            Log.w(tag, "Skipping push Room apply: note ${note.id} changed during push")
+            return
+        }
         val mapping = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type) ?: return
         val mappingState = VaultMappingState.resolve(mapping.extras)
         if (mappingState != null && vaultSyncCoordinator.isStaleMapping(mappingState.vaultGeneration)) {

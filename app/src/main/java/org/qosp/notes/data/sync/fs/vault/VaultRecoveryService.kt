@@ -27,25 +27,15 @@ object VaultRecoveryService {
         }
         val scope = store.vaultScopeId()
         if (journal.vaultScopeId != scope) {
-            val paths = journal.entries.map { it.notePath }.toSet()
-            Log.w(TAG, "Foreign-scope recovery journal in tree; blocking scan ($paths)")
-            return Outcome(
-                quarantinedPaths = paths,
-                recoveredPaths = emptySet(),
-                writesBlocked = true,
-                scanBlocked = true,
-            )
+            Log.w(TAG, "Foreign-scope recovery journal; clearing (scope=$scope)")
+            store.writeJournal(null)
+            return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
         }
 
         if (journal.vaultGeneration != vaultGeneration) {
-            val paths = journal.entries.map { it.notePath }.toSet()
-            Log.w(TAG, "Stale recovery journal gen=${journal.vaultGeneration} active=$vaultGeneration; quarantine $paths")
-            return Outcome(
-                quarantinedPaths = paths,
-                recoveredPaths = emptySet(),
-                writesBlocked = true,
-                scanBlocked = true,
-            )
+            Log.w(TAG, "Stale recovery journal gen=${journal.vaultGeneration} active=$vaultGeneration; clearing")
+            store.writeJournal(null)
+            return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
         }
 
         val writer = VaultRecoverableWrite(store)
@@ -89,8 +79,12 @@ object VaultRecoveryService {
         val next = if (remaining.isEmpty()) null else journal.copy(entries = remaining)
         store.writeJournal(next)
 
-        val blocked = quarantined.isNotEmpty() || remaining.isNotEmpty()
-        return Outcome(quarantined, recovered, writesBlocked = blocked, scanBlocked = blocked)
+        return Outcome(
+            quarantinedPaths = quarantined,
+            recoveredPaths = recovered,
+            writesBlocked = quarantined.isNotEmpty(),
+            scanBlocked = false,
+        )
     }
 
     private fun finalizeEntry(store: VaultWriteStore, entry: VaultRecoveryJournalEntry) {

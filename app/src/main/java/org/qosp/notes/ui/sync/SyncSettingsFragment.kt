@@ -68,6 +68,9 @@ class SyncSettingsFragment : BaseFragment(R.layout.fragment_sync_settings) {
         binding.settingVaultRebuildIndex.setOnClickListener {
             model.rebuildVaultIndex()
         }
+        binding.settingVaultClearRecovery.setOnClickListener {
+            model.clearVaultRecoveryState()
+        }
     }
 
     private fun setupPreferenceObservers() {

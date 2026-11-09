@@ -14,6 +14,16 @@ class VaultPathsTest {
     }
 
     @Test
+    fun normalizeNotePath_allowsEllipsisInTitle() {
+        assertEquals("Wait....md", VaultPaths.normalizeNotePath("Wait....md"))
+    }
+
+    @Test
+    fun normalizeNotePath_allowsDoubleDotInFilename() {
+        assertEquals("v1..2.md", VaultPaths.normalizeNotePath("v1..2.md"))
+    }
+
+    @Test
     fun assetDirectory_besideNote() {
         assertEquals("Work/Meeting", VaultPaths.assetDirectoryForNote("Work/Meeting.md"))
     }

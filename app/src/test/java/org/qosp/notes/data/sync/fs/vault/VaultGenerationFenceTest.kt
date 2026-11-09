@@ -9,6 +9,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.qosp.notes.preferences.PreferenceRepository
@@ -63,8 +64,8 @@ class VaultGenerationFenceTest {
         val outcome = VaultRecoveryService.recoverPending(store, vaultGeneration = 2L)
         org.junit.Assert.assertEquals("old", store.readVerified("Work/Note.md"))
         assertTrue(outcome.recoveredPaths.isEmpty())
-        assertTrue(outcome.scanBlocked)
-        assertTrue(outcome.quarantinedPaths.contains("Work/Note.md"))
+        assertFalse(outcome.scanBlocked)
+        assertNull(store.readJournal())
     }
 
 }

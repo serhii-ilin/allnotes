@@ -1,14 +1,13 @@
 package org.qosp.notes.data.sync.fs.vault
 
 import android.content.Context
-import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
+import java.io.File
 import java.io.IOException
 
 /**
- * SAF-backed [VaultWriteStore]. No atomic rename guarantee across providers;
- * durable journal + isolated backup namespace per vault tree URI.
+ * Vault note files live on SAF; recovery journal/staging/backup live in app-private storage per vault scope.
  */
 class SafVaultWriteStore(
     private val context: Context,
@@ -16,31 +15,30 @@ class SafVaultWriteStore(
     private val scopeId: String = vaultScopeFromRoot(root),
 ) : VaultWriteStore {
 
+    private val recoveryRoot: File
+        get() = File(context.filesDir, "vault-recovery/$scopeId").apply { mkdirs() }
+
+    private val pendingDir: File
+        get() = File(recoveryRoot, "pending").apply { mkdirs() }
+
+    private val backupDir: File
+        get() = File(recoveryRoot, "backup").apply { mkdirs() }
+
     override fun vaultScopeId(): String = scopeId
 
     override fun readJournal(): VaultRecoveryJournal? {
-        val file = VaultDocumentTree.findByRelativePath(root, VaultPaths.JOURNAL_RELATIVE) ?: return null
-        val raw = context.contentResolver.openInputStream(file.uri)?.use { it.bufferedReader().readText() }
-        return VaultRecoveryJournalCodec.decode(raw)
+        val file = File(recoveryRoot, "journal.json")
+        if (!file.exists()) return null
+        return VaultRecoveryJournalCodec.decode(file.readText())
     }
 
     override fun writeJournal(journal: VaultRecoveryJournal?) {
-        val recoveryDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.RECOVERY_DIR)
-        val existing = recoveryDir.findFile("journal.json")
+        val file = File(recoveryRoot, "journal.json")
         if (journal == null) {
-            existing?.let { DocumentsContract.deleteDocument(context.contentResolver, it.uri) }
+            file.delete()
             return
         }
-        val encoded = VaultRecoveryJournalCodec.encode(journal)
-        val parent = VaultDocumentTree.ensureDirectory(root, VaultPaths.RECOVERY_DIR)
-        val target = parent.findFile("journal.json")
-            ?: parent.createFile("application/json", "journal")?.also {
-                if (it.name != "journal.json") it.renameTo("journal.json")
-            }
-            ?: throw IOException("cannot create recovery journal")
-        context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
-            out.write(encoded.encodeToByteArray())
-        } ?: throw IOException("cannot write recovery journal")
+        file.writeText(VaultRecoveryJournalCodec.encode(journal))
     }
 
     override fun readVerified(relativePath: String): String? {
@@ -51,27 +49,17 @@ class SafVaultWriteStore(
     }
 
     override fun writeToStaging(relativePath: String, content: String): VaultWriteStore.RecoveryTicket? {
-        val pendingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR)
         val token = "st_${VaultContentHash.ofText(relativePath + content.length).take(16)}"
-        pendingDir.findFile(token)?.let {
-            DocumentsContract.deleteDocument(context.contentResolver, it.uri)
-        }
-        val mime = if (relativePath.endsWith(".txt", ignoreCase = true)) "text/plain" else "text/markdown"
-        val created = pendingDir.createFile(mime, token) ?: return null
-        val storageName = ensureStorageName(pendingDir, created, token)
-        val file = pendingDir.findFile(storageName) ?: created
-        context.contentResolver.openOutputStream(file.uri)?.use { out ->
-            val bytes = content.encodeToByteArray()
-            out.write(bytes)
-            if (bytes.isEmpty()) throw IOException("empty write")
-        } ?: return null
-        return VaultWriteStore.RecoveryTicket(relativePath, token, storageName)
+        val target = File(pendingDir, token)
+        target.writeText(content)
+        if (content.isEmpty()) throw IOException("empty write")
+        return VaultWriteStore.RecoveryTicket(relativePath, token, token)
     }
 
     override fun readStaging(ticket: VaultWriteStore.RecoveryTicket): String? {
-        val pendingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR)
-        val file = pendingDir.findFile(ticket.storageName) ?: pendingDir.findFile(ticket.token) ?: return null
-        return context.contentResolver.openInputStream(file.uri)?.use { it.bufferedReader().readText() }
+        val file = File(pendingDir, ticket.storageName)
+        if (!file.exists()) return null
+        return file.readText()
     }
 
     override fun publishFromStaging(relativePath: String, staging: VaultWriteStore.RecoveryTicket) {
@@ -95,32 +83,19 @@ class SafVaultWriteStore(
             } ?: throw IOException("cannot write $fileName")
             if (target.name != fileName) target.renameTo(fileName)
         }
-        val pendingDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR)
-        pendingDir.findFile(staging.storageName)?.let {
-            DocumentsContract.deleteDocument(context.contentResolver, it.uri)
-        }
+        File(pendingDir, staging.storageName).delete()
     }
 
     override fun saveBackup(relativePath: String, content: String): VaultWriteStore.RecoveryTicket {
-        val backupDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.BACKUP_DIR)
         val token = "bk_${VaultContentHash.ofText(relativePath + content).take(16)}"
-        backupDir.findFile(token)?.let {
-            DocumentsContract.deleteDocument(context.contentResolver, it.uri)
-        }
-        val created = backupDir.createFile("text/plain", token)
-            ?: throw IOException("backup create failed")
-        val storageName = ensureStorageName(backupDir, created, token)
-        val file = backupDir.findFile(storageName) ?: created
-        context.contentResolver.openOutputStream(file.uri)?.use { out ->
-            out.write(content.encodeToByteArray())
-        } ?: throw IOException("backup write failed")
-        return VaultWriteStore.RecoveryTicket(relativePath, token, storageName)
+        File(backupDir, token).writeText(content)
+        return VaultWriteStore.RecoveryTicket(relativePath, token, token)
     }
 
     override fun readBackup(ticket: VaultWriteStore.RecoveryTicket): String? {
-        val backupDir = VaultDocumentTree.ensureDirectory(root, VaultPaths.BACKUP_DIR)
-        val file = backupDir.findFile(ticket.storageName) ?: backupDir.findFile(ticket.token) ?: return null
-        return context.contentResolver.openInputStream(file.uri)?.use { it.bufferedReader().readText() }
+        val file = File(backupDir, ticket.storageName)
+        if (!file.exists()) return null
+        return file.readText()
     }
 
     override fun readRecovery(ticket: VaultWriteStore.RecoveryTicket): String? =
@@ -134,23 +109,12 @@ class SafVaultWriteStore(
     }
 
     override fun clearRecovery(ticket: VaultWriteStore.RecoveryTicket) {
-        VaultDocumentTree.ensureDirectory(root, VaultPaths.PENDING_DIR).findFile(ticket.storageName)?.let {
-            DocumentsContract.deleteDocument(context.contentResolver, it.uri)
-        }
-        VaultDocumentTree.ensureDirectory(root, VaultPaths.BACKUP_DIR).findFile(ticket.storageName)?.let {
-            DocumentsContract.deleteDocument(context.contentResolver, it.uri)
-        }
+        File(pendingDir, ticket.storageName).delete()
+        File(backupDir, ticket.storageName).delete()
     }
 
-    internal fun ensureStorageName(dir: DocumentFile, created: DocumentFile, desired: String): String {
-        val current = VaultStagingNames.requireCreatedName(created.name)
-        val renamed = if (current == desired) true else created.renameTo(desired)
-        return VaultStagingNames.resolveAfterCreate(
-            current,
-            desired,
-            renameSucceeded = renamed,
-            findAfterRename = dir.findFile(desired)?.name,
-        )
+    fun clearAllRecoveryState() {
+        recoveryRoot.deleteRecursively()
     }
 
     companion object {

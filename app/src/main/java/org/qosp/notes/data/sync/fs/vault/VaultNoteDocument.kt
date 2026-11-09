@@ -42,8 +42,7 @@ data class VaultNoteDocument(
 
     companion object {
         private val frontMatterRegex = Regex(
-            """^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$""",
-            RegexOption.MULTILINE,
+            """\A---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$""",
         )
 
         private val knownRootKeys = setOf(
