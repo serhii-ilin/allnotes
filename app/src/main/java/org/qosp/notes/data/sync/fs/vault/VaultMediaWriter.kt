@@ -148,9 +148,11 @@ object VaultMediaWriter {
         existingNames.add(fileName)
         val mime = context.contentResolver.getType(sourceUri) ?: "application/octet-stream"
         val targetRel = VaultPaths.normalize("$assetDir/$fileName")
-        val bytes = context.contentResolver.openInputStream(sourceUri)?.use { it.readBytes() }
-            ?: throw IOException("Cannot read attachment source")
-        fs.writeBytes(targetRel, bytes, mime)
+        context.contentResolver.openInputStream(sourceUri)?.use { input ->
+            val out = fs.openWrite(targetRel, mime)
+                ?: throw IOException("Cannot open vault output for $fileName")
+            out.use { output -> input.copyTo(output) }
+        } ?: throw IOException("Cannot read attachment source")
         val writtenHash = VaultStreamHashes.hashVaultFsFile(fs, targetRel)
         if (writtenHash != sourceHash) {
             fs.delete(targetRel)

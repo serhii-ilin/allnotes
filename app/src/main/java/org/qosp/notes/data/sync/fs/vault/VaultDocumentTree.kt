@@ -176,16 +176,26 @@ object VaultDocumentTree {
         return current
     }
 
-    fun findByRelativePath(root: DocumentFile, relativePath: String): DocumentFile? {
+    fun findByRelativePath(root: DocumentFile, relativePath: String): DocumentFile? =
+        findByRelativePathCaseInsensitive(root, relativePath)
+
+    fun findByRelativePathCaseInsensitive(root: DocumentFile, relativePath: String): DocumentFile? {
         val norm = VaultPaths.normalizeNotePath(relativePath)
         var current: DocumentFile = root
         val parts = norm.split('/')
         parts.forEachIndexed { index, segment ->
-            val child = current.findFile(segment) ?: return null
+            val child = findFileCaseInsensitive(current, segment) ?: return null
             current = child
             if (index < parts.lastIndex && !current.isDirectory) return null
         }
         return current.takeIf { it.isFile }
+    }
+
+    fun findFileCaseInsensitive(parent: DocumentFile, name: String): DocumentFile? {
+        parent.findFile(name)?.let { return it }
+        return parent.listFiles()?.firstOrNull { child ->
+            child.name?.equals(name, ignoreCase = true) == true
+        }
     }
 
     fun ensureDirectory(root: DocumentFile, relativeDir: String): DocumentFile {

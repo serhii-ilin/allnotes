@@ -52,7 +52,6 @@ class PreferenceRepository(
                     cloudService = prefs.getEnum<CloudService>().toVaultMode(),
                     syncMode = prefs.getEnum(),
                     backgroundSync = prefs.getEnum(),
-                    newNotesSyncable = prefs.getEnum(),
                     trustSelfSignedCertificate = prefs.getEnum(),
                 )
             }

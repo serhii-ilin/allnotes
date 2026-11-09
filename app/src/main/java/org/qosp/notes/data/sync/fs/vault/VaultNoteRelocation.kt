@@ -247,8 +247,19 @@ object VaultNoteRelocation {
     /** Ordered pairing of local private attachments with disk vault paths after push. */
     fun materializePathsFromPush(local: List<Attachment>, fromDisk: List<Attachment>): List<Attachment> {
         val diskVault = fromDisk.filter { VaultPaths.isVaultRelativeAttachment(it.path) }.toMutableList()
+        val diskRelPaths = diskVault.map { VaultPaths.toVaultRelative(it.path) }.toSet()
+        val diskByFileName = diskVault.associateBy {
+            VaultPaths.fileName(VaultPaths.toVaultRelative(it.path)).lowercase()
+        }
         return local.map { att ->
-            if (VaultPaths.isVaultRelativeAttachment(att.path)) return@map att
+            if (VaultPaths.isVaultRelativeAttachment(att.path)) {
+                val rel = VaultPaths.toVaultRelative(att.path)
+                if (diskRelPaths.any { it.equals(rel, ignoreCase = true) }) return@map att
+                val byName = diskByFileName[VaultPaths.fileName(rel).lowercase()]
+                if (byName != null) {
+                    return@map att.copy(path = byName.path, description = byName.description, fileName = "")
+                }
+            }
             val suggested = VaultPaths.sanitizeFileName(
                 att.description.ifBlank { att.path.substringAfterLast('/') },
             )

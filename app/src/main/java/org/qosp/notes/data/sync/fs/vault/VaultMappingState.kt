@@ -41,6 +41,10 @@ data class VaultMappingState(
             decode(extras)?.let { return it }
             val legacy = VaultMappingExtras.parse(extras)
             val hash = legacy.baselineHash ?: extras?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            if (legacy.conflictRemoteHash == null && legacy.conflictCopyPath == null) {
+                // Legacy plain on-disk SHA in extras is not a logical baseline.
+                return null
+            }
             return VaultMappingState(
                 baselineHash = hash,
                 conflictRemoteHash = legacy.conflictRemoteHash,

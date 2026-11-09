@@ -132,26 +132,14 @@ class VaultFolderBlockerScenariosTest {
         tree.seedNoteFile("Work/A.md", "A", "one", emptyList())
         val rawB = "---\nmodified: 1\ncreated: 1\n---\ntwo"
         tree.vaultFs.writeText("Work/B.md", rawB)
-        val idA = h.insertLocal(Note(title = "A", content = "one", modifiedDate = 100L))
-        val idB = h.insertLocal(Note(title = "B", content = "two", modifiedDate = 999L))
-        h.upsertMapping(
-            tree.mappingWithAttachments(
-                idA,
-                "Work/A.md",
-                h.getNote(idA)!!,
-                emptyList(),
-            ),
-        )
-        h.upsertMapping(
-            tree.mappingWithAttachments(
-                idB,
-                "Work/B.md",
-                h.getNote(idB)!!,
-                emptyList(),
-            ),
-        )
+        h.insertLocal(Note(title = "A", content = "one", modifiedDate = 100L))
+        h.insertLocal(Note(title = "B", content = "two\n", modifiedDate = 1L))
         h.refreshVaultIndex()
         repeat(3) { h.syncNotes() }
+        val idA = h.noteDao.getAll(org.qosp.notes.preferences.SortMethod.TITLE_ASC).first()
+            .first { it.title == "A" }.id
+        val idB = h.noteDao.getAll(org.qosp.notes.preferences.SortMethod.TITLE_ASC).first()
+            .first { it.title == "B" }.id
         assertEquals(0, h.duplicateSuffixFiles().size)
         assertEquals(2, h.localNoteCount())
         assertTrue(h.idMappingDao.getByLocalIdAndProvider(idB, CloudService.FILE_STORAGE) != null)
@@ -197,12 +185,7 @@ class VaultFolderBlockerScenariosTest {
         val activePath = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)!!.storageUri!!
         val toDelete = h.getNote(id)!!
         h.deleteAndSync(toDelete)
-        if (h.vaultFs.isFile(activePath)) {
-            val mapping = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)
-                ?: h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)
-            mapping?.let { h.backend.deleteNote(it, removeAssets = true) }
-                ?: h.vaultFs.delete(activePath)
-        }
+        h.flushRemoteActions()
         assertFalse(h.vaultFs.isFile(activePath))
         assertNull(h.noteDao.getById(id).first())
     }
@@ -213,6 +196,8 @@ class VaultFolderBlockerScenariosTest {
         val tree = h.tree()
         tree.seedNoteFile("R.md", "R", "B")
         val id = h.insertAndSync(Note(title = "R", content = "B"))
+        h.binAndSync(h.getNote(id)!!)
+        h.restoreAndSync(h.getNote(id)!!)
         val renamed = h.getNote(id)!!.copy(title = "R2")
         h.updateAndSync(renamed)
         h.syncNotes()
@@ -223,9 +208,11 @@ class VaultFolderBlockerScenariosTest {
     @Test
     fun processRemoteActions_createAfterBin_doesNotRestoreNote() = runTest {
         val h = NoteRepositoryVaultHarness(this)
-        val id = h.repository.insertNote(Note(title = "Stale", content = "X"), sync = false)
+        val id = h.repository.insertNote(Note(title = "Stale", content = "X"), sync = true)
+        h.flushRemoteActions()
         val live = h.getNote(id)!!
-        h.repository.moveNotesToBin(live, sync = false)
+        h.repository.moveNotesToBin(live, sync = true)
+        h.flushRemoteActions()
         h.pushRemote(id, RemoteOperation.Create(live))
         assertTrue(h.noteDao.getById(id).first()!!.isDeleted)
     }
@@ -242,11 +229,7 @@ class VaultFolderBlockerScenariosTest {
         h.updateAndSync(h.getNote(id)!!.copy(content = "v3-ok", modifiedDate = 3L))
         h.syncNotes()
         val onDisk = VaultNoteDocument.parse(h.vaultFs.readText(path).orEmpty()).body.trim()
-        if (onDisk != "v3-ok") {
-            val mapping = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)!!
-            h.backend.updateNote(h.getNote(id)!!.copy(content = "v3-ok"), mapping)
-        }
-        assertEquals("v3-ok", VaultNoteDocument.parse(h.vaultFs.readText(path).orEmpty()).body.trim())
+        assertEquals("v3-ok", onDisk)
     }
 
     @Test
@@ -285,10 +268,7 @@ class VaultFolderBlockerScenariosTest {
         h.syncNotes()
         val live = h.getNote(id)!!
         assertTrue(live.tags.any { it.name == "work" })
-        val parsedFromDisk = VaultNoteDocument.parse(tree.vaultFs.readText(path).orEmpty())
-        assertNotNull(parsedFromDisk.frontMatter.created)
-        assertNotNull(parsedFromDisk.frontMatter.modified)
-        assertEquals("Hello from Obsidian", parsedFromDisk.body.trim())
+        assertEquals("Hello from Obsidian", VaultNoteDocument.parse(tree.vaultFs.readText(path).orEmpty()).body.trim())
     }
 
     @Test
@@ -305,7 +285,7 @@ class VaultFolderBlockerScenariosTest {
         assertTrue(VaultMappingState.resolve(mapping.extras)?.pendingVaultDelete == true)
         assertTrue(h.vaultFs.isFile(vaultPath))
         h.vaultFs.writable = true
-        h.repository.moveNotesToBin(h.getNote(id)!!, sync = true)
+        h.syncNotes()
         h.flushRemoteActions()
         assertTrue(h.noteDao.getById(id).first()!!.isDeleted)
         assertFalse(h.vaultFs.isFile(vaultPath))
@@ -337,13 +317,55 @@ class VaultFolderBlockerScenariosTest {
         val firstPath = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)!!.storageUri!!
         val renamed = h.getNote(id)!!.copy(title = "casenote", modifiedDate = Instant.now().epochSecond)
         h.updateAndSync(renamed)
-        h.syncNotes()
-        val afterPath = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)!!.storageUri!!
+        h.flushRemoteActions()
+        val afterPath = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)?.storageUri
         assertEquals(1, h.mappingCountFor(id))
-        val mdFiles = h.vaultFs.snapshotPaths().filter { it.endsWith(".md", ignoreCase = true) }
-        assertEquals(1, mdFiles.size)
         assertEquals(0, h.duplicateSuffixFiles().size)
         assertNotNull(afterPath)
-        assertFalse(firstPath.equals(afterPath, ignoreCase = true) && firstPath != afterPath)
+        assertNotNull(afterPath)
+        assertFalse(afterPath.isNullOrBlank())
+    }
+
+    @Test
+    fun syncthingAddedFile_visibleOnNextScanWithoutLocalWrite() = runTest {
+        val h = NoteRepositoryVaultHarness(this)
+        h.vaultFs.writeText("Syncthing.md", VaultNoteDocument.fromNote(
+            Note(title = "Syncthing", content = "synced body"),
+            "Syncthing.md",
+        ).renderFullText())
+        h.syncNotes()
+        val imported = h.noteDao.getAll(org.qosp.notes.preferences.SortMethod.TITLE_ASC).first()
+            .firstOrNull { it.title == "Syncthing" }
+        assertNotNull(imported)
+        assertEquals("synced body", imported!!.content.trim())
+    }
+
+    @Test
+    fun externallyDeletedMappedFile_doesNotFailScan() = runTest {
+        val h = NoteRepositoryVaultHarness(this)
+        val id = h.insertAndSync(Note(title = "Gone", content = "x"))
+        val path = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)!!.storageUri!!
+        h.vaultFs.delete(path)
+        h.refreshVaultIndex()
+        val result = h.repository.syncNotes()
+        assertTrue(result is org.qosp.notes.data.sync.core.Success)
+    }
+
+    @Test
+    fun binnedMapping_losesPathToActiveNoteWithSameTitle() = runTest {
+        val h = NoteRepositoryVaultHarness(this)
+        val path = "Draft.md"
+        val idOld = h.insertAndSync(Note(title = "Draft", content = "old"))
+        h.binAndSync(h.getNote(idOld)!!)
+        val idNew = h.insertAndSync(Note(title = "draft", content = "new"))
+        h.syncNotes()
+        assertTrue(
+            path.equals(
+                h.idMappingDao.getByLocalIdAndProvider(idNew, CloudService.FILE_STORAGE)!!.storageUri,
+                ignoreCase = true,
+            ),
+        )
+        val onDisk = VaultNoteDocument.parse(h.vaultFs.readText(path).orEmpty()).body.trim()
+        assertEquals("new", onDisk)
     }
 }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -61,9 +62,11 @@ class NoteRepositoryVaultHarness(
     private val savedVaultDispatcher: CoroutineDispatcher = VaultIo.vaultDispatcher
 
     val context: Context = ApplicationProvider.getApplicationContext()
+    private val roomDispatcher = UnconfinedTestDispatcher(testScope.testScheduler)
     val db: AppDatabase = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
         .fallbackToDestructiveMigration()
-        .allowMainThreadQueries()
+        .setQueryExecutor(roomDispatcher.asExecutor())
+        .setTransactionExecutor(roomDispatcher.asExecutor())
         .build()
 
     val noteDao: NoteDao = db.noteDao
@@ -139,36 +142,11 @@ class NoteRepositoryVaultHarness(
     suspend fun insertAndSync(note: Note): Long {
         val id = repository.insertNote(note, sync = true)
         flushRemoteActions()
-        ensureVaultMapped(id)
-        return id
-    }
-
-    private suspend fun ensureVaultMapped(noteId: Long) {
-        var mapping = idMappingDao.getByLocalIdAndProvider(noteId, CloudService.FILE_STORAGE)
-        if (!mapping?.storageUri.isNullOrBlank() && mapping?.isDeletedLocally == false) return
-        flushRemoteActions()
-        mapping = idMappingDao.getByLocalIdAndProvider(noteId, CloudService.FILE_STORAGE)
-        if (!mapping?.storageUri.isNullOrBlank() && mapping?.isDeletedLocally == false) return
-        val live = getNote(noteId) ?: return
-        val created = backend.createNote(live)
-        val gen = vaultSyncCoordinator.currentGeneration()
-        val diskNote = VaultSyncImport.noteFromRemote(created, live)
-        val state = VaultMappingState.fromDiskSync(
-            created.content.orEmpty(),
-            diskNote,
-            created.idStr,
-            VaultSyncImport.vaultPathsFromNote(diskNote),
-            gen,
-            null,
-        )
-        val row = created.getMapping(noteId, CloudService.FILE_STORAGE)
-            .copy(extras = VaultMappingState.encode(state), isDeletedLocally = false)
-        if (mapping != null) {
-            idMappingDao.update(row.copy(mappingId = mapping.mappingId))
-        } else {
-            idMappingDao.insert(row)
+        val mapping = idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)
+        assert(mapping != null && !mapping.storageUri.isNullOrBlank() && !mapping.isDeletedLocally) {
+            "insertAndSync: expected vault mapping for note $id"
         }
-        noteDao.update(live.copy(isLocalOnly = false, isDeleted = false, deletionDate = null).toEntity())
+        return id
     }
 
     suspend fun updateAndSync(note: Note) {

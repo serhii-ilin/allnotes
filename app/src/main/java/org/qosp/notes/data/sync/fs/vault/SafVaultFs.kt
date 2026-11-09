@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.documentfile.provider.DocumentFile
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 
 /** SAF-backed [VaultFs] using an existing tree root. */
 class SafVaultFs(
@@ -12,6 +13,16 @@ class SafVaultFs(
     override val scopeId: String = SafVaultWriteStore.vaultScopeFromRoot(root),
     private val caseInsensitiveLookup: Boolean = true,
 ) : VaultFs {
+
+    private var directoryCache: Map<String, Map<String, DocumentFile>>? = null
+
+    fun beginDirectoryCache() {
+        directoryCache = buildDirectoryCache(root)
+    }
+
+    fun endDirectoryCache() {
+        directoryCache = null
+    }
 
     override fun canRead(): Boolean = root.canRead()
     override fun canWrite(): Boolean = root.canWrite()
@@ -48,6 +59,22 @@ class SafVaultFs(
 
     override fun writeText(relativePath: String, content: String, mimeType: String) {
         writeBytes(relativePath, content.encodeToByteArray(), mimeType)
+    }
+
+    override fun openWrite(relativePath: String, mimeType: String): OutputStream? {
+        val path = VaultPaths.normalize(relativePath)
+        val existing = findByRelativePath(path)
+        if (existing != null && existing.isFile) {
+            return context.contentResolver.openOutputStream(existing.uri, "wt")
+        }
+        val parentPath = VaultPaths.parentPath(path)
+        val parent = if (parentPath.isEmpty()) root else VaultDocumentTree.ensureDirectory(root, parentPath)
+        val fileName = VaultPaths.fileName(path)
+        val created = parent.createFile(mimeType, fileName.substringBeforeLast('.'))
+            ?: throw IOException("cannot create $fileName")
+        if (created.name != fileName) created.renameTo(fileName)
+        val target = findFileCaseInsensitive(parent, fileName) ?: created
+        return context.contentResolver.openOutputStream(target.uri, "wt")
     }
 
     override fun writeBytes(relativePath: String, bytes: ByteArray, mimeType: String) {
@@ -114,10 +141,31 @@ class SafVaultFs(
 
     fun findFileCaseInsensitive(parent: DocumentFile, name: String): DocumentFile? {
         parent.findFile(name)?.let { return it }
+        directoryCache?.get(parent.uri.toString())?.let { children ->
+            children[name.lowercase()]?.let { return it }
+            if (caseInsensitiveLookup) {
+                return children.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+            }
+            return null
+        }
         if (!caseInsensitiveLookup) return null
         return parent.listFiles()?.firstOrNull { child ->
             child.name?.equals(name, ignoreCase = true) == true
         }
+    }
+
+    private fun buildDirectoryCache(start: DocumentFile): Map<String, Map<String, DocumentFile>> {
+        val out = mutableMapOf<String, Map<String, DocumentFile>>()
+        fun walk(dir: DocumentFile) {
+            val children = dir.listFiles() ?: return
+            val byLowerName = children.mapNotNull { child ->
+                child.name?.let { it.lowercase() to child }
+            }.toMap()
+            out[dir.uri.toString()] = byLowerName
+            children.filter { it.isDirectory }.forEach { walk(it) }
+        }
+        walk(start)
+        return out
     }
 
     private fun resolveDir(relativeDir: String): DocumentFile? {

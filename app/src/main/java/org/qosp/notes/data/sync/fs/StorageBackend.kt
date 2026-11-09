@@ -81,9 +81,9 @@ class StorageBackend(
     private fun vaultFs(): VaultFs = injectedVaultFs ?: lazySafVaultFs
 
     private fun vaultWriteStore(fs: VaultFs): VaultWriteStore = when (fs) {
-        is SafVaultFs -> SafVaultWriteStore(context, fs.root)
-        is InMemoryVaultFs -> FsVaultWriteStore(fs)
-        else -> FsVaultWriteStore(fs)
+        is SafVaultFs -> SafVaultWriteStore(context, fs.root, fs)
+        is InMemoryVaultFs -> FsVaultWriteStore(context, fs)
+        else -> FsVaultWriteStore(context, fs)
     }
 
     override suspend fun isAvailable(): AvailabilityStatus = VaultIo.run {
@@ -184,8 +184,13 @@ class StorageBackend(
         val mappingForWrite = mappingState?.let {
             mapping.copy(extras = VaultMappingState.encode(it))
         } ?: mapping
+        val writePath = if (targetPath.equals(currentPath, ignoreCase = true)) {
+            currentPath
+        } else {
+            targetPath
+        }
         val syncNote = writeNoteAt(
-            targetPath,
+            writePath,
             noteForWrite,
             mappingForWrite,
             preservedDiskRaw = oldRaw,
@@ -238,7 +243,9 @@ class StorageBackend(
             return@run null
         }
         return@run try {
-            val indexed = indexFs(fs)
+            invalidateVaultIndex()
+            (fs as? SafVaultFs)?.beginDirectoryCache()
+            val indexed = VaultDocumentTree.indexNotes(fs)
             if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexed, knownMappedPaths)) {
                 Log.w(TAG, "getAll: mapped note visible but missing from index; failing scan")
                 return@run null
@@ -247,6 +254,8 @@ class StorageBackend(
         } catch (e: Exception) {
             Log.e(TAG, "getAll: scan failed", e)
             null
+        } finally {
+            (fs as? SafVaultFs)?.endDirectoryCache()
         }
     }
 

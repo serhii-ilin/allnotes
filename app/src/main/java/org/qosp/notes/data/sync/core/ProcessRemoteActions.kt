@@ -134,9 +134,15 @@ class ProcessRemoteActions(
         removeAssets: Boolean,
     ) = try {
         idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)?.let { mapping ->
+            val binned = VaultMappingState.resolve(mapping.extras)?.binnedVaultPath
             val vaultPath = VaultPaths.vaultMappingPath(mapping.storageUri)
-                ?: VaultMappingState.resolve(mapping.extras)?.binnedVaultPath
-                    ?.let(VaultPaths::vaultMappingPath)
+                ?: binned?.let(VaultPaths::vaultMappingPath)?.takeIf { binnedPath ->
+                    idMappingDao.countActiveMappingsAtPath(
+                        syncProvider.type,
+                        binnedPath,
+                        note.id,
+                    ) == 0
+                }
             val mappingForDelete = if (vaultPath != null && mapping.storageUri != vaultPath) {
                 mapping.copy(storageUri = vaultPath)
             } else {
@@ -243,7 +249,13 @@ class ProcessRemoteActions(
         persistBaselineAfterPush(note.id, syncProvider)
         noteDao.updateLastModified(note.id, created.lastModified)
             val live = noteDao.getById(note.id).first() ?: note
-            noteDao.update(live.copy(isLocalOnly = false, isDeleted = false, deletionDate = null).toEntity())
+            noteDao.update(
+                live.copy(
+                    isLocalOnly = false,
+                    isDeleted = live.isDeleted,
+                    deletionDate = live.deletionDate,
+                ).toEntity(),
+            )
         } catch (e: Exception) {
             Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
             toaster.showShort(e.message ?: "Failed to create note")

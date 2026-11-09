@@ -21,7 +21,7 @@ object VaultNoteLinker {
         val parsed = VaultNoteDocument.parse(remote.content.orEmpty())
         val notebookName = parsed.frontMatter.notebook?.takeIf { it.isNotBlank() }
         val remoteHash = VaultSyncImport.logicalHashFromRemoteFile(remote, remoteNote, path, notebookName)
-        val remoteBodyHash = VaultContentHash.ofText(parsed.body)
+        val remoteBodyHash = VaultContentHash.ofText(parsed.body.trimEnd())
         val remoteTitle = parsed.frontMatter.title?.takeIf { it.isNotBlank() }
             ?: VaultPaths.noteBaseName(path)
         val pathMatch = locals.firstOrNull { local ->
@@ -30,8 +30,11 @@ object VaultNoteLinker {
             val desired = VaultPaths.titleToNotePath(local.title, local.isMarkdownEnabled)
             VaultPaths.normalizeNotePath(desired) == path
         }
+        val remoteHasTitle = parsed.frontMatter.title?.isNotBlank() == true
         if (pathMatch != null &&
-            contentMatchesLocal(pathMatch, path, remoteTitle, remoteBodyHash, notebookName, remoteHash)
+            contentMatchesLocal(
+                pathMatch, path, remoteTitle, remoteBodyHash, notebookName, remoteHash, remoteHasTitle,
+            )
         ) {
             claimedLocalIds.add(pathMatch.id)
             claimedRemotePaths.add(path)
@@ -41,8 +44,10 @@ object VaultNoteLinker {
             if (local.id in claimedLocalIds) return@firstOrNull false
             if (mappingsByLocalId[local.id] != null) return@firstOrNull false
             val desired = VaultPaths.titleToNotePath(local.title, local.isMarkdownEnabled)
-            contentMatchesLocal(local, path, remoteTitle, remoteBodyHash, notebookName, remoteHash) ||
-                contentMatchesLocal(local, desired, remoteTitle, remoteBodyHash, notebookName, remoteHash)
+            contentMatchesLocal(local, path, remoteTitle, remoteBodyHash, notebookName, remoteHash, remoteHasTitle) ||
+                contentMatchesLocal(
+                    local, desired, remoteTitle, remoteBodyHash, notebookName, remoteHash, remoteHasTitle,
+                )
         }
         if (hashMatch != null) {
             claimedLocalIds.add(hashMatch.id)
@@ -58,10 +63,15 @@ object VaultNoteLinker {
         remoteBodyHash: String,
         notebookName: String?,
         remoteHash: String,
+        remoteHasTitleInYaml: Boolean,
     ): Boolean {
-        val localBodyHash = VaultContentHash.ofText(local.content)
-        val titleOk = local.title.equals(remoteTitle, ignoreCase = true) ||
-            VaultPaths.noteBaseName(pathForHash).equals(remoteTitle, ignoreCase = true)
+        val localBody = if (local.isList) local.taskListToMd() else local.content
+        val localBodyHash = VaultContentHash.ofText(localBody.trimEnd())
+        val titleOk = if (remoteHasTitleInYaml) {
+            local.title.equals(remoteTitle, ignoreCase = true)
+        } else {
+            local.title.equals(VaultPaths.noteBaseName(pathForHash), ignoreCase = true)
+        }
         if (titleOk && localBodyHash == remoteBodyHash) return true
         val localHash = VaultSyncImport.canonicalFileHash(local, pathForHash, notebookName, null)
         return localHash == remoteHash
@@ -77,16 +87,23 @@ object VaultNoteLinker {
         val desired = VaultPaths.titleToNotePath(local.title, local.isMarkdownEnabled)
         val desiredNorm = VaultPaths.normalizeNotePath(desired)
         if (desiredNorm in mappedPaths || desiredNorm in claimedPaths) return null
-        val localBodyHash = VaultContentHash.ofText(local.content)
+        val localBodyHash = VaultContentHash.ofText(
+            (if (local.isList) local.taskListToMd() else local.content).trimEnd(),
+        )
         return remotes.firstOrNull { remote ->
             val path = VaultPaths.normalizeNotePath(remote.idStr)
             if (path in mappedPaths || path in claimedPaths) return@firstOrNull false
             val parsed = VaultNoteDocument.parse(remote.content.orEmpty())
             val remoteTitle = parsed.frontMatter.title?.takeIf { it.isNotBlank() }
                 ?: VaultPaths.noteBaseName(path)
-            val remoteBodyHash = VaultContentHash.ofText(parsed.body)
-            val titleMatch = local.title.equals(remoteTitle, ignoreCase = true) ||
-                VaultPaths.noteBaseName(path).equals(VaultPaths.noteBaseName(desiredNorm), ignoreCase = true)
+            val remoteBodyHash = VaultContentHash.ofText(parsed.body.trimEnd())
+            val localBody = if (local.isList) local.taskListToMd() else local.content
+            val localBodyHash = VaultContentHash.ofText(localBody.trimEnd())
+            val titleMatch = if (parsed.frontMatter.title?.isNotBlank() == true) {
+                local.title.equals(remoteTitle, ignoreCase = true)
+            } else {
+                local.title.equals(VaultPaths.noteBaseName(path), ignoreCase = true)
+            }
             titleMatch && localBodyHash == remoteBodyHash
         }?.also { claimedPaths.add(VaultPaths.normalizeNotePath(it.idStr)) }
     }

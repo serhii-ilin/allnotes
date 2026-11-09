@@ -2,6 +2,7 @@ package org.qosp.notes.data.sync.fs.vault
 
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 
 /**
  * Provider-agnostic vault tree access. Production uses [SafVaultFs]; tests use [InMemoryVaultFs].
@@ -23,6 +24,8 @@ interface VaultFs {
     fun writeText(relativePath: String, content: String, mimeType: String = mimeForPath(relativePath))
 
     fun writeBytes(relativePath: String, bytes: ByteArray, mimeType: String = "application/octet-stream")
+
+    fun openWrite(relativePath: String, mimeType: String = mimeForPath(relativePath)): OutputStream? = null
 
     fun ensureDirectory(relativeDir: String)
 

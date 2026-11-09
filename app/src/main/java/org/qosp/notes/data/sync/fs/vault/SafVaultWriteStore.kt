@@ -1,7 +1,6 @@
 package org.qosp.notes.data.sync.fs.vault
 
 import android.content.Context
-import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
@@ -12,6 +11,7 @@ import java.io.IOException
 class SafVaultWriteStore(
     private val context: Context,
     private val root: DocumentFile,
+    private val vaultFs: SafVaultFs? = null,
     private val scopeId: String = vaultScopeFromRoot(root),
 ) : VaultWriteStore {
 
@@ -42,7 +42,7 @@ class SafVaultWriteStore(
     }
 
     override fun readVerified(relativePath: String): String? {
-        val file = VaultDocumentTree.findByRelativePath(root, relativePath) ?: return null
+        val file = findByRelativePath(relativePath) ?: return null
         return context.contentResolver.openInputStream(file.uri)?.use {
             it.bufferedReader().readText()
         }
@@ -65,7 +65,7 @@ class SafVaultWriteStore(
     override fun publishFromStaging(relativePath: String, staging: VaultWriteStore.RecoveryTicket) {
         val path = VaultPaths.normalizeNotePath(relativePath)
         val staged = readStaging(staging) ?: throw IOException("staging unreadable")
-        val existing = VaultDocumentTree.findByRelativePath(root, path)
+        val existing = findByRelativePath(path)
         if (existing != null && existing.isFile) {
             context.contentResolver.openOutputStream(existing.uri, "wt")?.use { out ->
                 out.write(staged.encodeToByteArray())
@@ -75,7 +75,8 @@ class SafVaultWriteStore(
             val parent = if (parentPath.isEmpty()) root else VaultDocumentTree.ensureDirectory(root, parentPath)
             val fileName = VaultPaths.fileName(path)
             val mime = if (path.endsWith(".txt", ignoreCase = true)) "text/plain" else "text/markdown"
-            val target = parent.findFile(fileName)
+            val target = vaultFs?.findFileCaseInsensitive(parent, fileName)
+                ?: parent.findFile(fileName)
                 ?: parent.createFile(mime, fileName.substringBeforeLast('.'))
                 ?: throw IOException("cannot create $fileName")
             context.contentResolver.openOutputStream(target.uri, "wt")?.use { out ->
@@ -115,6 +116,21 @@ class SafVaultWriteStore(
 
     fun clearAllRecoveryState() {
         recoveryRoot.deleteRecursively()
+    }
+
+    private fun findByRelativePath(relativePath: String): DocumentFile? {
+        vaultFs?.let {
+            val norm = VaultPaths.normalizeNotePath(relativePath)
+            var current: DocumentFile = root
+            val parts = norm.split('/')
+            parts.forEachIndexed { index, segment ->
+                val child = it.findFileCaseInsensitive(current, segment) ?: return null
+                current = child
+                if (index < parts.lastIndex && !current.isDirectory) return null
+            }
+            return current.takeIf { it.isFile }
+        }
+        return VaultDocumentTree.findByRelativePathCaseInsensitive(root, relativePath)
     }
 
     companion object {

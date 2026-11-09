@@ -56,7 +56,13 @@ class SynchronizeNotes(
                                 ?.let(VaultPaths::vaultMappingPath)
                         path?.let { VaultPaths.normalizeNotePath(it) to m }
                     }
-                    .toMap()
+                    .groupBy({ it.first }, { it.second })
+                    .mapValues { (_, mappings) ->
+                        mappings.maxWith(
+                            compareBy<IdMapping> { if (!it.isDeletedLocally) 1 else 0 }
+                                .thenBy { it.mappingId },
+                        )
+                    }
                 val claimedLocalIds = mutableSetOf<Long>()
                 val claimedRemotePaths = allMappings
                     .filterNot { it.isDeletedLocally }
@@ -238,26 +244,36 @@ class SynchronizeNotes(
                         val binnedPath = VaultMappingState.resolve(mapping.extras)?.binnedVaultPath
                         when {
                             localNote != null && localNote.isDeleted -> {
-                                logDebug("Vault file returned; restoring binned note: ${remoteNote.title}")
-                                localUpdates.add(NoteAction.Update(localNote, remoteNote))
-                                if (mapping.isDeletedLocally && binnedPath == remoteNote.idStr) {
-                                    mappingUpdates.add(
-                                        mapping.copy(
-                                            isDeletedLocally = false,
-                                            storageUri = remoteNote.idStr,
-                                            extras = VaultMappingState.encode(
-                                                (VaultMappingState.resolve(mapping.extras)
-                                                    ?: VaultMappingState(baselineHash = ""))
-                                                    .copy(binnedVaultPath = null),
+                                val pendingDelete =
+                                    VaultMappingState.resolve(mapping.extras)?.pendingVaultDelete == true
+                                if (pendingDelete) {
+                                    logDebug("Vault file present but delete pending; skip restore: ${remoteNote.title}")
+                                } else {
+                                    logDebug("Vault file returned; restoring binned note: ${remoteNote.title}")
+                                    localUpdates.add(NoteAction.Update(localNote, remoteNote))
+                                    if (mapping.isDeletedLocally && binnedPath == remoteNote.idStr) {
+                                        mappingUpdates.add(
+                                            mapping.copy(
+                                                isDeletedLocally = false,
+                                                storageUri = remoteNote.idStr,
+                                                extras = VaultMappingState.encode(
+                                                    (VaultMappingState.resolve(mapping.extras)
+                                                        ?: VaultMappingState(baselineHash = ""))
+                                                        .copy(binnedVaultPath = null),
+                                                ),
                                             ),
-                                        ),
-                                    )
+                                        )
+                                    }
                                 }
                             }
                             localNote == null -> {
                                 val dummyLocalNote = Note(id = mapping.localNoteId)
                                 logDebug("Local note deleted. Deleting remotely: ${remoteNote.title}")
                                 remoteUpdates.add(NoteAction.Delete(dummyLocalNote, remoteNote))
+                            }
+                            mapping.isDeletedLocally &&
+                                VaultMappingState.resolve(mapping.extras)?.pendingVaultDelete == true -> {
+                                logDebug("Skip re-link: vault delete pending for ${remoteNote.title}")
                             }
                             mapping.isDeletedLocally &&
                                 binnedPath == VaultPaths.normalizeNotePath(remoteNote.idStr) -> {

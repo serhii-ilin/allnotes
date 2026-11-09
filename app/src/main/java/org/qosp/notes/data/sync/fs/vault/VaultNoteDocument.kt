@@ -145,12 +145,42 @@ data class VaultNoteDocument(
         fun mergePreservedFromDisk(existingRaw: String?, document: VaultNoteDocument): VaultNoteDocument {
             if (existingRaw.isNullOrBlank()) return document
             val prior = parse(existingRaw).frontMatter
+            val newFm = document.frontMatter
+            val filteredVerbatim = filterUnchangedKnownKeys(prior.knownKeysVerbatim, prior, newFm)
             return document.copy(
                 frontMatter = document.frontMatter.copy(
                     preservedYaml = prior.preservedYaml,
-                    knownKeysVerbatim = prior.knownKeysVerbatim,
+                    knownKeysVerbatim = filteredVerbatim,
                 ),
             )
+        }
+
+        private fun filterUnchangedKnownKeys(
+            verbatim: String,
+            prior: VaultFrontMatter,
+            updated: VaultFrontMatter,
+        ): String {
+            if (verbatim.isBlank()) return verbatim
+            val kept = verbatim.lines().filter { line ->
+                val key = line.trim().substringBefore(':').trim()
+                when (key) {
+                    "tags" -> tagsEqual(prior.tags, updated.tags)
+                    "modified" -> {
+                        val rawVal = line.substringAfter(":").trim()
+                        prior.modified == updated.modified &&
+                            (rawVal.toLongOrNull() == updated.modified || updated.modified == null)
+                    }
+                    "created" -> prior.created == updated.created
+                    else -> true
+                }
+            }
+            return kept.joinToString("\n").trimEnd()
+        }
+
+        private fun tagsEqual(a: List<String>?, b: List<String>?): Boolean {
+            val left = a.orEmpty().sorted()
+            val right = b.orEmpty().sorted()
+            return left == right
         }
 
         private fun String.mdToTaskList(): List<NoteTask> {

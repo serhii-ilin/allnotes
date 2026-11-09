@@ -169,11 +169,6 @@ enum class BackgroundSync(override val nameResource: Int) : HasNameResource, Enu
     DISABLED(R.string.preferences_background_sync_disabled),
 }
 
-enum class NewNotesSyncable(override val nameResource: Int) : HasNameResource, EnumPreference by key("new_notes_syncable") {
-    YES(R.string.yes) { override val isDefault = true },
-    NO(R.string.no),
-}
-
 enum class TrustSelfSignedCertificate(override val nameResource: Int) : HasNameResource,
     EnumPreference by key("trust_self_signed_certificate") {
     NO(R.string.no) {

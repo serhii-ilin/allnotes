@@ -52,6 +52,43 @@ class VaultNoteDocumentTest {
     }
 
     @Test
+    fun mergePreserved_dropsIsoModifiedWhenAppModifiedChanges() {
+        val raw = """
+            |---
+            |title: "T"
+            |modified: 2024-07-01T00:00:00Z
+            |---
+            |Body
+        """.trimMargin()
+        val updated = VaultNoteDocument.fromNote(
+            Note(title = "T", content = "Body", modifiedDate = 2_000_000_000L),
+            "T.md",
+        )
+        val out = VaultNoteDocument.mergePreservedFromDisk(raw, updated).renderFullText()
+        assertTrue(out.contains("modified: 2000000000"))
+        assertTrue(!out.contains("2024-07-01T00:00:00Z"))
+    }
+
+    @Test
+    fun mergePreserved_dropsScalarTagsWhenAppTagsChange() {
+        val raw = """
+            |---
+            |title: "T"
+            |tags: work
+            |---
+            |Body
+        """.trimMargin()
+        val updated = VaultNoteDocument.fromNote(
+            Note(title = "T", content = "Body", tags = listOf(org.qosp.notes.data.model.Tag("work"), org.qosp.notes.data.model.Tag("edited"))),
+            "T.md",
+        )
+        val merged = VaultNoteDocument.mergePreservedFromDisk(raw, updated)
+        val out = merged.renderFullText()
+        assertTrue(out.contains("\"edited\""))
+        assertTrue(!out.matches(Regex("(?m)^tags: work\\s*$")))
+    }
+
+    @Test
     fun emptyTags_exportedExplicitly() {
         val doc = VaultNoteDocument.fromNote(Note(title = "A", content = "b", tags = emptyList()), "A.md")
         assertTrue(doc.renderFullText().contains("tags: []"))

@@ -1,8 +1,10 @@
 package org.qosp.notes.data.sync.fs.vault
 
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -116,6 +118,19 @@ class InMemoryVaultFs(
         writeBytes(relativePath, content.encodeToByteArray(), mimeType)
     }
 
+    override fun openWrite(relativePath: String, mimeType: String): OutputStream {
+        val path = norm(relativePath)
+        ensureParents(path)
+        return object : OutputStream() {
+            private val buffer = ByteArrayOutputStream()
+            override fun write(b: Int) { buffer.write(b) }
+            override fun write(b: ByteArray, off: Int, len: Int) { buffer.write(b, off, len) }
+            override fun close() {
+                writeBytes(path, buffer.toByteArray(), mimeType)
+            }
+        }
+    }
+
     override fun writeBytes(relativePath: String, bytes: ByteArray, mimeType: String) {
         if (failNextWrite) {
             failNextWrite = false
@@ -156,9 +171,11 @@ class InMemoryVaultFs(
         val from = resolveKey(fromRelative)
         val to = norm(toRelative)
         if (caseInsensitive && from.equals(to, ignoreCase = true) && from != to) {
-            val temp = norm("$from.__case_rename__")
-            copyFile(from, temp, deleteSource = true)
-            copyFile(temp, to, deleteSource = true)
+            val node = nodes[from] ?: return
+            nodes.remove(from)
+            nodes[to] = node
+            canonicalPath.remove(from.lowercase())
+            canonicalPath[to.lowercase()] = to
             return
         }
         copyFile(fromRelative, toRelative, deleteSource = true)

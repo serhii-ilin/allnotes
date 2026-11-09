@@ -27,7 +27,7 @@ fun SyncNote.getMapping(noteId: Long, service: CloudService) = IdMapping(
     localNoteId = noteId,
     remoteNoteId = id,
     provider = service,
-    extras = extra,
+    extras = if (service == CloudService.FILE_STORAGE) null else extra,
     isDeletedLocally = false,
     storageUri = idStr
 )
