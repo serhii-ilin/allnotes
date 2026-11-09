@@ -125,6 +125,14 @@ class EditorViewModel(
         )
     }
 
+    suspend fun flushPendingTitle(title: String) = withContext(Dispatchers.IO) {
+        val note = data.value.note ?: return@withContext
+        if (title == note.title) return@withContext
+        noteRepository.updateNotes(
+            note.copy(title = title, modifiedDate = Instant.now().epochSecond),
+        )
+    }
+
     fun setNoteContent(content: String) = update { note ->
         note.copy(
             content = content,

@@ -114,11 +114,17 @@ object VaultAttachments {
         return VaultPaths.vaultRelative(resolved) in removedVaultRelPaths
     }
 
-    private fun normalizeLinkTarget(raw: String): String {
-        val t = raw.trim()
-        if (t.startsWith('<') && t.endsWith('>')) {
-            return t.substring(1, t.length - 1).trim()
+  /** Path only — strips optional `"title"` / `(title)` after the URL target. */
+    fun normalizeLinkTarget(raw: String): String {
+        var t = raw.trim()
+        if (t.startsWith('<')) {
+            val close = t.indexOf('>')
+            if (close > 0) {
+                return t.substring(1, close).trim()
+            }
         }
+        t = t.substringBefore('"').trim()
+        t = t.substringBefore('(').trim()
         return t
     }
 

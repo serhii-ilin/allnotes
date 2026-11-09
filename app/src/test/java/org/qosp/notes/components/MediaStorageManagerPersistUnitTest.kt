@@ -53,6 +53,7 @@ class MediaStorageManagerPersistUnitTest {
         every { resolver.openOutputStream(destUri) } answers {
             FileOutputStream(destFile)
         }
+        every { resolver.query(any(), any(), any(), any(), any()) } returns null
         return destUri to destFile
     }
 

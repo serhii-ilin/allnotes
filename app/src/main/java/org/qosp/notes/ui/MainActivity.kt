@@ -43,6 +43,7 @@ import org.qosp.notes.data.sync.fs.toFriendlyString
 import org.qosp.notes.databinding.ActivityMainBinding
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.data.repo.NoteRepository
+import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.qosp.notes.preferences.SortNavdrawerNotebooksMethod
 import org.qosp.notes.ui.attachments.fromUri
@@ -119,6 +120,8 @@ class MainActivity : BaseActivity() {
         }
     }
 
+    private val vaultForegroundRescan: VaultForegroundRescan by inject()
+
     override fun onResume() {
         super.onResume()
         lifecycleScope.launch {
@@ -126,7 +129,9 @@ class MainActivity : BaseActivity() {
                 .getEncryptedString(PreferenceRepository.STORAGE_LOCATION)
                 .first()
             if (location.isNotBlank()) {
-                noteRepository.syncNotes()
+                if (vaultForegroundRescan.shouldRunRescan()) {
+                    noteRepository.syncNotes()
+                }
             } else {
                 promptForVaultFolderIfNeeded()
             }

@@ -67,7 +67,15 @@ class StorageBackend(
 
     override suspend fun createNote(note: Note): SyncNote {
         val root = getRootDocumentFile() ?: throw IOException("Unable to access storage location")
-        val relativePath = uniqueNotePath(root, VaultPaths.titleToNotePath(note.title, note.isMarkdownEnabled))
+        val desired = VaultPaths.titleToNotePath(note.title, note.isMarkdownEnabled)
+        val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        linkableExistingPath(root, note, desired, notebookName)?.let { existing ->
+            val file = VaultDocumentTree.findByRelativePath(root, existing)
+                ?: throw IOException("Cannot open existing note at $existing")
+            return fileToSyncNote(file, existing)
+                ?: throw IOException("Cannot read existing note at $existing")
+        }
+        val relativePath = uniqueNotePath(root, desired)
         return writeNoteAt(root, relativePath, note, mapping = null)
     }
 
@@ -121,16 +129,18 @@ class StorageBackend(
         return mapping.copy(storageUri = targetPath, extras = VaultMappingState.encode(state))
     }
 
-    override suspend fun deleteNote(mapping: IdMapping): Boolean {
+    override suspend fun deleteNote(mapping: IdMapping, removeAssets: Boolean): Boolean {
         val root = getRootDocumentFile() ?: return false
         val path = mapping.storageUri ?: return false
         val mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
-        VaultNoteRelocation.deleteOwnedAssets(
-            context,
-            root,
-            path,
-            mappingState?.vaultAttachmentPathSet.orEmpty(),
-        )
+        if (removeAssets) {
+            VaultNoteRelocation.deleteOwnedAssets(
+                context,
+                root,
+                path,
+                mappingState?.vaultAttachmentPathSet.orEmpty(),
+            )
+        }
         val file = VaultDocumentTree.findByRelativePath(root, path) ?: return false
         return DocumentsContract.deleteDocument(context.contentResolver, file.uri)
     }
@@ -347,6 +357,35 @@ class StorageBackend(
             lastModified = file.lastModified() / 1000,
             extra = hash,
         )
+    }
+
+    private suspend fun linkableExistingPath(
+        root: DocumentFile,
+        note: Note,
+        desired: String,
+        notebookName: String?,
+    ): String? {
+        val desiredHash = VaultSyncImport.canonicalFileHash(note, desired, notebookName, preservedYamlBaseline = null)
+        val desiredBase = VaultPaths.noteBaseName(desired)
+        val indexed = VaultDocumentTree.indexNotes(root)
+        for ((rel, file) in indexed) {
+            val raw = readFileContent(file) ?: continue
+            val imported = VaultSyncImport.noteFromRemote(
+                fileToSyncNote(file, rel) ?: continue,
+                note,
+            )
+            val onDiskHash = VaultSyncImport.canonicalFileHash(
+                imported,
+                rel,
+                notebookName,
+                VaultNoteDocument.parse(raw).frontMatter.preservedYaml,
+            )
+            if (onDiskHash != desiredHash) continue
+            val baseMatch = VaultPaths.noteBaseName(rel) == desiredBase
+            val parentMatch = VaultPaths.parentPath(rel) == VaultPaths.parentPath(desired)
+            if (baseMatch || parentMatch || rel == desired) return rel
+        }
+        return null
     }
 
     private fun uniqueNotePath(root: DocumentFile, desired: String, exclude: String? = null): String {

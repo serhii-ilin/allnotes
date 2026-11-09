@@ -20,6 +20,7 @@ sealed class RemoteOperation {
 
     data class Delete(
         val note: Note,
+        val removeAssets: Boolean = true,
         override val vaultFence: VaultFileOpFence? = null,
     ) : RemoteOperation()
 }

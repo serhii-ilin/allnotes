@@ -8,7 +8,7 @@ object VaultDocumentTree {
     data class IndexedFile(val relativePath: String, val file: DocumentFile)
 
     fun indexNotes(root: DocumentFile): List<IndexedFile> {
-        val result = mutableListOf<IndexedFile>()
+        val candidates = mutableListOf<Pair<String, DocumentFile>>()
         fun walk(dir: DocumentFile, prefix: String) {
             val children = dir.listFiles() ?: throw IOException("Cannot list vault directory: $prefix")
             children.forEach { child ->
@@ -22,15 +22,18 @@ object VaultDocumentTree {
                     }
                     VaultHousekeeping.shouldIndexFile(name) -> {
                         val rel = if (prefix.isEmpty()) name else "$prefix/$name"
-                        if (!isUnderNoteAssetFolder(rel)) {
-                            result.add(IndexedFile(VaultPaths.normalizeNotePath(rel), child))
-                        }
+                        candidates.add(rel to child)
                     }
                 }
             }
         }
         walk(root, "")
-        return result
+        val notePaths = candidates.map { VaultPaths.normalizeNotePath(it.first) }.toSet()
+        return candidates.mapNotNull { (rel, file) ->
+            val norm = VaultPaths.normalizeNotePath(rel)
+            if (isUnderNoteAssetFolder(norm, notePaths)) return@mapNotNull null
+            IndexedFile(norm, file)
+        }
     }
 
     /**
@@ -53,17 +56,39 @@ object VaultDocumentTree {
         return true
     }
 
-    fun isUnderNoteAssetFolder(relativePath: String): Boolean {
+    /**
+     * True when [relativePath] is a non-note asset (or attachment markdown) under
+     * `{Name}/` that sits beside an indexed `{Name}.md` at the parent directory level.
+     */
+    fun isUnderNoteAssetFolder(relativePath: String, indexedNotePaths: Set<String>): Boolean {
         val parent = VaultPaths.parentPath(relativePath)
         if (parent.isEmpty()) return false
-        if (relativePath.endsWith(".md", ignoreCase = true) &&
-            VaultPaths.noteBaseName(relativePath) == VaultPaths.fileName(parent)
+
+        val dirName = VaultPaths.fileName(parent)
+        val grandparent = VaultPaths.parentPath(parent)
+        val siblingNotePath = VaultPaths.normalizeNotePath(
+            if (grandparent.isEmpty()) "$dirName.md" else "$grandparent/$dirName.md",
+        )
+        if (siblingNotePath !in indexedNotePaths) return false
+
+        if ((relativePath.endsWith(".md", ignoreCase = true) ||
+                relativePath.endsWith(".txt", ignoreCase = true)) &&
+            VaultPaths.noteBaseName(relativePath) == dirName
         ) {
             return false
         }
-        val notePath = "$parent.md"
-        if (relativePath == notePath) return false
-        return VaultPaths.assetDirectoryForNote(notePath) == parent
+
+        if (parent.contains('/')) {
+            val innerNote = VaultPaths.normalizeNotePath("$parent.md")
+            if (innerNote in indexedNotePaths) return true
+        }
+
+        if (relativePath.endsWith(".md", ignoreCase = true) ||
+            relativePath.endsWith(".txt", ignoreCase = true)
+        ) {
+            return false
+        }
+        return true
     }
 
     fun findDirectory(root: DocumentFile, relativeDir: String): DocumentFile? {

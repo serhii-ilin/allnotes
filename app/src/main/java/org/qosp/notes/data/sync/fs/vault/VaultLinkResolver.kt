@@ -35,7 +35,7 @@ object VaultLinkResolver {
                     out.removeLast()
                 }
                 else -> {
-                    if (seg.contains("..")) return null
+                    if (VaultPaths.hasParentSegment(seg)) return null
                     out.addLast(seg)
                 }
             }
@@ -60,7 +60,7 @@ object VaultLinkResolver {
                 bytes.write(value)
                 i += 3
             } else {
-                bytes.write(c.code)
+                bytes.write(c.toString().toByteArray(Charsets.UTF_8))
                 i++
             }
         }

@@ -219,8 +219,15 @@ class ActivityViewModel(
     suspend fun copyMediaToPrivateStorage(uri: Uri, mimeType: String): Uri? =
         mediaStorageManager.persistFromUri(uri)
 
-    suspend fun persistAttachmentFromUri(uri: Uri): Attachment? =
-        mediaStorageManager.persistAttachmentFromUri(uri)
+    suspend fun persistAttachmentFromUri(uri: Uri): Attachment? {
+        val attachment = mediaStorageManager.persistAttachmentFromUri(uri)
+        if (attachment == null) {
+            toaster.showLong(
+                mediaStorageManager.lastPersistError ?: "Failed to save attachment",
+            )
+        }
+        return attachment
+    }
 
     private inline fun update(
         vararg notes: Note,

@@ -147,21 +147,18 @@ class NoteRepositoryImpl(
         var pendingRemoteUpdates: List<NoteAction> = emptyList()
         val lockedResult = vaultSyncCoordinator.withVaultLock sync@{
             if (syncProvider.type == CloudService.FILE_STORAGE) {
-                val legacy = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
-                    .any { it.storageUri?.contains("://") == true }
-                if (legacy) {
-                    val msg = "Vault index uses legacy file URIs. Re-select the vault folder in sync settings."
-                    Log.w(tag, msg)
-                    return@sync GenericError(msg)
+                val legacyMappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
+                    .filter { it.storageUri?.contains("://") == true }
+                if (legacyMappings.isNotEmpty()) {
+                    Log.w(tag, "Clearing ${legacyMappings.size} legacy content:// vault mappings")
+                    idMappingDao.deleteByLocalId(*legacyMappings.map { it.localNoteId }.toLongArray())
                 }
             }
             val syncMethod = SyncMethod.MAPPING
             try {
                 val vaultMappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
                     .associateBy { it.localNoteId }
-                val localNotes = getAll().first()
-                    .filterNot { it.isDeleted }
-                    .filter { !it.isLocalOnly || vaultMappings[it.id] == null }
+                val localNotes = getAll().first().filterNot { it.isDeleted }
 
                 // Get all remote notes and convert to metadata
                 val mappedVaultCount = if (syncProvider.type == CloudService.FILE_STORAGE) {
@@ -384,7 +381,12 @@ class NoteRepositoryImpl(
         reminderDao.deleteIfNoteIdIn(notes.map { it.id })
         cleanMappingsForLocalNotes(*notes)
         notes.filterNot { it.isLocalOnly }.forEach {
-            if (sync) processRemoteActions(it.id, Delete(it, vaultFence = captureVaultFence()))
+            if (sync) {
+                processRemoteActions(
+                    it.id,
+                    Delete(it, removeAssets = false, vaultFence = captureVaultFence()),
+                )
+            }
         }
     }
 
@@ -419,9 +421,18 @@ class NoteRepositoryImpl(
     }
 
     override suspend fun permanentlyDeleteNotesInBin() {
-        val noteIds = noteDao.getDeleted(defaultOf()).first().map { it.id }.toLongArray()
-        Log.d(tag, "permanentlyDeleteNotesInBin: Permanently deleting ${noteIds.size} notes from bin")
-        idMappingDao.deleteByLocalId(*noteIds)
+        val deleted = noteDao.getDeleted(defaultOf()).first()
+        Log.d(tag, "permanentlyDeleteNotesInBin: Permanently deleting ${deleted.size} notes from bin")
+        val syncProvider = backendProvider.syncProvider.value
+        if (syncProvider != null) {
+            deleted.forEach { note ->
+                val mapping = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)
+                if (mapping != null) {
+                    syncProvider.deleteNote(mapping, removeAssets = true)
+                    idMappingDao.deleteByLocalId(note.id)
+                }
+            }
+        }
         noteDao.permanentlyDeleteNotesInBin()
     }
 

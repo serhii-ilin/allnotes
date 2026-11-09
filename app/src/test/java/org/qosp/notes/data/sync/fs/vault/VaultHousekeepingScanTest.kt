@@ -9,15 +9,24 @@ class VaultHousekeepingScanTest {
 
     @Test
     fun onlyDotDirs_areSkippedAndDoNotFailEmptyIndex() {
-        listOf(".obsidian", ".stfolder", ".quillpad-staging", ".git").forEach {
-            assertTrue(VaultHousekeeping.shouldSkipDirectory(it))
+        listOf(".obsidian", ".stfolder", ".trash", ".git", "Notes").forEach {
+            if (it == "Notes") {
+                assertFalse(VaultHousekeeping.shouldSkipDirectory(it))
+            } else {
+                assertTrue(VaultHousekeeping.shouldSkipDirectory(it))
+            }
         }
-        assertFalse(VaultHousekeeping.shouldSkipDirectory("Notes"))
+        assertTrue(VaultHousekeeping.shouldSkipDirectory(".quillpad-staging"))
     }
 
     @Test
     fun dotTitleNote_isIndexed() {
         assertTrue(VaultHousekeeping.shouldIndexFile(".NET notes.md"))
-        assertFalse(VaultHousekeeping.shouldSkipDirectory(".hidden-project"))
+        assertTrue(VaultHousekeeping.shouldSkipDirectory(".hidden-project"))
+    }
+
+    @Test
+    fun syncConflictFiles_areNotIndexed() {
+        assertFalse(VaultHousekeeping.shouldIndexFile("Note.sync-conflict-20240101-120000.md"))
     }
 }

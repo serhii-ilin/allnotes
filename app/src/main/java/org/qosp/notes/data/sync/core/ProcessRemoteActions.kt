@@ -45,6 +45,9 @@ class ProcessRemoteActions(
     // Map to track pending remote operation jobs by noteId
     private val pendingJobs = ConcurrentHashMap<Long, Job>()
 
+    /** Canonical file hash captured at push start for compare-and-set Room apply. */
+    private val pushRoomBaseline = ConcurrentHashMap<Long, String>()
+
     /**
      * Process a remote operation for a note.
      * This method ensures that only the latest operation for each noteId is processed,
@@ -102,7 +105,7 @@ class ProcessRemoteActions(
                             is Delete -> {
                                 last = action.note.content.takeLast(4)
                                 Log.d(tag, "deleteRemoteNotes: for $noteId ending ...$last")
-                                deleteRemoteNotes(action.note, provider)
+                                deleteRemoteNotes(action.note, provider, action.removeAssets)
                             }
                         }
                     }
@@ -127,10 +130,16 @@ class ProcessRemoteActions(
         pendingJobs[noteId] = job
     }
 
-    private suspend fun deleteRemoteNotes(note: Note, syncProvider: ISyncBackend) = try {
+    private suspend fun deleteRemoteNotes(
+        note: Note,
+        syncProvider: ISyncBackend,
+        removeAssets: Boolean,
+    ) = try {
         idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)?.let { mapping ->
-            syncProvider.deleteNote(mapping = mapping)
-            idMappingDao.deleteByLocalId(note.id)
+            syncProvider.deleteNote(mapping = mapping, removeAssets = removeAssets)
+            if (removeAssets) {
+                idMappingDao.deleteByLocalId(note.id)
+            }
         }
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to delete notes: ${e.message}", e)
@@ -148,12 +157,21 @@ class ProcessRemoteActions(
     }
 
     private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) = try {
+        val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        if (syncProvider.type == CloudService.FILE_STORAGE) {
+            val desiredPath = VaultPaths.titleToNotePath(note.title, note.isMarkdownEnabled)
+            pushRoomBaseline[note.id] = VaultSyncImport.canonicalFileHash(
+                note,
+                desiredPath,
+                notebookName,
+                preservedYamlBaseline = null,
+            )
+        }
         val created = syncProvider.createNote(note)
         val diskAfterCreate = VaultSyncImport.noteFromRemote(created, note)
         val base = created.getMapping(note.id, syncProvider.type)
         val toInsert = if (syncProvider.type == CloudService.FILE_STORAGE) {
             val gen = vaultSyncCoordinator.currentGeneration()
-            val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
             val vaultPaths = VaultSyncImport.attachmentsFromRemote(created)
                 .map { it.path }
                 .filter { VaultPaths.isVaultRelativeAttachment(it) }
@@ -171,16 +189,26 @@ class ProcessRemoteActions(
             base
         }
         idMappingDao.insert(toInsert)
-        noteDao.updateLastModified(note.id, created.lastModified)
         applyVaultPushResult(note, syncProvider)
+        noteDao.updateLastModified(note.id, created.lastModified)
+        noteDao.update(note.copy(isLocalOnly = false).toEntity())
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
         toaster.showShort(e.message ?: "Failed to create note")
     }
 
     private suspend fun updateRemote(note: Note, syncProvider: ISyncBackend) = try {
-        idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)?.let {
-            val updatedMapping = syncProvider.updateNote(note, it)
+        idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)?.let { mapping ->
+            val path = mapping.storageUri.orEmpty()
+            val mappingState = VaultMappingState.resolve(mapping.extras)
+            val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+            pushRoomBaseline[note.id] = VaultSyncImport.canonicalFileHash(
+                note,
+                path,
+                notebookName,
+                mappingState?.preservedYaml,
+            )
+            val updatedMapping = syncProvider.updateNote(note, mapping)
             idMappingDao.update(updatedMapping)
             applyVaultPushResult(note, syncProvider)
         }
@@ -191,9 +219,23 @@ class ProcessRemoteActions(
     private suspend fun applyVaultPushResult(note: Note, syncProvider: ISyncBackend) {
         if (syncProvider.type != CloudService.FILE_STORAGE) return
         val live = noteDao.getById(note.id).first() ?: return
-        if (live.isDeleted || live.modifiedDate != note.modifiedDate) {
-            Log.w(tag, "Skipping push Room apply: note ${note.id} changed during push")
+        if (live.isDeleted) {
+            Log.w(tag, "Skipping push Room apply: note ${note.id} deleted during push")
+            pushRoomBaseline.remove(note.id)
             return
+        }
+        val mappingEarly = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)
+        val pathEarly = mappingEarly?.storageUri.orEmpty()
+        val notebookEarly = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        val expectedHash = pushRoomBaseline[note.id]
+        if (expectedHash != null) {
+            val preservedEarly = VaultMappingState.resolve(mappingEarly?.extras)?.preservedYaml
+            val currentHash = VaultSyncImport.canonicalFileHash(live, pathEarly, notebookEarly, preservedEarly)
+            if (currentHash != expectedHash) {
+                Log.w(tag, "Skipping push Room apply: note ${note.id} changed during push")
+                pushRoomBaseline.remove(note.id)
+                return
+            }
         }
         val mapping = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type) ?: return
         val mappingState = VaultMappingState.resolve(mapping.extras)
@@ -230,5 +272,6 @@ class ProcessRemoteActions(
                 extras = VaultMappingState.encode(state),
             ),
         )
+        pushRoomBaseline.remove(note.id)
     }
 }

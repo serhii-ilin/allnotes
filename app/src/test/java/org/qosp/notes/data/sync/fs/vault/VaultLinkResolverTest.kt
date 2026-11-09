@@ -78,4 +78,20 @@ class VaultLinkResolverTest {
     fun httpLeftUntouchedForResolver() {
         assertNull(VaultLinkResolver.resolve("Work/a.md", "https://example.com/x.png"))
     }
+
+    @Test
+    fun mixedUnicodeAndPercent_encodedSpace() {
+        assertEquals(
+            "Фото моє.jpg",
+            VaultLinkResolver.decodePathSegment("Фото%20моє.jpg"),
+        )
+    }
+
+    @Test
+    fun filenameWithDoubleDots_notRejected() {
+        assertEquals(
+            "Notes/v1..2.jpg",
+            VaultLinkResolver.resolve("Notes/Note.md", "v1..2.jpg"),
+        )
+    }
 }

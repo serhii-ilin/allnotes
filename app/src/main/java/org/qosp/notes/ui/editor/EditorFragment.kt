@@ -57,6 +57,7 @@ import io.noties.markwon.editor.MarkwonEditor
 import io.noties.markwon.editor.MarkwonEditorTextWatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.commonmark.node.Code
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -513,7 +514,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
         model.selectedRange = with(binding.editTextContent) { selectionStart to selectionEnd }
         val title = pendingTitle
         if (title != null && title != data.note?.title) {
-            model.setNoteTitle(title)
+            runBlocking { model.flushPendingTitle(title) }
         }
         pendingTitle = null
         super.onPause()

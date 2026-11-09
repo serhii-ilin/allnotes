@@ -3,23 +3,18 @@ package org.qosp.notes.data.sync.fs.vault
 import androidx.documentfile.provider.DocumentFile
 
 object VaultHousekeeping {
-    private val ignoredDirNames = setOf(
-        ".obsidian",
-        ".stfolder",
-        ".stversions",
-        ".git",
-        VaultPaths.STAGING_DIR,
-    )
+    private val syncConflictPattern = Regex("""\.sync-conflict-.*""", RegexOption.IGNORE_CASE)
 
     fun shouldSkipDirectory(name: String?): Boolean {
         if (name == null) return true
         if (name.startsWith(".quillpad")) return true
-        return name in ignoredDirNames
+        return name.startsWith('.')
     }
 
     fun shouldIndexFile(name: String?): Boolean {
         if (name == null) return false
         if (name.startsWith(".quillpad")) return false
+        if (syncConflictPattern.containsMatchIn(name)) return false
         return name.endsWith(".md", ignoreCase = true) || name.endsWith(".txt", ignoreCase = true)
     }
 

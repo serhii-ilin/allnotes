@@ -9,6 +9,7 @@ import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.core.ProcessRemoteActions
 import org.qosp.notes.data.sync.core.SynchronizeNotes
 import org.qosp.notes.data.sync.fs.vault.VaultFolderChangeMonitor
+import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
 import org.qosp.notes.data.sync.fs.vault.VaultPortableMetadata
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
@@ -25,6 +26,7 @@ object SyncModule {
         singleOf(::VaultPortableMetadata)
         singleOf(::VaultSyncCoordinator)
         singleOf(::VaultTreeAccess)
+        singleOf(::VaultForegroundRescan)
         single {
             VaultFolderChangeMonitor(
                 context = get(),

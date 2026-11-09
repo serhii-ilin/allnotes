@@ -58,11 +58,10 @@ class SettingsViewModel(
      */
     fun applyVaultFolderChange(newLocation: String, previousLocation: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            vaultSyncCoordinator.withVaultLock {
+            val triggerSync = vaultSyncCoordinator.withVaultLock {
                 if (newLocation == previousLocation && newLocation.isNotBlank()) {
                     vaultTreeAccess.warmFrom(Uri.parse(newLocation))
-                    noteRepository.syncNotes()
-                    return@withVaultLock
+                    return@withVaultLock true
                 }
                 vaultSyncCoordinator.bumpGeneration()
                 preferenceRepository.putEncryptedStrings(
@@ -73,6 +72,9 @@ class SettingsViewModel(
                     noteRepository.deleteIdMappingsForCloudService(CloudService.FILE_STORAGE)
                 }
                 vaultTreeAccess.warmFrom(Uri.parse(newLocation))
+                true
+            }
+            if (triggerSync) {
                 noteRepository.syncNotes()
             }
         }

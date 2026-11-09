@@ -20,8 +20,8 @@
 ## Background sync & change detection
 
 - `SyncWorker` runs hourly **without** `NetworkType.CONNECTED`.
-- `VaultFolderChangeMonitor` registers a `ContentObserver` on the vault tree URI when supported; on change it triggers `syncNotes()`.
-- **Fallback:** `MainActivity.onResume()` and periodic worker re-scan when observers are unavailable.
+- `VaultFolderChangeMonitor` registers a `ContentObserver` on the vault tree URI when supported; on change it triggers `syncNotes()`. **SAF tree observers often do not fire on direct file writes** (e.g. Syncthing copying files), so this is best-effort only.
+- **Foreground fallback:** throttled `syncNotes()` on `MainActivity.onResume()` and while note list fragments are visible (`VaultForegroundRescan`, default interval 2 minutes). Manual pull-to-refresh is always available.
 
 ## Vault layout
 
@@ -29,8 +29,9 @@
 <vault root>/
   Work/Meeting.md
   Work/Meeting/camera_1.jpg
-  .obsidian/                   # ignored
-  .stfolder/                   # ignored
+  .obsidian/                   # dot-prefixed dirs ignored at any depth
+  .trash/
+  Note.sync-conflict-20240101.md  # Syncthing conflict files: not indexed, left on disk
 ```
 
 Staging/recovery journals live in **app-private storage** (not in the synced tree); see Phase 1 recovery work.
