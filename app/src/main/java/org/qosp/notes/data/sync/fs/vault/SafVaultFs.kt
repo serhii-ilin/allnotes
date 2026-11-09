@@ -8,8 +8,9 @@ import java.io.InputStream
 /** SAF-backed [VaultFs] using an existing tree root. */
 class SafVaultFs(
     private val context: Context,
-    private val root: DocumentFile,
+    val root: DocumentFile,
     override val scopeId: String = SafVaultWriteStore.vaultScopeFromRoot(root),
+    private val caseInsensitiveLookup: Boolean = true,
 ) : VaultFs {
 
     override fun canRead(): Boolean = root.canRead()
@@ -25,24 +26,23 @@ class SafVaultFs(
     }
 
     override fun isFile(relativePath: String): Boolean =
-        VaultDocumentTree.findByRelativePath(root, relativePath)?.isFile == true
+        findByRelativePath(relativePath)?.isFile == true
 
     override fun isDirectory(relativePath: String): Boolean {
         val norm = VaultPaths.normalize(relativePath)
         if (norm.isEmpty()) return root.isDirectory
-        val file = VaultDocumentTree.findDirectory(root, norm)
-        return file != null
+        return resolveDir(norm) != null
     }
 
     override fun readText(relativePath: String): String? {
-        val file = VaultDocumentTree.findByRelativePath(root, relativePath) ?: return null
+        val file = findByRelativePath(relativePath) ?: return null
         return context.contentResolver.openInputStream(file.uri)?.use {
             it.bufferedReader().readText()
         }
     }
 
     override fun openRead(relativePath: String): InputStream? {
-        val file = VaultDocumentTree.findByRelativePath(root, relativePath) ?: return null
+        val file = findByRelativePath(relativePath) ?: return null
         return context.contentResolver.openInputStream(file.uri)
     }
 
@@ -52,7 +52,7 @@ class SafVaultFs(
 
     override fun writeBytes(relativePath: String, bytes: ByteArray, mimeType: String) {
         val path = VaultPaths.normalize(relativePath)
-        val existing = VaultDocumentTree.findByRelativePath(root, path)
+        val existing = findByRelativePath(path)
         if (existing != null && existing.isFile) {
             context.contentResolver.openOutputStream(existing.uri, "wt")?.use { it.write(bytes) }
                 ?: throw IOException("cannot write $path")
@@ -76,15 +76,15 @@ class SafVaultFs(
     }
 
     override fun delete(relativePath: String): Boolean {
-        val file = VaultDocumentTree.findByRelativePath(root, relativePath)
-            ?: VaultDocumentTree.findDirectory(root, relativePath)
+        val file = findByRelativePath(relativePath)
+            ?: resolveDir(relativePath)
             ?: return false
         return file.delete()
     }
 
     override fun lastModifiedEpochSec(relativePath: String): Long {
-        val file = VaultDocumentTree.findByRelativePath(root, relativePath)
-            ?: VaultDocumentTree.findDirectory(root, relativePath)
+        val file = findByRelativePath(relativePath)
+            ?: resolveDir(relativePath)
             ?: return 0L
         return file.lastModified() / 1000
     }
@@ -92,7 +92,7 @@ class SafVaultFs(
     override fun copyFile(fromRelative: String, toRelative: String, deleteSource: Boolean) {
         val from = VaultPaths.normalize(fromRelative)
         val to = VaultPaths.normalize(toRelative)
-        val src = VaultDocumentTree.findByRelativePath(root, from)
+        val src = findByRelativePath(from)
             ?: throw IOException("missing $from")
         val bytes = context.contentResolver.openInputStream(src.uri)?.use { it.readBytes() }
             ?: throw IOException("unreadable $from")
@@ -101,12 +101,47 @@ class SafVaultFs(
     }
 
     override fun renameFile(fromRelative: String, toRelative: String) {
+        val from = VaultPaths.normalize(fromRelative)
+        val to = VaultPaths.normalize(toRelative)
+        if (from.equals(to, ignoreCase = true) && from != to) {
+            val temp = VaultPaths.normalize("$from.__case_rename__")
+            copyFile(from, temp, deleteSource = true)
+            copyFile(temp, to, deleteSource = true)
+            return
+        }
         copyFile(fromRelative, toRelative, deleteSource = true)
+    }
+
+    fun findFileCaseInsensitive(parent: DocumentFile, name: String): DocumentFile? {
+        parent.findFile(name)?.let { return it }
+        if (!caseInsensitiveLookup) return null
+        return parent.listFiles()?.firstOrNull { child ->
+            child.name?.equals(name, ignoreCase = true) == true
+        }
     }
 
     private fun resolveDir(relativeDir: String): DocumentFile? {
         val norm = VaultPaths.normalize(relativeDir)
-        return if (norm.isEmpty()) root else VaultDocumentTree.findDirectory(root, norm)
+        if (norm.isEmpty()) return root
+        var current = root
+        norm.split('/').filter { it.isNotEmpty() }.forEach { segment ->
+            val child = findFileCaseInsensitive(current, segment) ?: return null
+            if (!child.isDirectory) return null
+            current = child
+        }
+        return current
+    }
+
+    private fun findByRelativePath(relativePath: String): DocumentFile? {
+        val norm = VaultPaths.normalizeNotePath(relativePath)
+        var current: DocumentFile = root
+        val parts = norm.split('/')
+        parts.forEachIndexed { index, segment ->
+            val child = findFileCaseInsensitive(current, segment) ?: return null
+            current = child
+            if (index < parts.lastIndex && !current.isDirectory) return null
+        }
+        return current.takeIf { it.isFile }
     }
 
     private fun childRelative(parentDir: String, childName: String): String {

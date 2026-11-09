@@ -24,4 +24,20 @@ object VaultStreamHashes {
         if (!file.isFile) return null
         return runCatching { hashUri(context, file.uri) }.getOrNull()
     }
+
+    fun hashVaultFsFile(fs: VaultFs, relativePath: String): String? {
+        if (!fs.isFile(relativePath)) return null
+        return runCatching {
+            fs.openRead(relativePath)?.use { input ->
+                val md = MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    md.update(buffer, 0, read)
+                }
+                md.digest().joinToString("") { "%02x".format(it) }
+            }
+        }.getOrNull()
+    }
 }

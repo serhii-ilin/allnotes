@@ -26,12 +26,12 @@ class VaultFolderTestHarness(
     private val vaultSyncCoordinator = mockk<VaultSyncCoordinator>(relaxed = true)
     private val config = StorageConfig(location = Uri.parse("content://test/vault"))
 
-    val backend: StorageBackend = StorageBackend.withInMemoryVault(
+    val backend: StorageBackend = StorageBackend(
         context,
         config,
         notebookDao,
         vaultSyncCoordinator,
-        vaultFs,
+        vaultFs = vaultFs,
     )
 
     init {

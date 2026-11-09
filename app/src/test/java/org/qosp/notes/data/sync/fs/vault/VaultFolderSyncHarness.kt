@@ -63,12 +63,12 @@ class VaultFolderSyncHarness(
     private val vaultSyncCoordinator = mockk<VaultSyncCoordinator>(relaxed = true)
     private val prefs = mockk<PreferenceRepository>(relaxed = true)
 
-    val backend: StorageBackend = StorageBackend.withInMemoryVault(
+    val backend: StorageBackend = StorageBackend(
         context,
         StorageConfig(Uri.parse("content://test/vault")),
         notebookDao,
         vaultSyncCoordinator,
-        vaultFs,
+        vaultFs = vaultFs,
     )
 
     private val idMappingRepository = IdMappingRepository(idMappingDao)
