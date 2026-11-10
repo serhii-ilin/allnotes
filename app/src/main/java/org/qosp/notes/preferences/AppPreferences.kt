@@ -21,7 +21,4 @@ data class AppPreferences(
     val groupNotesWithoutNotebook: GroupNotesWithoutNotebook = defaultOf(),
     val moveCheckedItems: MoveCheckedItems = defaultOf(),
     val defaultEditorMode: DefaultEditorMode = defaultOf(),
-    val cloudService: CloudService = defaultOf(),
-    val syncMode: SyncMode = defaultOf(),
-    val trustSelfSignedCertificate: TrustSelfSignedCertificate = defaultOf(),
 )

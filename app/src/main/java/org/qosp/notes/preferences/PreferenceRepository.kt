@@ -49,9 +49,6 @@ class PreferenceRepository(
                     groupNotesWithoutNotebook = prefs.getEnum(),
                     moveCheckedItems = prefs.getEnum(),
                     defaultEditorMode = prefs.getEnum(),
-                    cloudService = prefs.getEnum<CloudService>().toVaultMode(),
-                    syncMode = prefs.getEnum(),
-                    trustSelfSignedCertificate = prefs.getEnum(),
                 )
             }
     }
@@ -67,9 +64,6 @@ class PreferenceRepository(
     suspend fun <T> set(preference: T) where T : Enum<T>, T : EnumPreference = dataStore.setEnum(preference)
 
     companion object {
-        const val NEXTCLOUD_INSTANCE_URL = "NEXTCLOUD_INSTANCE_URL"
-        const val NEXTCLOUD_USERNAME = "NEXTCLOUD_USERNAME"
-        const val NEXTCLOUD_PASSWORD = "NEXTCLOUD_PASSWORD"
         const val STORAGE_LOCATION = "STORAGE_LOCATION"
         /** Epoch seconds when the vault folder was last selected (fresh vault boundary). */
         const val VAULT_CONFIGURED_AT = "VAULT_CONFIGURED_AT"
