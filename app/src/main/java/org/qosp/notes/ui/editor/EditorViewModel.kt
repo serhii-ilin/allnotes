@@ -1,8 +1,15 @@
 package org.qosp.notes.ui.editor
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -14,6 +21,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.msoul.datastore.defaultOf
 import org.qosp.notes.data.model.Attachment
@@ -24,6 +33,7 @@ import org.qosp.notes.data.model.Notebook
 import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.repo.NotebookRepository
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
+import org.qosp.notes.di.SyncScope
 import org.qosp.notes.preferences.DateFormat
 import org.qosp.notes.preferences.DefaultEditorMode
 import org.qosp.notes.preferences.MoveCheckedItems
@@ -39,6 +49,8 @@ class EditorViewModel(
     private val notebookRepository: NotebookRepository,
     private val preferenceRepository: PreferenceRepository,
     private val vaultTreeAccess: VaultTreeAccess,
+    private val syncScope: SyncScope,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     var inEditMode: Boolean = false
@@ -76,6 +88,37 @@ class EditorViewModel(
             initialValue = Data(),
         )
 
+    /**
+     * All note mutations go through this single channel so that transforms run in call order and
+     * always see the result of the previous one. It lives on [syncScope] so pending saves can
+     * finish after the fragment (and eventually this ViewModel) is gone.
+     */
+    private val mutations = Channel<Mutation>(Channel.UNLIMITED)
+    private val persistMutex = Mutex()
+    @Volatile
+    private var currentNote: Note? = null
+    @Volatile
+    private var hasPendingWrites = false
+    @Volatile
+    private var writeGeneration = 0L
+    private var roomWriteJob: Job? = null
+    private var vaultWriteJob: Job? = null
+
+    init {
+        syncScope.launch(ioDispatcher) {
+            for (mutation in mutations) {
+                try {
+                    handleMutation(mutation)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to apply mutation $mutation", e)
+                    (mutation as? Mutation.Flush)?.ack?.complete(Unit)
+                }
+            }
+        }
+    }
+
     private fun getNotebookData(notebookId: Long?): Flow<Notebook?> {
         return notebookId?.let { id -> notebookRepository.getById(id) } ?: flow { emit(null) }
     }
@@ -89,7 +132,7 @@ class EditorViewModel(
         newNoteNotebookId: Long?,
     ) {
         viewModelScope.launch {
-            val id = withContext(Dispatchers.IO) {
+            val id = withContext(ioDispatcher) {
                 if (noteId > 0L) return@withContext noteId
 
                 noteRepository.insertNote(
@@ -106,7 +149,7 @@ class EditorViewModel(
 
             noteIdFlow.emit(id)
             if (id > 0L) {
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     vaultTreeAccess.warmFrom(preferenceRepository)
                     _vaultRelativePath.value = noteRepository.getVaultRelativePath(id)
                 }
@@ -117,27 +160,9 @@ class EditorViewModel(
         }
     }
 
-    fun setNoteTitle(title: String) = update { note ->
-        note.copy(
-            title = title,
-            modifiedDate = Instant.now().epochSecond,
-        )
-    }
+    fun setNoteTitle(title: String) = sendMutation(Mutation.Title(title))
 
-    suspend fun flushPendingTitle(title: String) = withContext(Dispatchers.IO) {
-        val note = data.value.note ?: return@withContext
-        if (title == note.title) return@withContext
-        noteRepository.updateNotes(
-            note.copy(title = title, modifiedDate = Instant.now().epochSecond),
-        )
-    }
-
-    fun setNoteContent(content: String) = update { note ->
-        note.copy(
-            content = content,
-            modifiedDate = Instant.now().epochSecond,
-        )
-    }
+    fun setNoteContent(content: String) = sendMutation(Mutation.Content(content))
 
     fun setColor(color: NoteColor) = update { note ->
         note.copy(
@@ -187,12 +212,130 @@ class EditorViewModel(
         )
     }
 
-    private inline fun update(crossinline transform: suspend (Note) -> Note) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val note = data.value.note ?: return@launch
-            val new = transform(note)
-            noteRepository.updateNotes(new)
+    /** Persists pending content/title to Room and the vault right away. */
+    suspend fun flush() {
+        val ack = CompletableDeferred<Unit>()
+        if (mutations.trySend(Mutation.Flush(ack)).isFailure) {
+            ack.complete(Unit)
+            return
         }
+        ack.await()
+    }
+
+    /**
+     * Fire-and-forget flush for lifecycle callbacks: [syncScope] outlives the fragment, so the
+     * write completes even if the view is already destroyed.
+     */
+    fun flushAsync(pendingTitle: String? = null) {
+        // Enqueue the title synchronously so it cannot be dropped if the channel is closed in
+        // onCleared before the background coroutine gets a chance to run.
+        pendingTitle?.let { mutations.trySend(Mutation.Title(it)) }
+        syncScope.launch(ioDispatcher) { flush() }
+    }
+
+    override fun onCleared() {
+        // Safety net: the pipeline lives in syncScope, so this still runs after viewModelScope died.
+        // Closing the channel afterwards lets the consumer coroutine finish instead of leaking.
+        syncScope.launch(ioDispatcher) {
+            flush()
+            mutations.close()
+        }
+        super.onCleared()
+    }
+
+    private fun update(transform: suspend (Note) -> Note) = sendMutation(Mutation.Transform(transform))
+
+    private fun sendMutation(mutation: Mutation) {
+        mutations.trySend(mutation)
+    }
+
+    private suspend fun handleMutation(mutation: Mutation) {
+        when (mutation) {
+            is Mutation.Content -> {
+                val note = awaitNote() ?: return
+                currentNote = note.copy(
+                    content = mutation.content,
+                    modifiedDate = Instant.now().epochSecond,
+                )
+                scheduleContentWrites()
+            }
+
+            is Mutation.Title -> {
+                val note = awaitNote() ?: return
+                currentNote = note.copy(
+                    title = mutation.title,
+                    modifiedDate = Instant.now().epochSecond,
+                )
+                scheduleContentWrites()
+            }
+
+            is Mutation.Transform -> {
+                val note = awaitNote() ?: return
+                cancelContentWrites()
+                currentNote = mutation.transform(note)
+                persist(sync = true)
+            }
+
+            is Mutation.Flush -> {
+                cancelContentWrites()
+                flushPendingWrites()
+                mutation.ack?.complete(Unit)
+            }
+        }
+    }
+
+    private suspend fun awaitNote(): Note? {
+        currentNote?.let { return it }
+        val noteId = noteIdFlow.filterNotNull().first()
+        return noteRepository.getById(noteId).filterNotNull().first().also { currentNote = it }
+    }
+
+    private fun scheduleContentWrites() {
+        hasPendingWrites = true
+        val generation = ++writeGeneration
+
+        // Room is cheap, so the index catches up quickly; the vault write is debounced much
+        // longer because every push costs several SAF IPC calls.
+        roomWriteJob?.cancel()
+        roomWriteJob = syncScope.launch(ioDispatcher) {
+            delay(ROOM_DEBOUNCE_MS)
+            persist(sync = false, generation = generation)
+        }
+
+        vaultWriteJob?.cancel()
+        vaultWriteJob = syncScope.launch(ioDispatcher) {
+            delay(VAULT_DEBOUNCE_MS)
+            persist(sync = true, generation = generation)
+        }
+    }
+
+    private fun cancelContentWrites() {
+        writeGeneration++
+        roomWriteJob?.cancel()
+        roomWriteJob = null
+        vaultWriteJob?.cancel()
+        vaultWriteJob = null
+    }
+
+    private suspend fun flushPendingWrites() {
+        if (hasPendingWrites) persist(sync = true)
+    }
+
+    private suspend fun persist(sync: Boolean, generation: Long? = null) {
+        persistMutex.withLock {
+            // A newer mutation superseded the debounced writer while it was waiting.
+            if (generation != null && generation != writeGeneration) return
+            val note = currentNote ?: return
+            noteRepository.updateNotes(note, sync = sync)
+            if (sync) hasPendingWrites = false
+        }
+    }
+
+    private sealed interface Mutation {
+        data class Content(val content: String) : Mutation
+        data class Title(val title: String) : Mutation
+        class Transform(val transform: suspend (Note) -> Note) : Mutation
+        class Flush(val ack: CompletableDeferred<Unit>?) : Mutation
     }
 
     data class Data(
@@ -210,3 +353,5 @@ class EditorViewModel(
 }
 
 private const val TAG = "EditorViewModel"
+private const val ROOM_DEBOUNCE_MS = 300L
+private const val VAULT_DEBOUNCE_MS = 1_500L
