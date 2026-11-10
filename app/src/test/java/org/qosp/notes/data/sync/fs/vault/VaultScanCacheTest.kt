@@ -1,6 +1,7 @@
 package org.qosp.notes.data.sync.fs.vault
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -119,5 +120,21 @@ class VaultScanCacheTest {
         assertEquals(listOf("scan.json"), tmp.root.list()!!.toList())
         // Content survives a reload from the (renamed) file.
         assertEquals("hello", cache().lookup("a.md", 1000L, 5L))
+    }
+
+    @Test
+    fun clear_dropsEntriesAndFile_soNextScanRereads() {
+        val c = cache()
+        c.save(mapOf("a.md" to entry(mtime = 1000L, size = 5L, raw = "hello")))
+        assertEquals("hello", c.lookup("a.md", 1000L, 5L))
+
+        c.clear()
+
+        assertNull(c.lookup("a.md", 1000L, 5L))
+        assertFalse(cacheFile().exists())
+        assertTrue(c.load().isEmpty())
+        // The cache is still usable after clearing.
+        c.save(mapOf("a.md" to entry(mtime = 1000L, size = 5L, raw = "fresh")))
+        assertEquals("fresh", c.lookup("a.md", 1000L, 5L))
     }
 }
