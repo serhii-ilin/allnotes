@@ -134,9 +134,9 @@ class NoteRepositoryImpl(
     private fun vaultPathKey(path: String, provider: ISyncBackend): String =
         VaultPaths.normalizeNotePath(path).let { if (provider.caseInsensitivePaths) it.lowercase() else it }
 
-    private fun missingMappedCount(mappedPaths: Set<String>, scan: List<SyncNote>): Int {
-        val scanned = scan.map { VaultPaths.normalizeNotePath(it.idStr) }.toSet()
-        return mappedPaths.count { VaultPaths.normalizeNotePath(it) !in scanned }
+    private fun missingMappedCount(mappedPaths: Set<String>, scan: List<SyncNote>, provider: ISyncBackend): Int {
+        val scanned = scan.map { vaultPathKey(it.idStr, provider) }.toSet()
+        return mappedPaths.count { vaultPathKey(it, provider) !in scanned }
     }
 
     private suspend fun flushPendingVaultDeletes(syncProvider: ISyncBackend) {
@@ -257,7 +257,7 @@ class NoteRepositoryImpl(
                 }
                 val allRemoteNotes = scanResult!!
                 val missingCount = if (syncProvider.type == CloudService.FILE_STORAGE) {
-                    missingMappedCount(mappedPaths, allRemoteNotes)
+                    missingMappedCount(mappedPaths, allRemoteNotes, syncProvider)
                 } else {
                     0
                 }

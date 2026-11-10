@@ -113,18 +113,51 @@ object VaultDocumentTree {
         return out
     }
 
+    /**
+     * Every mapped path that exists must be in [indexed]. [probe] looks a missing one up live and must throw when
+     * the lookup itself fails: a failed lookup is not proof that the file is gone.
+     */
     fun isIndexCompleteForMappedPaths(
         fs: VaultFs,
         indexed: List<IndexedVaultFile>,
         knownMappedPaths: Set<String>,
+        probe: (String) -> Boolean = fs::isFile,
     ): Boolean {
         if (knownMappedPaths.isEmpty()) return true
-        val indexedPaths = indexed.map { it.relativePath }.toSet()
+        val fold = fs.caseInsensitive
+        fun key(path: String) = if (fold) path.lowercase() else path
+        val indexedKeys = indexed.map { key(it.relativePath) }.toSet()
         for (path in knownMappedPaths) {
-            if (path in indexedPaths) continue
-            if (fs.isFile(path)) return false
+            if (key(path) in indexedKeys) continue
+            if (probe(path)) return false
         }
         return true
+    }
+
+    /**
+     * On a case-insensitive vault the provider may list a mapped file under another case (renamed outside the app).
+     * Report such a file under the mapped spelling so the mapping still finds it; reads and writes fold case anyway.
+     * An exact-case match keeps the mapping, and any other file folding to the same path keeps its own spelling.
+     * Returns listed path -> reported path.
+     */
+    fun reportedPaths(
+        fs: VaultFs,
+        listed: List<IndexedVaultFile>,
+        knownMappedPaths: Set<String>,
+    ): Map<String, String> {
+        val identity = listed.associate { it.relativePath to it.relativePath }
+        if (!fs.caseInsensitive || knownMappedPaths.isEmpty()) return identity
+        val listedPaths = listed.map { it.relativePath }.toSet()
+        val mappedByFold = knownMappedPaths.groupBy { it.lowercase() }
+        val out = identity.toMutableMap()
+        for ((fold, group) in listed.groupBy { it.relativePath.lowercase() }) {
+            val mapped = mappedByFold[fold]?.singleOrNull() ?: continue
+            if (mapped in listedPaths) continue
+            // Several listed spellings: pick deterministically, the rest stay under their own name.
+            val pick = group.minOf { it.relativePath }
+            out[pick] = mapped
+        }
+        return out
     }
 
     fun indexNotes(root: DocumentFile): List<IndexedFile> {

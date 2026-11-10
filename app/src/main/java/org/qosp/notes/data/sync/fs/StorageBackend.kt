@@ -363,13 +363,15 @@ class StorageBackend(
             // miss it too, so the completeness check must look the file up live.
             (fs as? SafVaultFs)?.endDirectoryCache()
             val mappedToCheck = knownMappedPaths.filterNot { pathKey(it) in quarantineKeys }.toSet()
-            if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexed, mappedToCheck)) {
+            val reported = VaultDocumentTree.reportedPaths(fs, indexed, mappedToCheck)
+            val indexedAsMapped = indexed.map { it.copy(relativePath = reported.getValue(it.relativePath)) }
+            if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexedAsMapped, mappedToCheck)) {
                 Log.w(TAG, "getAll: mapped note visible but missing from index; failing scan")
                 return@run null
             }
             val notes = indexed.map { file ->
                 val raw = read.rawTexts[file.relativePath] ?: throw IOException("Cannot read ${file.relativePath}")
-                pathToSyncNote(file.relativePath, raw, file.lastModifiedMs)
+                pathToSyncNote(reported.getValue(file.relativePath), raw, file.lastModifiedMs)
             }
             scanCache.save(read.cacheEntries)
             notes
