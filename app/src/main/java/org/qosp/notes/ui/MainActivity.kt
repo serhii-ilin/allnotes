@@ -44,6 +44,7 @@ import org.qosp.notes.data.sync.fs.toVaultFolderName
 import org.qosp.notes.databinding.ActivityMainBinding
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
+import androidx.appcompat.app.AlertDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.qosp.notes.preferences.SortNavdrawerNotebooksMethod
 import org.qosp.notes.ui.attachments.fromUri
@@ -119,6 +120,13 @@ class MainActivity : BaseActivity() {
         // shown, so recreation while it is open does not bring it back.
         showWhatsNewIfNeeded()
 
+        // The prompt lives in the ViewModel until answered, so a recreated activity shows it again.
+        lifecycleScope.launch {
+            activityModel.vaultUpgradePrompt.collect { prompt ->
+                if (prompt != null) showVaultUpgradeDialog(prompt)
+            }
+        }
+
         onBackPressedDispatcher.addCallback(this) {
             if (binding.drawer.isDrawerOpen(GravityCompat.START)) {
                 binding.drawer.closeDrawer(GravityCompat.START)
@@ -152,9 +160,8 @@ class MainActivity : BaseActivity() {
                 .getEncryptedString(PreferenceRepository.STORAGE_LOCATION)
                 .first()
             if (location.isNotBlank()) {
-                val upgradePrompt = activityModel.vaultUpgradePromptIfNeeded()
-                if (upgradePrompt != null) {
-                    showVaultUpgradeDialog(upgradePrompt)
+                if (activityModel.checkVaultUpgradePrompt()) {
+                    // The collector in onCreate shows (or keeps showing) the dialog.
                 } else if (vaultForegroundRescan.shouldRunRescan()) {
                     // Keeps vault-relative paths in ActivityViewModel in step with the refreshed index.
                     activityModel.syncAsync().await()
@@ -170,26 +177,39 @@ class MainActivity : BaseActivity() {
         handleIntent(intent)
     }
 
+    private var vaultUpgradeDialog: AlertDialog? = null
+
     private fun showVaultUpgradeDialog(prompt: ActivityViewModel.VaultUpgradePrompt) {
+        if (vaultUpgradeDialog?.isShowing == true) return
         val path = Uri.parse(prompt.location).toDisplayPath(this)
         var message = getString(R.string.vault_upgrade_message, path)
         if (prompt.hadNextcloud) {
             message += "\n\n" + getString(R.string.vault_upgrade_nextcloud_note)
         }
-        MaterialAlertDialogBuilder(this)
+        vaultUpgradeDialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.vault_upgrade_title)
             .setMessage(message)
             .setPositiveButton(R.string.vault_upgrade_use_folder) { _, _ ->
+                activityModel.resolveVaultUpgradePrompt()
                 lifecycleScope.launch {
                     settingsModel.confirmExistingVaultFolder(prompt.location)
                     activityModel.syncAsync().await()
                 }
             }
             .setNeutralButton(R.string.vault_upgrade_choose_other) { _, _ ->
+                activityModel.resolveVaultUpgradePrompt()
                 navController.navigateSafely(R.id.fragment_settings)
             }
-            .setNegativeButton(R.string.vault_upgrade_not_now, null)
+            .setNegativeButton(R.string.vault_upgrade_not_now) { _, _ -> activityModel.resolveVaultUpgradePrompt() }
+            .setOnCancelListener { activityModel.resolveVaultUpgradePrompt() }
             .show()
+    }
+
+    override fun onDestroy() {
+        // Dismissing (unlike cancelling) leaves the prompt pending, so the recreated activity shows it again.
+        vaultUpgradeDialog?.dismiss()
+        vaultUpgradeDialog = null
+        super.onDestroy()
     }
 
     private fun promptForVaultFolderIfNeeded() {

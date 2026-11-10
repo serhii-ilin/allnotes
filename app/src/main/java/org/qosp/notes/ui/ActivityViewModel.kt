@@ -82,19 +82,32 @@ class ActivityViewModel(
 
     private var vaultUpgradePromptChecked = false
 
+    private val _vaultUpgradePrompt = MutableStateFlow<VaultUpgradePrompt?>(null)
+
     /**
-     * Returns the details for the one-time "use this folder?" dialog when an upgraded install has a storage
-     * folder but never confirmed it, at most once per process.
+     * The one-time "use this folder?" prompt, kept until the user answers so a rotation that destroys the dialog
+     * shows it again. Cleared only by [resolveVaultUpgradePrompt].
      */
-    suspend fun vaultUpgradePromptIfNeeded(): VaultUpgradePrompt? {
-        if (vaultUpgradePromptChecked) return null
+    val vaultUpgradePrompt: StateFlow<VaultUpgradePrompt?> = _vaultUpgradePrompt.asStateFlow()
+
+    /**
+     * Publishes [vaultUpgradePrompt] when an upgraded install has a storage folder but never confirmed it, at most
+     * once per process. Returns whether a prompt is pending.
+     */
+    suspend fun checkVaultUpgradePrompt(): Boolean {
+        if (vaultUpgradePromptChecked) return _vaultUpgradePrompt.value != null
         val location = preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
         val configuredAt = preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT).first()
-        if (!needsVaultUpgradeConfirmation(location, configuredAt)) return null
+        if (!needsVaultUpgradeConfirmation(location, configuredAt)) return false
         vaultUpgradePromptChecked = true
         val hadNextcloud = noteRepository.countIdMappings(CloudService.NEXTCLOUD) > 0 ||
             preferenceRepository.get<CloudService>().first() == CloudService.NEXTCLOUD
-        return VaultUpgradePrompt(location, hadNextcloud)
+        _vaultUpgradePrompt.value = VaultUpgradePrompt(location, hadNextcloud)
+        return true
+    }
+
+    fun resolveVaultUpgradePrompt() {
+        _vaultUpgradePrompt.value = null
     }
 
     data class VaultUpgradePrompt(val location: String, val hadNextcloud: Boolean)
