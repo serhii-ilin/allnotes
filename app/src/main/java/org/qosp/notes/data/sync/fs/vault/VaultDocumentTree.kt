@@ -121,7 +121,7 @@ object VaultDocumentTree {
         fs: VaultFs,
         indexed: List<IndexedVaultFile>,
         knownMappedPaths: Set<String>,
-        probe: (String) -> Boolean = fs::isFile,
+        probe: (String) -> Boolean = fs::isFileStrict,
     ): Boolean {
         if (knownMappedPaths.isEmpty()) return true
         val fold = fs.caseInsensitive

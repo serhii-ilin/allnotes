@@ -365,7 +365,7 @@ class StorageBackend(
             val mappedToCheck = knownMappedPaths.filterNot { pathKey(it) in quarantineKeys }.toSet()
             val reported = VaultDocumentTree.reportedPaths(fs, indexed, mappedToCheck)
             val indexedAsMapped = indexed.map { it.copy(relativePath = reported.getValue(it.relativePath)) }
-            if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexedAsMapped, mappedToCheck)) {
+            if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexedAsMapped, mappedToCheck, fs::isFileStrict)) {
                 Log.w(TAG, "getAll: mapped note visible but missing from index; failing scan")
                 return@run null
             }

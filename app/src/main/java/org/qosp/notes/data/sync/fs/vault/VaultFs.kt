@@ -19,6 +19,9 @@ interface VaultFs {
     fun listChildren(relativeDir: String): List<VaultFsEntry>
 
     fun isFile(relativePath: String): Boolean
+    /** Like [isFile], but throws when a folder query fails instead of answering "no such file". */
+    fun isFileStrict(relativePath: String): Boolean = isFile(relativePath)
+
     fun isDirectory(relativePath: String): Boolean
 
     fun readText(relativePath: String): String?

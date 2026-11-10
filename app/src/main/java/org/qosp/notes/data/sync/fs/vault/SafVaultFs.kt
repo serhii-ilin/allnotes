@@ -63,6 +63,8 @@ class SafVaultFs(
 
     override fun isFile(relativePath: String): Boolean = findEntry(relativePath) != null
 
+    override fun isFileStrict(relativePath: String): Boolean = findEntry(relativePath, strict = true) != null
+
     override fun isDirectory(relativePath: String): Boolean {
         val norm = VaultPaths.normalize(relativePath)
         if (norm.isEmpty()) return root.isDirectory
@@ -263,13 +265,13 @@ class SafVaultFs(
     /** Document id of the tree root; `root.uri` is already a document-in-tree URI (`tree/X/document/X`). */
     private fun rootDocumentId(): String = DocumentsContract.getTreeDocumentId(root.uri)
 
-    private fun findEntry(relativePath: String): SafDirectoryListing.Entry? {
+    private fun findEntry(relativePath: String, strict: Boolean = false): SafDirectoryListing.Entry? {
         val norm = VaultPaths.normalizeNotePath(relativePath)
         var current: SafDirectoryListing.Entry? = null
         var parentDocId = rootDocumentId()
         val parts = norm.split('/')
         for ((index, segment) in parts.withIndex()) {
-            val child = lookupEntry(parentDocId, segment) ?: return null
+            val child = lookupEntry(parentDocId, segment, strict) ?: return null
             if (index < parts.lastIndex) {
                 if (!child.isDirectory) return null
             } else if (child.isDirectory) return null

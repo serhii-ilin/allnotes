@@ -46,6 +46,7 @@ class SafVaultFsListingFailureTest {
         ): Cursor? {
             val docId = uri.pathSegments[3]
             if (docId == failingDocId) return null
+            if (docId == failAfterFirstQueryDocId && queriesOfFailAfterFirst++ >= 1) return null
             val omitTop = docId == ROOT && uri.lastPathSegment == "children" && omitTopOnceFromRootQueries > 0
             if (omitTop) omitTopOnceFromRootQueries--
             val cursor = MatrixCursor(
@@ -86,6 +87,9 @@ class SafVaultFsListingFailureTest {
         private const val AUTHORITY = "com.test.failing"
         private const val ROOT = "root"
         @Volatile var failingDocId: String? = null
+        /** Answers the first children query of this folder, then fails every later one. */
+        @Volatile var failAfterFirstQueryDocId: String? = null
+        @Volatile var queriesOfFailAfterFirst = 0
         /** Number of upcoming root listings that silently drop top.md (a partial listing, not an error). */
         @Volatile var omitTopOnceFromRootQueries = 0
     }
@@ -93,6 +97,8 @@ class SafVaultFsListingFailureTest {
     @After
     fun reset() {
         failingDocId = null
+        failAfterFirstQueryDocId = null
+        queriesOfFailAfterFirst = 0
         omitTopOnceFromRootQueries = 0
     }
 
@@ -162,5 +168,24 @@ class SafVaultFsListingFailureTest {
         omitTopOnceFromRootQueries = 1
         assertNull(backend.getAll(setOf("top.md")))
         assertNotNull(backend.getAll(setOf("top.md")))
+    }
+
+    @Test
+    fun getAll_failsWhenTheCompletenessProbeCannotListAParent() = runTest {
+        val (context, fs) = vaultFs()
+        val notebookDao = mockk<NotebookDao>(relaxed = true)
+        coEvery { notebookDao.getById(any()) } returns flowOf(null)
+        val backend = StorageBackend(
+            context,
+            StorageConfig(location = Uri.parse("content://test/vault")),
+            notebookDao,
+            mockk(relaxed = true),
+            mockk<VaultSyncCoordinator>(relaxed = true),
+            vaultFs = fs,
+        )
+        // The walk lists a/ once and succeeds; the probe for the unlisted a/gone.md then cannot list a/.
+        // That is a failed lookup, not proof the file is gone, so the scan must fail.
+        failAfterFirstQueryDocId = "$ROOT/a"
+        assertNull(backend.getAll(setOf("a/gone.md")))
     }
 }
