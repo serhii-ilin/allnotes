@@ -88,22 +88,8 @@
     <string name="preferences_backup_strategy_keep_info">Yalnızca açıklama ve yerel yolu yedekle</string>
     <string name="preferences_backup_strategy_keep_nothing">Ekleri yedekleme</string>
     <!-- Preferences / Syncing -->
-    <string name="preferences_header_syncing">Senkronizasyon</string>
-    <string name="preferences_go_to_sync_settings">Senkronizasyon ayarlarına git</string>
-    <string name="preferences_currently_syncing_with">Şu anda %s ile senkronize ediliyor</string>
-    <string name="preferences_currently_not_syncing">Şu anda senkronize edilmiyor</string>
-    <string name="preferences_cloud_service">Senkronizasyon servisi</string>
     <string name="preferences_cloud_service_disabled">Devre dışı</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Nextcloud Notes’un etiketler, ekler, hatırlatıcılar gibi özellikleri desteklemediğini unutmayın. Nextcloud Notes’un Nextcloud Sunucusuna yüklenmiş olması gerekir, aksi takdirde giriş Bir şeyler ters gitti hatasıyla başarısız olur!</string>
-    <string name="preferences_nextcloud_account">Nextcloud hesabı</string>
-    <string name="preferences_nextcloud_instance_url">Nextcloud örnek URL’si</string>
-    <string name="preferences_nextcloud_set_your_credentials">Kimlik bilgilerinizi ayarlayın</string>
-    <string name="preferences_nextcloud_set_server_url">Sunucu URL’sini ayarlayın</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi veya Veri</string>
-    <string name="preferences_sync_when_on">Şu durumda senkronize et</string>
-    <string name="preferences_new_notes_synchronizable">Yeni notlar senkronize edilebilir</string>
     <!-- About -->
     <string name="about_version">Sürüm</string>
     <string name="about_website">Web sitesi</string>
@@ -120,8 +106,6 @@
     <string name="ok">Tamam</string>
     <string name="indicator_notes_empty">Notlarınız burada görünecek.</string>
     <string name="indicator_untitled">Başlıksız</string>
-    <string name="hint_username">Kullanıcı adı</string>
-    <string name="hint_password">Şifre</string>
     <string name="action_save">Kaydet</string>
     <string name="action_cancel">İptal</string>
     <string name="action_delete">Sil</string>
@@ -203,7 +187,6 @@
     <string name="action_add_task">Görev</string>
     <string name="action_convert_to_note">Nota dönüştür</string>
     <string name="action_convert_to_list">Listeye dönüştür</string>
-    <string name="action_do_not_sync">Senkronize etme</string>
     <string name="action_change_color">Renk değiştir</string>
     <string name="action_enable_markdown">Markdown’u etkinleştir</string>
     <string name="action_disable_markdown">Markdown’u devre dışı bırak</string>
@@ -250,20 +233,6 @@
     <string name="notifications_channel_backups">Yedeklemeler</string>
     <string name="notifications_channel_playback">Medya oynatma</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Bu geçerli bir HTTPS URL’si değil.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Şu anda <b>%s</b> olarak giriş yaptınız.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Şu anda giriş yapmadınız.</string>
-    <string name="action_nextcloud_authenticate">Kimlik doğrula</string>
-    <string name="indicator_offline_account">Çevrimdışı hesap</string>
-    <string name="indicator_connecting">Bağlanıyor…</string>
-    <string name="message_something_went_wrong">Bir şeyler ters gitti.</string>
-    <string name="message_server_connection_failed">Sunucuya bağlanılamadı. Lütfen sunucu adresini ve ağ bağlantınızı kontrol edin.</string>
-    <string name="message_invalid_credentials">Geçersiz kimlik bilgileri nedeniyle sunucuyla kimlik doğrulaması yapılamadı.</string>
-    <string name="message_logged_in_successfully">Başarıyla giriş yapıldı!</string>
-    <string name="message_server_not_compatible">Sunucu sürümü bu uygulamayla uyumlu değil.</string>
-    <string name="message_internet_not_available">İnternet bağlantısı mevcut değil.</string>
-    <string name="message_credentials_cannot_be_blank">Kimlik bilgileri boş olamaz.</string>
-    <string name="preference_nextcloud_clear_credentials">Kimlik bilgilerini ve sunucu URL’sini temizle</string>
     <string name="notification_media_play_pause">Oynat / Duraklat</string>
     <string name="notification_media_stop">Durdur</string>
     <!-- App shortcuts -->
@@ -292,17 +261,11 @@
         <item quantity="other">%d etiket seçildi</item>
     </plurals>
     <string name="preferences_cloud_service_files">Dosya Depolama</string>
-    <string name="preferences_file_storage_info">Yerel depolamadan veya bir bulut sağlayıcıdan bir klasör seçin. Tüm notlar
-    Markdown dosyaları olarak saklanacaktır.
-  </string>
     <string name="preferences_file_storage_location">Depolama yeri</string>
     <string name="preferences_file_storage_select">Depolama yerini seçin</string>
     <string name="preferences_default_editor_mode_edit">Düzenleme modu</string>
-    <string name="preferences_trust_self_signed_certificate">Kendinden imzalı sertifikalara güven</string>
     <string name="about_send_logs">Hata Günlüklerini Gönder</string>
     <string name="about_send_logs_subtext">Soruşturulması için uygulama günlüklerini geliştiriciye gönder</string>
-    <string name="message_certificates_invalid">Sertifika hatası. Devam etmek için lütfen \"Kendinden imzalı sertifikalara güven\" seçeneğini etkinleştirin.</string>
-    <string name="message_notes_not_installed">Notlar uygulaması Nextcloud\'unuzda yüklü değil.</string>
     <string name="action_new_note">Yeni Not</string>
     <string name="note_untitled">Adsız</string>
     <string name="tasks">görevler</string>

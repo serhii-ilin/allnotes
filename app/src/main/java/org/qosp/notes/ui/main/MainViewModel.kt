@@ -8,7 +8,6 @@ import kotlinx.coroutines.launch
 import org.qosp.notes.R
 import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.repo.NotebookRepository
-import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.preferences.SortMethod
 import org.qosp.notes.ui.common.AbstractNotesViewModel
@@ -17,8 +16,7 @@ class MainViewModel(
     private val noteRepository: NoteRepository,
     private val notebookRepository: NotebookRepository,
     preferenceRepository: PreferenceRepository,
-    backendProvider: BackendProvider,
-) : AbstractNotesViewModel(preferenceRepository, backendProvider) {
+) : AbstractNotesViewModel(preferenceRepository) {
 
     private val notebookIdFlow: MutableStateFlow<Long?> = MutableStateFlow(null)
 

@@ -57,22 +57,8 @@
     <string name="preferences_backup_strategy_include_files">Backup di tutto</string>
     <string name="preferences_backup_strategy_keep_info">Solo descrizione e percorso locale</string>
     <string name="preferences_backup_strategy_keep_nothing">Non eseguire il backup degli allegati</string>
-    <string name="preferences_header_syncing">Sincronizzazione</string>
-    <string name="preferences_go_to_sync_settings">Vai alle impostazioni di sincronizzazione</string>
-    <string name="preferences_currently_syncing_with">Attualmente sincronizzato con %s</string>
-    <string name="preferences_currently_not_syncing">Attualmente non sincronizzato</string>
-    <string name="preferences_cloud_service">Servizio di sincronizzazione</string>
     <string name="preferences_cloud_service_disabled">Disabilitato</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Tenere presente che Note di Nextcloud non supporta funzionaltà come etichette, allegati, promemoria, compiti e altro. Note di Nextcloud necessita di una installazione sul server Nextcloud altrimenti l\'accesso non potrà essere eseguito restituendo il messaggio \"Qualcosa non ha funzionato\".</string>
-    <string name="preferences_nextcloud_account">Account Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">URL dell\'istanza Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">Impostazione credenziali</string>
-    <string name="preferences_nextcloud_set_server_url">Impostazione URL del server</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi o rete cellulare</string>
-    <string name="preferences_sync_when_on">Sincronizzazione tramite</string>
-    <string name="preferences_new_notes_synchronizable">Nuove note sincronizzabili</string>
     <string name="preferences_dark_theme_mode">Modalità tema scuro</string>
     <string name="preferences_theme_dark_mode_standard">Standard</string>
     <string name="preferences_theme_dark_mode_black">Nero</string>
@@ -92,8 +78,6 @@
     <string name="ok">OK</string>
     <string name="indicator_notes_empty">Le tue note appariranno qui.</string>
     <string name="indicator_untitled">Senza titolo</string>
-    <string name="hint_username">Nome utente</string>
-    <string name="hint_password">Password</string>
     <string name="action_save">Salva</string>
     <string name="action_cancel">Annulla</string>
     <string name="action_delete">Elimina</string>
@@ -173,7 +157,6 @@
     <string name="action_add_task">Attività</string>
     <string name="action_convert_to_note">Converti in nota</string>
     <string name="action_convert_to_list">Converti in elenco</string>
-    <string name="action_do_not_sync">Non sincronizzare</string>
     <string name="action_change_color">Cambia colore</string>
     <string name="action_enable_markdown">Abilita Markdown</string>
     <string name="action_disable_markdown">Disabilita Markdown</string>
@@ -217,20 +200,6 @@
     <string name="notifications_channel_backups">Backup</string>
     <string name="notifications_channel_playback">Riproduzione contenuti multimediali</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Questo non è un URL HTTPS valido.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Accesso eseguito come <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Accesso non eseguito.</string>
-    <string name="action_nextcloud_authenticate">Autenticazione</string>
-    <string name="indicator_offline_account">Account non in linea</string>
-    <string name="indicator_connecting">Connessione in corso…</string>
-    <string name="message_something_went_wrong">Qualcosa non ha funzionato.</string>
-    <string name="message_server_connection_failed">Impossibile connettersi al server. Controlla l\'indirizzo del server e la connessione di rete.</string>
-    <string name="message_invalid_credentials">Impossibile autenticarsi sul server a causa delle credenziali non valide.</string>
-    <string name="message_logged_in_successfully">Accesso effettuato con successo.</string>
-    <string name="message_server_not_compatible">La versione del server non è compatibile con questa app.</string>
-    <string name="message_internet_not_available">Connessione internet non disponibile.</string>
-    <string name="message_credentials_cannot_be_blank">Le credenziali non possono essere vuote.</string>
-    <string name="preference_nextcloud_clear_credentials">Pulisci credenziali e URL del server</string>
     <string name="notification_media_play_pause">Riproduci / Pausa</string>
     <string name="notification_media_stop">Ferma</string>
     <!-- App shortcuts -->
@@ -279,16 +248,12 @@
     <string name="action_disable_screen_always_on">Disabilita schermo sempre acceso</string>
     <string name="action_uncheck_all_tasks">Deseleziona tutti gli elementi</string>
     <string name="preferences_cloud_service_files">Archivio file</string>
-    <string name="preferences_file_storage_info">Selezionare una cartella dall\'archivio locale o da un fornitore di servizi cloud. Tutte le note verranno memorizzate in formato Markdown.</string>
     <string name="preferences_file_storage_location">Posizione dell\'archivio</string>
     <string name="preferences_file_storage_select">Selezionare la posizione dell\'archivio</string>
-    <string name="preferences_trust_self_signed_certificate">Considera attendibile in certificato autofirmato</string>
-    <string name="message_certificates_invalid">Errore del certificato: abilitare \"Considera attendibile in certificato autofirmato\" per continuare.</string>
     <string name="preferences_default_editor_mode_view">Modalità visualizzazione</string>
     <string name="preferences_default_editor_mode_edit">Modalità modifica</string>
     <string name="about_send_logs">Invia I log dell\'errore</string>
     <string name="about_send_logs_subtext">Invia allo sviluppatore i log dell\'applicazione per l\'analisi</string>
-    <string name="message_notes_not_installed">L\'applicazione Note non è installata nel proprio Nextcloud.</string>
     <string name="widget_description">Mostra le note recenti sulla schermata home</string>
     <string name="action_new_note">Nuova nota</string>
     <string name="note_untitled">Senza titolo</string>

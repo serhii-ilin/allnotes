@@ -80,22 +80,8 @@
     <string name="preferences_backup_strategy_keep_info">Nur Beschreibung und lokalen Pfad sichern</string>
     <string name="preferences_backup_strategy_keep_nothing">Anhänge nicht sichern</string>
     <!-- Preferences / Syncing -->
-    <string name="preferences_header_syncing">Synchronisierung</string>
-    <string name="preferences_go_to_sync_settings">Zu den Synchronisierungseinstellungen</string>
-    <string name="preferences_currently_syncing_with">Synchronisiere gerade mit %s</string>
-    <string name="preferences_currently_not_syncing">Keine Synchronisierung aktiv</string>
-    <string name="preferences_cloud_service">Synchronisierungsdienst</string>
     <string name="preferences_cloud_service_disabled">Deaktiviert</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Aktuell unterstützt Nextcloud Notes keine Tags, Anhänge, Erinnerungen und weitere Funktionen. Nextcloud Notes muss auf dem Nextcloud Server installiert sein, sonnst scheitert die Anmeldung mit Es ist ein Problem aufgetreten.!</string>
-    <string name="preferences_nextcloud_account">Nextcloud-Konto</string>
-    <string name="preferences_nextcloud_instance_url">URL der Nextcloud-Instanz</string>
-    <string name="preferences_nextcloud_set_your_credentials">Zugangsdaten festlegen</string>
-    <string name="preferences_nextcloud_set_server_url">Server-URL festlegen</string>
-    <string name="preferences_sync_on_wifi">WLAN</string>
-    <string name="preferences_sync_on_wifi_data">WLAN oder mobile Daten</string>
-    <string name="preferences_sync_when_on">Synchronisierung bei</string>
-    <string name="preferences_new_notes_synchronizable">Neue Notizen synchronisieren</string>
     <!-- About -->
     <string name="about_version">Version</string>
     <string name="about_website">Webseite</string>
@@ -113,8 +99,6 @@
     <string name="ok">OK</string>
     <string name="indicator_notes_empty">Deine Notizen werden hier angezeigt.</string>
     <string name="indicator_untitled">Unbenannt</string>
-    <string name="hint_username">Benutzername</string>
-    <string name="hint_password">Passwort</string>
     <string name="action_save">Speichern</string>
     <string name="action_cancel">Abbrechen</string>
     <string name="action_delete">Löschen</string>
@@ -196,7 +180,6 @@
     <string name="action_add_task">Aufgabe</string>
     <string name="action_convert_to_note">In Notiz umwandeln</string>
     <string name="action_convert_to_list">In Liste umwandeln</string>
-    <string name="action_do_not_sync">Nicht synchronisieren</string>
     <string name="action_change_color">Farbe ändern</string>
     <string name="action_enable_markdown">Markdown aktivieren</string>
     <string name="action_disable_markdown">Markdown deaktivieren</string>
@@ -243,20 +226,6 @@
     <string name="notifications_channel_backups">Sicherungen</string>
     <string name="notifications_channel_playback">Medienwiedergabe</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Dies ist keine gültige HTTPS-URL.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Du bist aktuell als <b>%s</b> angemeldet.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Du bist aktuell nicht angemeldet.</string>
-    <string name="action_nextcloud_authenticate">Authentifizieren</string>
-    <string name="indicator_offline_account">Offline-Konto</string>
-    <string name="indicator_connecting">Verbinde…</string>
-    <string name="message_something_went_wrong">Etwas ist schiefgelaufen.</string>
-    <string name="message_server_connection_failed">Verbindung zum Server fehlgeschlagen. Bitte Serveradresse und Netzwerkverbindung prüfen.</string>
-    <string name="message_invalid_credentials">Authentifizierung mit dem Server ist aufgrund falscher Zugangsdaten fehlgschlagen.</string>
-    <string name="message_logged_in_successfully">Erfolgreich angemeldet!</string>
-    <string name="message_server_not_compatible">Die Server-Version ist nicht mit dieser App kompatibel.</string>
-    <string name="message_internet_not_available">Keine Internetverbindung verfügbar.</string>
-    <string name="message_credentials_cannot_be_blank">Zugangsdaten dürfen nicht leer sein.</string>
-    <string name="preference_nextcloud_clear_credentials">Zugangsdaten und Server-URL löschen</string>
     <string name="notification_media_play_pause">Abspielen / Pause</string>
     <string name="notification_media_stop">Stopp</string>
     <!-- App shortcuts -->
@@ -285,18 +254,12 @@
         <item quantity="other">%d Tags ausgewählt</item>
     </plurals>
     <string name="preferences_cloud_service_files">Dateispeicher</string>
-    <string name="preferences_file_storage_info">Wählen Sie einen Ordner aus dem lokalen Speicher oder von einem
-    Cloud-Anbieter aus. Alle Notizen werden als Markdown-Dateien gespeichert.
-  </string>
     <string name="preferences_file_storage_location">Speicherort</string>
     <string name="preferences_file_storage_select">Speicherort auswählen</string>
-    <string name="preferences_trust_self_signed_certificate">Selbst-signierten Zertifikaten vertrauen</string>
-    <string name="message_certificates_invalid">Zertifikatsfehler. Bitte aktivieren Sie \"Selbst-signierten Zertifikaten vertrauen\", um fortzufahren.</string>
     <string name="preferences_default_editor_mode_view">Ansichtsmodus</string>
     <string name="preferences_default_editor_mode_edit">Bearbeitungsmodus</string>
     <string name="about_send_logs">Fehlerprotokolle senden</string>
     <string name="about_send_logs_subtext">Anwendungsprotokolle zur Analyse an die Entwickler:innen senden</string>
-    <string name="message_notes_not_installed">Die Notes App ist auf dem Nextcloud-Server nicht installiert.</string>
     <string name="widget_description">Die neuesten Notizen auf dem Home-Screen anzeigen</string>
     <string name="action_new_note">Neue Notiz</string>
     <string name="note_untitled">Ohne Titel</string>

@@ -77,22 +77,8 @@
     <string name="preferences_backup_strategy_keep_info">Zálohovat pouze popisek a lokální cestu</string>
     <string name="preferences_backup_strategy_keep_nothing">Nezálohovat přílohy</string>
     <!-- Preferences / Syncing -->
-	<string name="preferences_header_syncing">Synchronizace</string>
-    <string name="preferences_go_to_sync_settings">Nastavení synchronizace</string>
-    <string name="preferences_currently_syncing_with">Aktuálně synchronizováno s %s</string>
-    <string name="preferences_currently_not_syncing">Aktuálně není synchronizováno</string>
-    <string name="preferences_cloud_service">Služba pro synchronizaci</string>
     <string name="preferences_cloud_service_disabled">Vypnuto</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Nezapomeňte, že Nextcloud Notes nepodporuje funkce jako štítky, přílohy, připomínky a další.</string>
-    <string name="preferences_nextcloud_account">Účet Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">Odkaz na Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">Zadej své přihlašovací údaje.</string>
-    <string name="preferences_nextcloud_set_server_url">Zadej URL svého Nextcloud serveru.</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi nebo Data</string>
-    <string name="preferences_sync_when_on">Synchronizace přes</string>
-    <string name="preferences_new_notes_synchronizable">Synchronizovat nové poznámky</string>
     <!-- About -->
 	<string name="about_version">Verze</string>
     <string name="about_website">Web</string>
@@ -109,8 +95,6 @@
     <string name="ok">Budiž</string>
     <string name="indicator_notes_empty">Vaše poznámky se zobrazí zde.</string>
     <string name="indicator_untitled">Bez názvu</string>
-    <string name="hint_username">Uživatelské jméno</string>
-    <string name="hint_password">Heslo</string>
     <string name="action_save">Uložit</string>
     <string name="action_cancel">Zrušit</string>
     <string name="action_delete">Smazat</string>
@@ -191,7 +175,6 @@
     <string name="action_add_task">Úkol</string>
     <string name="action_convert_to_note">Převézt na poznámku</string>
     <string name="action_convert_to_list">Převézt na seznam</string>
-    <string name="action_do_not_sync">Nesynchronizovat</string>
     <string name="action_change_color">Změnit barvu</string>
     <string name="action_enable_markdown">Povolit markdown</string>
     <string name="action_disable_markdown">Zakázat markdown</string>
@@ -235,20 +218,6 @@
     <string name="notifications_channel_backups">Zálohy</string>
     <string name="notifications_channel_playback">Přehrávání medií</string>
     <!-- Syncing -->
-	<string name="message_not_valid_https">Tohle není platná HTTPS adresa.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Jste přihlášeni jako <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Nejste přihlášeni.</string>
-    <string name="action_nextcloud_authenticate">Ověřit se</string>
-    <string name="indicator_offline_account">Offline účet</string>
-    <string name="indicator_connecting">Připojování…</string>
-    <string name="message_something_went_wrong">Něco se nepovedlo.</string>
-    <string name="message_server_connection_failed">Nelze se připojit k serveru. Zkontrolujte adresu serveru a připojení k síti.</string>
-    <string name="message_invalid_credentials">Nelze se ověřit u serveru z důvodu chybných přihlašovacích údajů.</string>
-    <string name="message_logged_in_successfully">Přihlášení úspěšné!</string>
-    <string name="message_server_not_compatible">Verze serveru není kompatibilní s touto aplikací.</string>
-    <string name="message_internet_not_available">Připojení k internetu není k dispozici.</string>
-    <string name="message_credentials_cannot_be_blank">Přihlašovací údaje musí být vyplněné.</string>
-    <string name="preference_nextcloud_clear_credentials">Vymazat přihlašovací údaje a URL</string>
     <string name="notification_media_play_pause">Přehrát / Pozastavit</string>
     <string name="notification_media_stop">Zastavit</string>
     <!-- App shortcuts -->

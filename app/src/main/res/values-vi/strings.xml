@@ -77,22 +77,8 @@
     <string name="preferences_backup_strategy_keep_info">Chỉ sao lưu mô tả và đường dẫn cục bộ</string>
     <string name="preferences_backup_strategy_keep_nothing">Không sao lưu tệp đính kèm</string>
     <!-- Preferences / Syncing -->
-    <string name="preferences_header_syncing">Đang đồng bộ hóa</string>
-    <string name="preferences_go_to_sync_settings">Đi tới cài đặt đồng bộ hóa</string>
-    <string name="preferences_currently_syncing_with">Hiện đang đồng bộ hóa với %s</string>
-    <string name="preferences_currently_not_syncing">Hiện không đồng bộ</string>
-    <string name="preferences_cloud_service">Dịch vụ đồng bộ hóa</string>
     <string name="preferences_cloud_service_disabled">Đã tắt</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Hãy nhớ rằng Nextcloud Notes không hỗ trợ các tính năng như thẻ, tệp đính kèm, lời nhắc và hơn thế nữa.</string>
-    <string name="preferences_nextcloud_account">Tài khoản Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">URL phiên bản Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">Đặt thông tin xác thực của bạn</string>
-    <string name="preferences_nextcloud_set_server_url">Đặt URL của máy chủ</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi hoặc dữ liệu</string>
-    <string name="preferences_sync_when_on">Đồng bộ hóa khi bật</string>
-    <string name="preferences_new_notes_synchronizable">Ghi chú mới có thể đồng bộ hóa</string>
     <!-- About -->
     <string name="about_version">Phiên bản</string>
     <string name="about_website">Trang web</string>
@@ -109,8 +95,6 @@
     <string name="ok">Được</string>
     <string name="indicator_notes_empty">Ghi chú của bạn sẽ xuất hiện ở đây.</string>
     <string name="indicator_untitled">Không có tiêu đề</string>
-    <string name="hint_username">Tên người dùng</string>
-    <string name="hint_password">Mật khẩu</string>
     <string name="action_save">Lưu</string>
     <string name="action_cancel">Hủy</string>
     <string name="action_delete">Xóa</string>
@@ -192,7 +176,6 @@
     <string name="action_add_task">Nhiệm vụ</string>
     <string name="action_convert_to_note">Chuyển thành ghi chú</string>
     <string name="action_convert_to_list">Chuyển thành danh sách</string>
-    <string name="action_do_not_sync">Không đồng bộ</string>
     <string name="action_change_color">Thay đổi màu sắc</string>
     <string name="action_enable_markdown">Bật markdown</string>
     <string name="action_disable_markdown">Tắt markdown</string>
@@ -238,19 +221,6 @@
     <string name="notifications_channel_backups">Sao lưu</string>
     <string name="notifications_channel_playback">Phát lại phương tiện</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Đây không phải là url HTTPS hợp lệ.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Bạn hiện đang đăng nhập với tên <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Bạn hiện chưa đăng nhập.</string>
-    <string name="action_nextcloud_authenticate">Xác thực</string>
-    <string name="indicator_offline_account">Tài khoản ngoại tuyến</string>
-    <string name="indicator_connecting">Đang kết nối…</string>
-    <string name="message_something_went_wrong">Đã xảy ra lỗi.</string>
-    <string name="message_invalid_credentials">Không thể xác thực với máy chủ do thông tin xác thực không hợp lệ.</string>
-    <string name="message_logged_in_successfully">Đăng nhập thành công!</string>
-    <string name="message_server_not_compatible">Phiên bản máy chủ không tương thích với ứng dụng này.</string>
-    <string name="message_internet_not_available">Kết nối Internet không khả dụng.</string>
-    <string name="message_credentials_cannot_be_blank">Thông tin xác thực không được để trống.</string>
-    <string name="preference_nextcloud_clear_credentials">Xóa thông tin đăng nhập và URL máy chủ</string>
     <string name="notification_media_play_pause">Phát / Tạm dừng</string>
     <string name="notification_media_stop">Dừng lại</string>
     <!-- App shortcuts -->

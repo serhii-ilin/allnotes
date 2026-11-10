@@ -112,12 +112,24 @@ class SafVaultFsNestedTreeTest {
         }
     }
 
-    private fun vaultFs(): SafVaultFs {
+    private fun vaultFs(onWrite: () -> Unit = {}): SafVaultFs {
         Robolectric.buildContentProvider(FakeVaultProvider::class.java).create(AUTHORITY)
         val context = ApplicationProvider.getApplicationContext<Context>()
         val treeUri = DocumentsContract.buildTreeDocumentUri(AUTHORITY, ROOT_DOC_ID)
         val root = DocumentFile.fromTreeUri(context, treeUri)!!
-        return SafVaultFs(context, root)
+        return SafVaultFs(context, root, onWrite = onWrite)
+    }
+
+    @Test
+    fun mutations_markWriteBeforeAndAfter_evenWhenNothingChanges() {
+        var marks = 0
+        val fs = vaultFs(onWrite = { marks++ })
+
+        assertFalse(fs.delete("a/missing.md"))
+        assertEquals(2, marks)
+
+        fs.ensureDirectory("")
+        assertEquals(4, marks)
     }
 
     @Test

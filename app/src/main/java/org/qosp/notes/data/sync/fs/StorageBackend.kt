@@ -41,6 +41,7 @@ import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.ui.attachments.getAttachmentUri
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.measureTimedValue
 
 class StorageBackend(
@@ -86,6 +87,16 @@ class StorageBackend(
         // copies of the previous vault.
         deleteOtherScopeCaches(scopeId)
         VaultScanCache(File(context.filesDir, "vault-scan-cache/$scopeId.json"))
+    }
+
+    private val bypassScanCache = AtomicBoolean(false)
+
+    /**
+     * Manual "rescan vault now" must see fresh bytes even when mtime/size did not change. Only flags
+     * the next scan: it clears the cache itself under the vault lock, off the caller's (main) thread.
+     */
+    fun clearScanCache() {
+        bypassScanCache.set(true)
     }
 
     private fun deleteOtherScopeCaches(keepScopeId: String) {
@@ -266,6 +277,7 @@ class StorageBackend(
             return@run null
         }
         return@run try {
+            if (bypassScanCache.getAndSet(false)) scanCache.clear()
             invalidateVaultIndex()
             (fs as? SafVaultFs)?.beginDirectoryCache()
             val candidates = VaultDocumentTree.listNoteCandidates(fs)

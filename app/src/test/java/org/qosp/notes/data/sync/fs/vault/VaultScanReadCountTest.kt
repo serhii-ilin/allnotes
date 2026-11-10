@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -131,5 +132,28 @@ class VaultScanReadCountTest {
         assertEquals(1, second!!.size)
         // Unknown size is never stored, so the second scan re-reads.
         assertEquals(2, fs.readTextCalls)
+    }
+
+    @Test
+    fun clearScanCache_forcesReread_whenListingLooksUnchanged() = runTest {
+        val delegate = InMemoryVaultFs(scopeId = "clear-scan-cache", caseInsensitive = true)
+        delegate.writeText("A.md", "---\n---\nbody A")
+        val fs = OldMtimeVaultFs(delegate)
+        val backend = backend(fs, testScheduler)
+
+        assertNotNull(backend.getAll(emptySet()))
+        assertEquals(1, fs.readTextCalls)
+
+        // Same size and reported mtime: an ordinary scan would reuse the cached text.
+        delegate.writeText("A.md", "---\n---\nbody B")
+        backend.clearScanCache()
+
+        val afterClear = backend.getAll(emptySet())
+        assertNotNull(afterClear)
+        assertEquals(2, fs.readTextCalls)
+        assertTrue(
+            "expected the fresh body, got ${afterClear!!.single().content}",
+            "body B" in afterClear.single().content!!,
+        )
     }
 }

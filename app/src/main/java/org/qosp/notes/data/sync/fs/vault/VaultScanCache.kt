@@ -68,6 +68,12 @@ class VaultScanCache(private val cacheFile: File) {
         }
     }
 
+    /** Drops every cached entry (in memory and on disk); the next scan re-reads all files. */
+    fun clear() {
+        entries = emptyMap()
+        runCatching { cacheFile.delete() }
+    }
+
     companion object {
         /** Files with an mtime this close to scan time are not trusted (coarse FAT/MTP mtimes). */
         const val RACY_WINDOW_MS = 3_000L
