@@ -40,18 +40,18 @@ import org.qosp.notes.ui.utils.resolveAttribute
 object MarkwonModule {
 
     val markwonModule = module {
-        // Markwon holds only application-scoped plugins and resolves colors from the app context,
-        // so rebuilding it for every injection is pure waste. A single instance is safe to share.
-        single<Markwon> {
+        // Task-list colors are resolved from the current theme when the instance is built, so a
+        // shared Markwon would keep light-theme colors after a day/night switch. Building one per
+        // adapter/editor is cheap and keeps colors correct.
+        factory<Markwon> {
             getMarkwon(
                 context = androidContext(),
                 preferenceRepository = get(),
                 vaultTreeAccess = get(),
             )
         }
-        // The edit handlers only keep the theme resolved by Markwon; they hold no per-editor
-        // text state, so the editor can be shared as well.
-        single<MarkwonEditor> { getMarkWonEditor(markwon = get()) }
+        // The editor is cheap to build as well and must match the Markwon it wraps.
+        factory<MarkwonEditor> { getMarkWonEditor(markwon = get()) }
     }
 
     private fun getMarkwon(
