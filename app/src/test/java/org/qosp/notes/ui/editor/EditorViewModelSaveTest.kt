@@ -28,6 +28,7 @@ import org.junit.Test
 import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.model.NoteColor
+import org.qosp.notes.data.model.NoteTask
 import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.repo.NotebookRepository
 import org.qosp.notes.data.sync.core.BaseResult
@@ -143,6 +144,56 @@ class EditorViewModelSaveTest {
         assertEquals(1, repository.updates.size)
     }
 
+    @Test
+    fun externalChangeToNotebook_isNotRevertedByLaterContentSave() = runTest(mainDispatcher) {
+        val (model, repository) = createViewModel()
+        val movedNotebookId = 42L
+
+        model.setNoteContent("a")
+        runCurrent()
+        advanceTimeBy(100)
+        runCurrent()
+
+        // Simulates a move to another notebook (or any other ViewModel updating the note).
+        repository.externalUpdate { it.copy(notebookId = movedNotebookId) }
+
+        model.setNoteContent("ab")
+        runCurrent()
+        advanceUntilIdle()
+
+        val saved = repository.updates.last().note
+        assertEquals(movedNotebookId, saved.notebookId)
+        assertEquals("ab", saved.content)
+    }
+
+    @Test
+    fun taskListBurst_producesSingleVaultPush() = runTest(mainDispatcher) {
+        val (model, repository) = createViewModel()
+
+        model.updateTaskList(listOf(NoteTask(0L, "a", false)))
+        runCurrent()
+        advanceTimeBy(100)
+        model.updateTaskList(listOf(NoteTask(0L, "ab", false)))
+        runCurrent()
+        advanceTimeBy(100)
+        model.updateTaskList(listOf(NoteTask(0L, "abc", false)))
+        runCurrent()
+
+        advanceTimeBy(1_499)
+        runCurrent()
+        assertTrue(repository.updates.none { it.sync })
+
+        advanceTimeBy(1)
+        runCurrent()
+        val vaultUpdates = repository.updates.filter { it.sync }
+        assertEquals(1, vaultUpdates.size)
+        assertEquals("abc", vaultUpdates.single().note.taskList.single().content)
+
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(1, repository.updates.count { it.sync })
+    }
+
     private fun TestScope.createViewModel(): Pair<EditorViewModel, FakeNoteRepository> {
         val repository = FakeNoteRepository(Note(id = NOTE_ID, title = "title", content = "start"))
         val ioDispatcher = StandardTestDispatcher(testScheduler)
@@ -187,6 +238,10 @@ class EditorViewModelSaveTest {
         }
 
         override fun getById(noteId: Long): Flow<Note?> = note
+
+        fun externalUpdate(transform: (Note) -> Note) {
+            note.value = note.value?.let(transform)
+        }
 
         override suspend fun insertNote(note: Note, sync: Boolean): Long = unsupported()
         override suspend fun moveNotesToBin(vararg notes: Note, sync: Boolean) { unsupported<Unit>() }

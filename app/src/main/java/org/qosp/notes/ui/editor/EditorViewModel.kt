@@ -95,10 +95,15 @@ class EditorViewModel(
      */
     private val mutations = Channel<Mutation>(Channel.UNLIMITED)
     private val persistMutex = Mutex()
+
+    // Only editor-owned fields are cached. The rest of the note is always re-read from Room so
+    // changes made elsewhere (notebook, pin/archive, reminders, vault imports) are not reverted.
     @Volatile
-    private var currentNote: Note? = null
+    private var pendingContent: String? = null
     @Volatile
-    private var hasPendingWrites = false
+    private var pendingTitle: String? = null
+    @Volatile
+    private var pendingTaskList: List<NoteTask>? = null
     @Volatile
     private var writeGeneration = 0L
     private var roomWriteJob: Job? = null
@@ -187,12 +192,7 @@ class EditorViewModel(
         )
     }
 
-    fun updateTaskList(list: List<NoteTask>) = update { note ->
-        note.copy(
-            taskList = list,
-            modifiedDate = Instant.now().epochSecond,
-        )
-    }
+    fun updateTaskList(list: List<NoteTask>) = sendMutation(Mutation.TaskList(list))
 
     fun toList() = update { note ->
         note.copy(
@@ -252,46 +252,57 @@ class EditorViewModel(
     private suspend fun handleMutation(mutation: Mutation) {
         when (mutation) {
             is Mutation.Content -> {
-                val note = awaitNote() ?: return
-                currentNote = note.copy(
-                    content = mutation.content,
-                    modifiedDate = Instant.now().epochSecond,
-                )
-                scheduleContentWrites()
+                pendingContent = mutation.content
+                scheduleDebouncedWrites()
             }
 
             is Mutation.Title -> {
-                val note = awaitNote() ?: return
-                currentNote = note.copy(
-                    title = mutation.title,
-                    modifiedDate = Instant.now().epochSecond,
-                )
-                scheduleContentWrites()
+                pendingTitle = mutation.title
+                scheduleDebouncedWrites()
+            }
+
+            is Mutation.TaskList -> {
+                pendingTaskList = mutation.taskList
+                scheduleDebouncedWrites()
             }
 
             is Mutation.Transform -> {
-                val note = awaitNote() ?: return
-                cancelContentWrites()
-                currentNote = mutation.transform(note)
-                persist(sync = true)
+                cancelDebouncedWrites()
+                // Discrete actions persist immediately, but first fold in whatever the user has
+                // typed so the transform (e.g. toList) sees the pending content/title/tasks.
+                val note = latestNote() ?: return
+                val transformed = mutation.transform(applyPendingFields(note))
+                persistNote(transformed, sync = true)
+                clearPendingFields()
             }
 
             is Mutation.Flush -> {
-                cancelContentWrites()
+                cancelDebouncedWrites()
                 flushPendingWrites()
                 mutation.ack?.complete(Unit)
             }
         }
     }
 
-    private suspend fun awaitNote(): Note? {
-        currentNote?.let { return it }
+    private suspend fun latestNote(): Note? {
         val noteId = noteIdFlow.filterNotNull().first()
-        return noteRepository.getById(noteId).filterNotNull().first().also { currentNote = it }
+        return noteRepository.getById(noteId).first()
     }
 
-    private fun scheduleContentWrites() {
-        hasPendingWrites = true
+    private fun applyPendingFields(note: Note): Note {
+        val content = pendingContent
+        val title = pendingTitle
+        val taskList = pendingTaskList
+        if (content == null && title == null && taskList == null) return note
+        return note.copy(
+            content = content ?: note.content,
+            title = title ?: note.title,
+            taskList = taskList ?: note.taskList,
+            modifiedDate = Instant.now().epochSecond,
+        )
+    }
+
+    private fun scheduleDebouncedWrites() {
         val generation = ++writeGeneration
 
         // Room is cheap, so the index catches up quickly; the vault write is debounced much
@@ -299,17 +310,17 @@ class EditorViewModel(
         roomWriteJob?.cancel()
         roomWriteJob = syncScope.launch(ioDispatcher) {
             delay(ROOM_DEBOUNCE_MS)
-            persist(sync = false, generation = generation)
+            persistPending(sync = false, generation = generation)
         }
 
         vaultWriteJob?.cancel()
         vaultWriteJob = syncScope.launch(ioDispatcher) {
             delay(VAULT_DEBOUNCE_MS)
-            persist(sync = true, generation = generation)
+            persistPending(sync = true, generation = generation)
         }
     }
 
-    private fun cancelContentWrites() {
+    private fun cancelDebouncedWrites() {
         writeGeneration++
         roomWriteJob?.cancel()
         roomWriteJob = null
@@ -318,22 +329,38 @@ class EditorViewModel(
     }
 
     private suspend fun flushPendingWrites() {
-        if (hasPendingWrites) persist(sync = true)
+        if (hasPendingFields()) persistPending(sync = true)
     }
 
-    private suspend fun persist(sync: Boolean, generation: Long? = null) {
+    private fun hasPendingFields(): Boolean =
+        pendingContent != null || pendingTitle != null || pendingTaskList != null
+
+    private fun clearPendingFields() {
+        pendingContent = null
+        pendingTitle = null
+        pendingTaskList = null
+    }
+
+    private suspend fun persistPending(sync: Boolean, generation: Long? = null) {
         persistMutex.withLock {
             // A newer mutation superseded the debounced writer while it was waiting.
             if (generation != null && generation != writeGeneration) return
-            val note = currentNote ?: return
-            noteRepository.updateNotes(note, sync = sync)
-            if (sync) hasPendingWrites = false
+            val note = latestNote() ?: return
+            noteRepository.updateNotes(applyPendingFields(note), sync = sync)
+            // Only the vault write completes the save; the Room write must leave the pending
+            // fields in place so the later vault push still carries them.
+            if (sync && (generation == null || generation == writeGeneration)) clearPendingFields()
         }
+    }
+
+    private suspend fun persistNote(note: Note, sync: Boolean) {
+        persistMutex.withLock { noteRepository.updateNotes(note, sync = sync) }
     }
 
     private sealed interface Mutation {
         data class Content(val content: String) : Mutation
         data class Title(val title: String) : Mutation
+        data class TaskList(val taskList: List<NoteTask>) : Mutation
         class Transform(val transform: suspend (Note) -> Note) : Mutation
         class Flush(val ack: CompletableDeferred<Unit>?) : Mutation
     }
