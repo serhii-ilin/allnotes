@@ -12,6 +12,8 @@ import android.provider.DocumentsContract
 internal object SafDirectoryListing {
 
     data class Entry(
+        /** Provider document id; used directly for child queries (never re-parsed from the URI). */
+        val docId: String,
         val name: String,
         val documentUri: Uri,
         val isDirectory: Boolean,
@@ -34,6 +36,7 @@ internal object SafDirectoryListing {
             val size = if (sizeCol >= 0 && !cursor.isNull(sizeCol)) cursor.getLong(sizeCol) else -1L
             out.add(
                 Entry(
+                    docId = docId,
                     name = name,
                     documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId),
                     isDirectory = mime == DocumentsContract.Document.MIME_TYPE_DIR,
