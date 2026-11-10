@@ -51,6 +51,11 @@ android {
         }
     }
 
+    lint {
+        // Translations are contributed over time; untranslated strings fall back to English.
+        warning += "MissingTranslation"
+    }
+
     dependenciesInfo {
         // Disables dependency metadata when building APKs.
         includeInApk = false
