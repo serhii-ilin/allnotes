@@ -15,6 +15,9 @@ import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.preferences.CloudService
 import kotlin.math.abs
 
+/** Complete scans that must all miss a mapped vault file before its note is binned. */
+private const val MISSING_SCANS_BEFORE_BIN = 2
+
 class SynchronizeNotes(
     private val idMappingRepository: IdMappingRepository,
     private val notebookDao: NotebookDao,
@@ -85,6 +88,13 @@ class SynchronizeNotes(
                             val vaultPath = mapping.storageUri.orEmpty()
                             if (service == CloudService.FILE_STORAGE) {
                                 val mappingState = VaultMappingState.resolve(mapping.extras)
+                                if (mappingState != null && mappingState.missingScanCount > 0) {
+                                    mappingUpdates.add(
+                                        mapping.copy(
+                                            extras = VaultMappingState.encode(mappingState.copy(missingScanCount = 0)),
+                                        ),
+                                    )
+                                }
                                 val parsedExtras = VaultMappingExtras.parse(mapping.extras)
                                 val baseline = mappingState?.baselineHash ?: parsedExtras.baselineHash.orEmpty()
                                 val notebookName = localNote.notebookId?.let {
@@ -177,6 +187,21 @@ class SynchronizeNotes(
                             mapping.storageUri?.contains("://") == true
                         ) {
                             logDebug("Awaiting legacy relink for ${localNote.title}")
+                        } else if (
+                            service == CloudService.FILE_STORAGE &&
+                            !VaultPaths.vaultMappingPath(mapping.storageUri).isNullOrBlank() &&
+                            (VaultMappingState.resolve(mapping.extras)?.missingScanCount ?: 0) < MISSING_SCANS_BEFORE_BIN - 1
+                        ) {
+                            // One scan that does not list the file is not proof it is gone; bin only on a repeat.
+                            val prior = VaultMappingState.resolve(mapping.extras) ?: VaultMappingState(baselineHash = "")
+                            logDebug("Vault file missing once, keeping note: ${localNote.title}")
+                            mappingUpdates.add(
+                                mapping.copy(
+                                    extras = VaultMappingState.encode(
+                                        prior.copy(missingScanCount = prior.missingScanCount + 1),
+                                    ),
+                                ),
+                            )
                         } else {
                             val syncNote = SyncNote(
                                 title = localNote.title,
@@ -194,6 +219,8 @@ class SynchronizeNotes(
                                     val state = (prior ?: VaultMappingState(baselineHash = "")).copy(
                                         binnedVaultPath = vaultPath,
                                         vaultAttachmentPaths = prior?.vaultAttachmentPaths ?: emptyList(),
+                                        missingScanCount = 0,
+                                        userBinned = false,
                                     )
                                     mappingUpdates.add(
                                         mapping.copy(
@@ -259,7 +286,7 @@ class SynchronizeNotes(
                                                 extras = VaultMappingState.encode(
                                                     (VaultMappingState.resolve(mapping.extras)
                                                         ?: VaultMappingState(baselineHash = ""))
-                                                        .copy(binnedVaultPath = null),
+                                                        .copy(binnedVaultPath = null, userBinned = false, missingScanCount = 0),
                                                 ),
                                             ),
                                         )
@@ -285,7 +312,7 @@ class SynchronizeNotes(
                                         extras = VaultMappingState.encode(
                                             (VaultMappingState.resolve(mapping.extras)
                                                 ?: VaultMappingState(baselineHash = ""))
-                                                .copy(binnedVaultPath = null),
+                                                .copy(binnedVaultPath = null, userBinned = false, missingScanCount = 0),
                                         ),
                                     ),
                                 )

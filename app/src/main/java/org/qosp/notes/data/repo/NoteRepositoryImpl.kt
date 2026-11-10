@@ -50,6 +50,9 @@ import org.qosp.notes.preferences.SortMethod
 import org.qosp.notes.ui.utils.Toaster
 import java.time.Instant
 
+/** Mapped files absent from one complete scan that make the scan untrustworthy (or more than half of them). */
+private const val MASS_MISSING_COUNT = 3
+
 class NoteRepositoryImpl(
     private val noteDao: NoteDao,
     private val idMappingDao: IdMappingDao,
@@ -123,10 +126,17 @@ class NoteRepositoryImpl(
         )
     }
 
+    private fun isMassMissing(mappedPaths: Set<String>, scan: List<SyncNote>): Boolean {
+        if (mappedPaths.isEmpty()) return false
+        val scanned = scan.map { VaultPaths.normalizeNotePath(it.idStr) }.toSet()
+        val missing = mappedPaths.count { VaultPaths.normalizeNotePath(it) !in scanned }
+        return missing >= MASS_MISSING_COUNT || missing * 2 > mappedPaths.size
+    }
+
     private suspend fun flushPendingVaultDeletes(syncProvider: ISyncBackend) {
         val pending = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE).filter { row ->
-            row.isDeletedLocally &&
-                VaultMappingState.resolve(row.extras)?.pendingVaultDelete == true
+            val state = VaultMappingState.resolve(row.extras)
+            row.isDeletedLocally && state?.pendingVaultDelete == true && state.userBinned
         }
         for (mapping in pending) {
             val note = getById(mapping.localNoteId).first() ?: continue
@@ -196,11 +206,14 @@ class NoteRepositoryImpl(
                 }
                 val mappedPaths = activeMappings.mapNotNull { VaultPaths.vaultMappingPath(it.storageUri) }.toSet()
                 val scanResult = syncProvider.getAll(mappedPaths)
-                // An empty listing while several notes are mapped is far more likely a provider glitch or an
+                // An empty listing while notes are mapped is far more likely a provider glitch or an
                 // emptied folder than every note being deleted. Fail the scan so no note is binned.
                 val emptyScanWhileMapped = syncProvider.type == CloudService.FILE_STORAGE &&
-                    scanResult != null && scanResult.isEmpty() && mappedPaths.size >= 2
-                val remoteScanSucceeded = scanResult != null && !emptyScanWhileMapped
+                    scanResult != null && scanResult.isEmpty() && mappedPaths.isNotEmpty()
+                // Many mapped files vanishing in one complete scan points at a bad listing, not many deletions.
+                val massMissing = syncProvider.type == CloudService.FILE_STORAGE && scanResult != null &&
+                    isMassMissing(mappedPaths, scanResult)
+                val remoteScanSucceeded = scanResult != null && !emptyScanWhileMapped && !massMissing
                 if (!remoteScanSucceeded) {
                     val msg = "Vault scan incomplete; local notes were not changed."
                     Log.w(tag, msg)
@@ -428,6 +441,8 @@ class NoteRepositoryImpl(
                         binnedVaultPath = vaultPath,
                         vaultAttachmentPaths = prior?.vaultAttachmentPaths ?: emptyList(),
                         pendingVaultDelete = true,
+                        userBinned = true,
+                        missingScanCount = 0,
                     )
                     idMappingDao.update(
                         mapping.copy(
@@ -477,7 +492,7 @@ class NoteRepositoryImpl(
                                         isDeletedLocally = false,
                                         extras = VaultMappingState.encode(
                                             (state ?: VaultMappingState(baselineHash = ""))
-                                                .copy(binnedVaultPath = null, pendingVaultDelete = false),
+                                                .copy(binnedVaultPath = null, pendingVaultDelete = false, userBinned = false),
                                         ),
                                     ),
                                 )
@@ -527,7 +542,7 @@ class NoteRepositoryImpl(
                 mapping.copy(
                     storageUri = created.idStr,
                     isDeletedLocally = false,
-                    extras = VaultMappingState.encode(state.copy(binnedVaultPath = null, pendingVaultDelete = false)),
+                    extras = VaultMappingState.encode(state.copy(binnedVaultPath = null, pendingVaultDelete = false, userBinned = false)),
                 ),
             )
         }
@@ -559,6 +574,11 @@ class NoteRepositoryImpl(
             deleted.forEach { note ->
                 val mapping = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type) ?: return@forEach
                 val state = VaultMappingState.resolve(mapping.extras)
+                // A bin caused by a scan that missed the file never proves the user wanted the file gone.
+                if (state?.binnedVaultPath != null && !state.userBinned) {
+                    idMappingDao.deleteByLocalId(note.id)
+                    return@forEach
+                }
                 val path = state?.binnedVaultPath ?: mapping.storageUri ?: return@forEach
                 val others = idMappingDao.countActiveMappingsAtPath(
                     syncProvider.type,

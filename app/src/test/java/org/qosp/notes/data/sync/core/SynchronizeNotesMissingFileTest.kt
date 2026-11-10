@@ -32,7 +32,7 @@ class SynchronizeNotesMissingFileTest {
             localNoteId = 4L,
             remoteNoteId = null,
             provider = CloudService.FILE_STORAGE,
-            extras = VaultMappingState.encode(VaultMappingState(baselineHash = "h")),
+            extras = VaultMappingState.encode(VaultMappingState(baselineHash = "h", missingScanCount = 1)),
             isDeletedLocally = false,
             storageUri = path,
         )
@@ -45,5 +45,32 @@ class SynchronizeNotesMissingFileTest {
         assertTrue(binMapping.isDeletedLocally)
         val state = VaultMappingState.resolve(binMapping.extras)!!
         assertEquals(path, state.binnedVaultPath)
+    }
+
+    @Test
+    fun firstMiss_keepsNoteAndMapping_onlyCountsTheMiss() = runTest {
+        mockkStatic(android.util.Log::class)
+        every { android.util.Log.d(any<String>(), any<String>()) } returns 0
+        val idMappingRepository = mockk<IdMappingRepository>()
+        val notebookDao = mockk<NotebookDao>()
+        coEvery { notebookDao.getById(any()) } returns flowOf(null)
+        val sync = SynchronizeNotes(idMappingRepository, notebookDao)
+        val path = "Vanish.md"
+        val mapping = IdMapping(
+            localNoteId = 4L,
+            remoteNoteId = null,
+            provider = CloudService.FILE_STORAGE,
+            extras = VaultMappingState.encode(VaultMappingState(baselineHash = "h")),
+            isDeletedLocally = false,
+            storageUri = path,
+        )
+        val local = Note(id = 4L, title = "Vanish", content = "Body")
+        coEvery { idMappingRepository.getAllByProvider(CloudService.FILE_STORAGE) } returns listOf(mapping)
+        val result = sync(listOf(local), emptyList(), CloudService.FILE_STORAGE, vaultExportCutoffEpoch = 1L)
+        assertTrue(result.localUpdates.none { it is NoteAction.Delete })
+        val update = result.newMappings.single()
+        assertEquals(path, update.storageUri)
+        assertEquals(false, update.isDeletedLocally)
+        assertEquals(1, VaultMappingState.resolve(update.extras)!!.missingScanCount)
     }
 }

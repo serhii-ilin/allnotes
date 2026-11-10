@@ -18,6 +18,7 @@ import org.junit.Test
 import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.repo.IdMappingRepository
+import org.qosp.notes.data.sync.fs.vault.VaultMappingState
 import org.qosp.notes.preferences.CloudService
 
 class SynchronizeNotesTest {
@@ -192,7 +193,8 @@ class SynchronizeNotesTest {
             localNoteId = 1L,
             remoteNoteId = 2L,
             provider = CloudService.FILE_STORAGE,
-            extras = null,
+            // Second consecutive miss: the first one only counts.
+            extras = VaultMappingState.encode(VaultMappingState(baselineHash = "", missingScanCount = 1)),
             isDeletedLocally = false,
             storageUri = "2",
         )

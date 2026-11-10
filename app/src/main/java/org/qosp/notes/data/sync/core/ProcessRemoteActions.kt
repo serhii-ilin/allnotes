@@ -143,6 +143,14 @@ class ProcessRemoteActions(
                         note.id,
                     ) == 0
                 }
+            val priorState = VaultMappingState.resolve(mapping.extras)
+            if (syncProvider.type == CloudService.FILE_STORAGE && priorState?.binnedVaultPath != null &&
+                !priorState.userBinned && removeAssets
+            ) {
+                // Binned because a scan missed the file, not because the user deleted it: drop only the Room rows.
+                idMappingDao.deleteByLocalId(note.id)
+                return@let
+            }
             val mappingForDelete = if (vaultPath != null && mapping.storageUri != vaultPath) {
                 mapping.copy(storageUri = vaultPath)
             } else {

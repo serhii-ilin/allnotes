@@ -22,6 +22,10 @@ data class VaultMappingState(
     val binnedVaultPath: String? = null,
     /** Remote vault delete still needed after local bin (e.g. folder was unavailable). */
     val pendingVaultDelete: Boolean = false,
+    /** Consecutive complete scans that did not list this note's file; the note is binned on the second. */
+    val missingScanCount: Int = 0,
+    /** True only when the user binned the note. A bin caused by a missing file never deletes the vault file. */
+    val userBinned: Boolean = false,
 ) {
     val vaultAttachmentPathSet: Set<String> = vaultAttachmentPaths.toSet()
 
@@ -81,6 +85,7 @@ data class VaultMappingState(
                 conflictCopyPath = existing?.conflictCopyPath,
                 binnedVaultPath = existing?.binnedVaultPath,
                 pendingVaultDelete = existing?.pendingVaultDelete == true,
+                userBinned = existing?.userBinned == true,
             )
         }
     }

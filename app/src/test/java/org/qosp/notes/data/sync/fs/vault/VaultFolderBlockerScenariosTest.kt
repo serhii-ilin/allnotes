@@ -388,6 +388,8 @@ class VaultFolderBlockerScenariosTest {
     fun externallyDeletedMappedFile_doesNotFailScan() = runTest {
         val h = NoteRepositoryVaultHarness(this)
         val id = h.insertAndSync(Note(title = "Gone", content = "x"))
+        // A second mapped note keeps the vault from reading as emptied, which fails the scan instead.
+        h.insertAndSync(Note(title = "Stays", content = "y"))
         val path = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)!!.storageUri!!
         h.syncNotes()
         h.vaultFs.delete(path)
