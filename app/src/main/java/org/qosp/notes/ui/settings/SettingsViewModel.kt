@@ -27,6 +27,7 @@ import org.qosp.notes.data.sync.core.Success
 import org.qosp.notes.data.sync.fs.isSameVaultTree
 import org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
+import org.qosp.notes.data.sync.fs.vault.VaultPaths
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.preferences.PreferenceRepository
@@ -64,7 +65,11 @@ class SettingsViewModel(
         val rescanning: Boolean = false,
         val clearing: Boolean = false,
         val recoveryItems: Int? = null,
+        val conflicts: List<VaultConflict> = emptyList(),
     )
+
+    /** A mapped note whose file is a conflict copy written by a sync. */
+    data class VaultConflict(val noteId: Long, val title: String, val path: String)
 
     private val _vaultUiState = MutableStateFlow(VaultUiState())
     val vaultUiState: StateFlow<VaultUiState> = _vaultUiState.asStateFlow()
@@ -78,6 +83,21 @@ class SettingsViewModel(
         val root = DocumentFile.fromTreeUri(context, Uri.parse(loc)) ?: return null
         return SafVaultWriteStore(context, root)
     }
+
+    fun refreshVaultConflicts() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val conflicts = loadVaultConflicts()
+            _vaultUiState.update { it.copy(conflicts = conflicts) }
+        }
+    }
+
+    suspend fun loadVaultConflicts(): List<VaultConflict> =
+        noteRepository.getNotesByCloudService(CloudService.FILE_STORAGE).mapNotNull { (mapping, note) ->
+            if (mapping.isDeletedLocally || note == null || note.isDeleted) return@mapNotNull null
+            val path = VaultPaths.vaultMappingPath(mapping.storageUri) ?: return@mapNotNull null
+            if (!VaultPaths.isConflictCopyPath(path)) return@mapNotNull null
+            VaultConflict(note.id, note.title, path)
+        }.sortedBy { it.path }
 
     fun refreshVaultRecoveryCount() {
         viewModelScope.launch(Dispatchers.IO) { updateRecoveryCount() }
@@ -113,6 +133,7 @@ class SettingsViewModel(
             } finally {
                 _vaultUiState.update { it.copy(rescanning = false) }
                 updateRecoveryCount()
+                refreshVaultConflicts()
             }
         }
     }

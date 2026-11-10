@@ -143,6 +143,15 @@
         <item quantity="one">%d pending item · clear if sync appears stuck</item>
         <item quantity="other">%d pending items · clear if sync appears stuck</item>
     </plurals>
+    <string name="preferences_vault_conflicts">Sync conflicts</string>
+    <string name="preferences_vault_no_conflicts">None</string>
+    <plurals name="vault_conflict_copies">
+        <item quantity="one">%d conflict copy</item>
+        <item quantity="other">%d conflict copies</item>
+    </plurals>
+    <string name="vault_conflicts_dialog_title">Conflict copies</string>
+    <string name="vault_cloud_folder_title">Folder from another app</string>
+    <string name="vault_cloud_folder_message">This folder is provided by another app (for example a cloud drive). Listing can be slow or incomplete; Quillpad keeps notes whose files go missing instead of deleting them.</string>
     <string name="preferences_file_storage_location">Storage location</string>
     <string name="storage_internal_label">Internal storage</string>
     <string name="preferences_file_storage_choose_hint">Tap to choose a folder</string>

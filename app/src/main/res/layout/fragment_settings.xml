@@ -71,6 +71,14 @@
                     app:subText="@string/preferences_vault_clear_recovery_hint"
                     app:text="@string/preferences_vault_clear_recovery"/>
 
+                <org.qosp.notes.ui.utils.views.PreferenceView
+                    android:id="@+id/setting_vault_conflicts"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:iconSrc="@drawable/ic_file"
+                    app:subText="@string/preferences_vault_no_conflicts"
+                    app:text="@string/preferences_vault_conflicts"/>
+
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"

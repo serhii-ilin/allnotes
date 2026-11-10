@@ -3,6 +3,7 @@ package org.qosp.notes.data.sync.fs.vault
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VaultPathsTest {
@@ -56,5 +57,16 @@ class VaultPathsTest {
     fun linkResolver_bareImageInParentFolder() {
         val abs = VaultLinkResolver.resolve("Work/Meeting.md", "photo.jpg")
         assertEquals("Work/photo.jpg", abs)
+    }
+
+    @Test
+    fun isConflictCopyPath_matchesOnlyConflictNames() {
+        assertTrue(VaultPaths.isConflictCopyPath(VaultPaths.conflictPath("Work/Plan.md", 1700000000L)))
+        assertTrue(VaultPaths.isConflictCopyPath("Plan (conflict 12).txt"))
+        assertTrue(VaultPaths.isConflictCopyPath("Work/Plan (conflict 12).MD"))
+        assertFalse(VaultPaths.isConflictCopyPath("Plan.md"))
+        assertFalse(VaultPaths.isConflictCopyPath("Plan (conflict).md"))
+        assertFalse(VaultPaths.isConflictCopyPath("Plan (conflict 12) notes.md"))
+        assertFalse(VaultPaths.isConflictCopyPath("Plan (conflict 12)/Inner.md"))
     }
 }

@@ -8,6 +8,7 @@ import android.view.View
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.Toolbar
 import androidx.core.net.toUri
+import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -25,6 +26,7 @@ import org.qosp.notes.ui.utils.RestoreNotesContract
 import org.qosp.notes.ui.utils.StorageLocationContract
 import org.qosp.notes.ui.utils.collect
 import org.qosp.notes.ui.utils.liftAppBarOnScroll
+import org.qosp.notes.ui.utils.navigateSafely
 import org.qosp.notes.ui.utils.viewBinding
 import java.time.LocalDate
 import java.time.LocalTime
@@ -173,6 +175,7 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
             binding.settingStorageLocation.subText =
                 path?.takeIf { it.isNotBlank() } ?: getString(R.string.preferences_file_storage_choose_hint)
             model.refreshVaultRecoveryCount()
+            model.refreshVaultConflicts()
         }
 
         binding.settingStorageLocation.setOnClickListener {
@@ -196,7 +199,15 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
                 .show()
         }
 
+        binding.settingVaultConflicts.setOnClickListener { showConflictsDialog() }
+
         model.vaultUiState.collect(viewLifecycleOwner) { state ->
+            val conflictCount = state.conflicts.size
+            binding.settingVaultConflicts.subText = if (conflictCount == 0) {
+                getString(R.string.preferences_vault_no_conflicts)
+            } else {
+                resources.getQuantityString(R.plurals.vault_conflict_copies, conflictCount, conflictCount)
+            }
             with(binding.settingVaultRebuildIndex) {
                 isEnabled = !state.rescanning
                 alpha = if (state.rescanning) 0.5f else 1f
@@ -223,6 +234,23 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
         }
 
         model.folderSwapPrompts.collect(viewLifecycleOwner) { prompt -> showFolderSwapDialog(prompt) }
+    }
+
+    private fun showConflictsDialog() {
+        val conflicts = model.vaultUiState.value.conflicts
+        if (conflicts.isEmpty()) return
+        val labels = conflicts.map { "${it.title.ifBlank { it.path }}\n${it.path}" }.toTypedArray()
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.vault_conflicts_dialog_title)
+            .setItems(labels) { _, which ->
+                val conflict = conflicts[which]
+                findNavController().navigateSafely(
+                    SettingsFragmentDirections.actionSettingsToEditor("editor_${conflict.noteId}")
+                        .setNoteId(conflict.noteId),
+                )
+            }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
     }
 
     private fun setupColorSchemeListener() = binding.settingColorScheme.setOnClickListener {

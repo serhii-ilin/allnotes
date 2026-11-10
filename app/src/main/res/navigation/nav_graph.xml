@@ -125,7 +125,11 @@
     <fragment
             android:id="@+id/fragment_settings"
             android:name="org.qosp.notes.ui.settings.SettingsFragment"
-            android:layout="@layout/fragment_settings"/>
+            android:layout="@layout/fragment_settings">
+        <action
+                android:id="@+id/action_settings_to_editor"
+                app:destination="@id/fragment_editor"/>
+    </fragment>
 
     <fragment
             android:id="@+id/fragment_search"

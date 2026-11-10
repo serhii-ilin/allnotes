@@ -176,6 +176,12 @@ object VaultPaths {
         return normalize(if (parent.isEmpty()) conflictName else "$parent/$conflictName")
     }
 
+    private val conflictNameRegex = Regex(""" \(conflict \d+\)\.(md|txt)$""", RegexOption.IGNORE_CASE)
+
+    /** True when the file name is one [conflictPath] would produce. */
+    fun isConflictCopyPath(path: String): Boolean =
+        conflictNameRegex.containsMatchIn(path.substringAfterLast('/'))
+
     private fun decodeTraversal(segment: String): String {
         require(!segment.equals("..", ignoreCase = true)) { "Path traversal: $segment" }
         return segment
