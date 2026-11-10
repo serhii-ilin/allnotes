@@ -27,6 +27,7 @@ object UIModule {
                 notebookRepository = get(),
                 preferenceRepository = get(),
                 vaultTreeAccess = get(),
+                editorSessionRegistry = get(),
                 syncScope = get(),
             )
         }
