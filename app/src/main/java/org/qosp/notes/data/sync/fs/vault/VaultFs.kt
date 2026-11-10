@@ -48,6 +48,10 @@ interface VaultFs {
         val name: String,
         val relativePath: String,
         val isDirectory: Boolean,
+        /** Provider-reported modification time in epoch milliseconds (0 when unknown). */
+        val lastModifiedMs: Long = 0L,
+        /** Provider-reported size in bytes (-1 when unknown). */
+        val size: Long = -1L,
     )
 
     companion object {
