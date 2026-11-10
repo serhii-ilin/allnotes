@@ -30,7 +30,7 @@ class InMemoryVaultFs(
     private data class Node(
         var bytes: ByteArray? = null,
         var isDir: Boolean = false,
-        var mtimeSec: Long = System.currentTimeMillis() / 1000,
+        var mtimeMs: Long = nextMtime(),
         var mime: String = "application/octet-stream",
     )
 
@@ -85,12 +85,29 @@ class InMemoryVaultFs(
                 if (seen.add(childPath)) {
                     val isDir = nodes[childPath]?.isDir == true ||
                         nodes.keys.any { it.startsWith("$childPath/") }
-                    out.add(VaultFs.VaultFsEntry(name, childPath, isDir))
+                    val child = nodes[childPath]
+                    out.add(
+                        VaultFs.VaultFsEntry(
+                            name = name,
+                            relativePath = childPath,
+                            isDirectory = isDir,
+                            lastModifiedMs = child?.mtimeMs ?: 0L,
+                            size = child?.bytes?.size?.toLong() ?: -1L,
+                        ),
+                    )
                 }
             } else if (rest.isNotEmpty()) {
                 val node = nodes[key]!!
                 if (seen.add(key)) {
-                    out.add(VaultFs.VaultFsEntry(rest, key, node.isDir))
+                    out.add(
+                        VaultFs.VaultFsEntry(
+                            name = rest,
+                            relativePath = key,
+                            isDirectory = node.isDir,
+                            lastModifiedMs = node.mtimeMs,
+                            size = node.bytes?.size?.toLong() ?: -1L,
+                        ),
+                    )
                 }
             }
         }
@@ -138,7 +155,7 @@ class InMemoryVaultFs(
         }
         val path = norm(relativePath)
         ensureParents(path)
-        nodes[path] = Node(bytes = bytes, mime = mimeType, mtimeSec = System.currentTimeMillis() / 1000)
+        nodes[path] = Node(bytes = bytes, mime = mimeType, mtimeMs = nextMtime())
     }
 
     override fun ensureDirectory(relativeDir: String) {
@@ -155,7 +172,7 @@ class InMemoryVaultFs(
     }
 
     override fun lastModifiedEpochSec(relativePath: String): Long =
-        nodes[resolveKey(relativePath)]?.mtimeSec ?: 0L
+        nodes[resolveKey(relativePath)]?.mtimeMs?.div(1000) ?: 0L
 
     override fun copyFile(fromRelative: String, toRelative: String, deleteSource: Boolean) {
         val from = resolveKey(fromRelative)
@@ -197,4 +214,18 @@ class InMemoryVaultFs(
     }
 
     fun snapshotPaths(): Set<String> = nodes.keys.filter { nodes[it]?.bytes != null }.toSet()
+
+    companion object {
+        private val lastMtime = java.util.concurrent.atomic.AtomicLong(0L)
+
+        /** Monotonic ms clock so consecutive writes always advance mtime (mirrors real file mtimes). */
+        private fun nextMtime(): Long {
+            while (true) {
+                val now = System.currentTimeMillis()
+                val prev = lastMtime.get()
+                val next = if (now > prev) now else prev + 1
+                if (lastMtime.compareAndSet(prev, next)) return next
+            }
+        }
+    }
 }

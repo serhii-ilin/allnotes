@@ -34,9 +34,12 @@ import org.qosp.notes.data.sync.fs.vault.VaultRecoverableWrite
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultWriteContext
 import org.qosp.notes.data.sync.fs.vault.VaultWriteStore
+import org.qosp.notes.data.sync.fs.vault.VaultScanCache
+import org.qosp.notes.data.sync.fs.vault.VaultWriteClock
 import org.qosp.notes.data.sync.core.BackendValidationResult
 import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.ui.attachments.getAttachmentUri
+import java.io.File
 import java.io.IOException
 import kotlin.time.measureTimedValue
 
@@ -46,6 +49,7 @@ class StorageBackend(
     private val notebookDao: NotebookDao,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
     vaultFs: VaultFs? = null,
+    private val vaultWriteClock: VaultWriteClock = VaultWriteClock(),
 ) : ISyncBackend {
 
     private val injectedVaultFs: VaultFs? = vaultFs
@@ -74,6 +78,11 @@ class StorageBackend(
     }
 
     private fun vaultFs(): VaultFs = injectedVaultFs ?: lazySafVaultFs
+
+    /** Per-vault scan cache in app-private storage, keyed by the vault scope (one instance per backend). */
+    private val scanCache: VaultScanCache by lazy {
+        VaultScanCache(File(context.filesDir, "vault-scan-cache/${vaultFs().scopeId}.json"))
+    }
 
     private fun vaultWriteStore(fs: VaultFs): VaultWriteStore = when (fs) {
         is SafVaultFs -> SafVaultWriteStore(context, fs.root, fs)
@@ -138,7 +147,8 @@ class StorageBackend(
         if (mappingState != null && !oldRaw.isNullOrBlank() &&
             mappingState.baselineHash.isNotEmpty()
         ) {
-            val diskSync = if (fs.isFile(currentPath)) pathToSyncNote(fs, currentPath) else null
+            // Reuse the raw text read above instead of re-reading the file.
+            val diskSync = oldRaw?.let { pathToSyncNote(currentPath, it, fs.lastModifiedEpochSec(currentPath) * 1000) }
             if (diskSync != null) {
                 val diskHash = VaultSyncImport.logicalHashFromRemoteFile(
                     diskSync,
@@ -188,6 +198,8 @@ class StorageBackend(
         } else {
             targetPath
         }
+        // oldRaw is the single read of the current file in this method: pass it through so writeNoteAt
+        // preserves the on-disk front matter without re-reading (the recovery journal still reads it once).
         val syncNote = writeNoteAt(
             writePath,
             noteForWrite,
@@ -244,18 +256,48 @@ class StorageBackend(
         return@run try {
             invalidateVaultIndex()
             (fs as? SafVaultFs)?.beginDirectoryCache()
-            val indexed = VaultDocumentTree.indexNotes(fs)
+            val candidates = VaultDocumentTree.listNoteCandidates(fs)
+            val read = readNoteTextsWithCache(fs, candidates)
+            val indexed = VaultDocumentTree.filterIndexed(candidates, read.rawTexts)
             if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexed, knownMappedPaths)) {
                 Log.w(TAG, "getAll: mapped note visible but missing from index; failing scan")
                 return@run null
             }
-            indexed.map { file -> pathToSyncNote(fs, file.relativePath) }
+            val notes = indexed.map { file ->
+                val raw = read.rawTexts[file.relativePath] ?: throw IOException("Cannot read ${file.relativePath}")
+                pathToSyncNote(file.relativePath, raw, file.lastModifiedMs)
+            }
+            scanCache.save(read.cacheEntries)
+            notes
         } catch (e: Exception) {
             Log.e(TAG, "getAll: scan failed", e)
             null
         } finally {
             (fs as? SafVaultFs)?.endDirectoryCache()
         }
+    }
+
+    private data class ScanReadResult(
+        val rawTexts: Map<String, String>,
+        val cacheEntries: Map<String, VaultScanCache.Entry>,
+    )
+
+    /** Reads each candidate at most once, reusing cached raw text when the listing (mtime, size) is unchanged. */
+    private fun readNoteTextsWithCache(fs: VaultFs, candidates: List<VaultDocumentTree.IndexedVaultFile>): ScanReadResult {
+        val cache = scanCache
+        val existing = cache.load()
+        val rawTexts = mutableMapOf<String, String>()
+        val cacheEntries = mutableMapOf<String, VaultScanCache.Entry>()
+        for (cand in candidates) {
+            val cached = existing[cand.relativePath]
+            val raw = when {
+                cached != null && cached.lastModifiedMs == cand.lastModifiedMs && cached.size == cand.size -> cached.raw
+                else -> fs.readText(cand.relativePath) ?: continue
+            }
+            rawTexts[cand.relativePath] = raw
+            cacheEntries[cand.relativePath] = VaultScanCache.Entry(cand.lastModifiedMs, cand.size, raw)
+        }
+        return ScanReadResult(rawTexts, cacheEntries)
     }
 
     suspend fun validateConfig(): BackendValidationResult {
@@ -501,6 +543,7 @@ class StorageBackend(
         val generationAtCapture = vaultSyncCoordinator.currentGeneration()
         val writeContext = VaultWriteContext(store.vaultScopeId(), generationAtCapture)
         VaultRecoverableWrite(store).write(path, text, writeContext)
+        vaultWriteClock.markWrite()
         invalidateVaultIndex()
         if (vaultSyncCoordinator.isStaleMapping(generationAtCapture)) {
             throw IOException("Vault generation changed during write; refusing to treat result as committed")
@@ -522,12 +565,16 @@ class StorageBackend(
 
     private fun pathToSyncNote(fs: VaultFs, relativePath: String): SyncNote {
         val raw = fs.readText(relativePath) ?: throw IOException("Cannot read $relativePath")
+        return pathToSyncNote(relativePath, raw, fs.lastModifiedEpochSec(relativePath) * 1000)
+    }
+
+    private fun pathToSyncNote(relativePath: String, raw: String, lastModifiedMs: Long): SyncNote {
         return SyncNote(
             id = 0,
             idStr = relativePath,
             content = raw,
             title = VaultPaths.noteBaseName(relativePath),
-            lastModified = fs.lastModifiedEpochSec(relativePath),
+            lastModified = lastModifiedMs / 1000,
             extra = VaultContentHash.ofText(raw),
         )
     }

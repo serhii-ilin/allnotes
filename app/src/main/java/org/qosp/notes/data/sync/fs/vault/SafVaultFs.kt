@@ -1,6 +1,8 @@
 package org.qosp.notes.data.sync.fs.vault
 
 import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.IOException
 import java.io.InputStream
@@ -16,15 +18,15 @@ class SafVaultFs(
 
     /** Children of one folder, by exact name and by lowercase name (first wins for case-only duplicates). */
     private class DirectoryIndex(
-        val byExactName: Map<String, DocumentFile>,
-        val byLowerName: Map<String, DocumentFile>,
+        val byExactName: Map<String, SafDirectoryListing.Entry>,
+        val byLowerName: Map<String, SafDirectoryListing.Entry>,
     )
 
     private var directoryCache: Map<String, DirectoryIndex>? = null
 
     /** Snapshots folder listings so lookups stop querying the provider. Only [StorageBackend.getAll] enables it. */
     fun beginDirectoryCache() {
-        directoryCache = buildDirectoryCache(root)
+        directoryCache = buildDirectoryCache(root.uri)
     }
 
     fun endDirectoryCache() {
@@ -34,38 +36,47 @@ class SafVaultFs(
     override fun canRead(): Boolean = root.canRead()
     override fun canWrite(): Boolean = root.canWrite()
 
+    // Snapshot-backed lookups (scan path): resolve to an entry URI without building a DocumentFile,
+    // so a SingleDocumentFile is never asked to list/find children.
+
     override fun listChildren(relativeDir: String): List<VaultFs.VaultFsEntry> {
         // A folder that does not exist yet is empty (e.g. a note's asset folder before its first attachment).
-        val dir = resolveDir(relativeDir) ?: return emptyList()
+        val dir = findDirEntry(relativeDir) ?: return emptyList()
         // A null listing of an existing folder is a provider failure; it must not look like an empty folder.
-        val children = dir.listFiles() ?: throw IOException("Cannot list vault directory: $relativeDir")
-        return children.mapNotNull { child ->
-            val name = child.name ?: return@mapNotNull null
-            val rel = childRelative(relativeDir, name)
-            VaultFs.VaultFsEntry(name, rel, child.isDirectory)
+        val children = listDirectory(dir) ?: throw IOException("Cannot list vault directory: $relativeDir")
+        return children.map { entry ->
+            VaultFs.VaultFsEntry(
+                name = entry.name,
+                relativePath = childRelative(relativeDir, entry.name),
+                isDirectory = entry.isDirectory,
+                lastModifiedMs = entry.lastModifiedMs,
+                size = entry.size,
+            )
         }
     }
 
-    override fun isFile(relativePath: String): Boolean =
-        findByRelativePath(relativePath)?.isFile == true
+    override fun isFile(relativePath: String): Boolean = findEntry(relativePath) != null
 
     override fun isDirectory(relativePath: String): Boolean {
         val norm = VaultPaths.normalize(relativePath)
         if (norm.isEmpty()) return root.isDirectory
-        return resolveDir(norm) != null
+        return findDirEntry(norm) != null
     }
 
     override fun readText(relativePath: String): String? {
-        val file = findByRelativePath(relativePath) ?: return null
-        return context.contentResolver.openInputStream(file.uri)?.use {
+        val entry = findEntry(relativePath) ?: return null
+        return context.contentResolver.openInputStream(entry.documentUri)?.use {
             it.bufferedReader().readText()
         }
     }
 
     override fun openRead(relativePath: String): InputStream? {
-        val file = findByRelativePath(relativePath) ?: return null
-        return context.contentResolver.openInputStream(file.uri)
+        val entry = findEntry(relativePath) ?: return null
+        return context.contentResolver.openInputStream(entry.documentUri)
     }
+
+    // DocumentFile-tree lookups (write path): these use the full DocumentFile API (createFile,
+    // renameTo, delete), so they must stay backed by the tree, never a single-document snapshot entry.
 
     override fun writeText(relativePath: String, content: String, mimeType: String) {
         writeBytes(relativePath, content.encodeToByteArray(), mimeType)
@@ -169,10 +180,6 @@ class SafVaultFs(
     }
 
     fun findFileCaseInsensitive(parent: DocumentFile, name: String): DocumentFile? {
-        directoryCache?.get(parent.uri.toString())?.let { index ->
-            index.byExactName[name]?.let { return it }
-            return if (caseInsensitiveLookup) index.byLowerName[name.lowercase()] else null
-        }
         parent.findFile(name)?.let { return it }
         if (!caseInsensitiveLookup) return null
         return parent.listFiles()?.firstOrNull { child ->
@@ -180,20 +187,88 @@ class SafVaultFs(
         }
     }
 
-    private fun buildDirectoryCache(start: DocumentFile): Map<String, DirectoryIndex> {
+    /** Children of [dir] from the active snapshot, or a single directory query when no snapshot is active. */
+    private fun listDirectory(dir: SafDirectoryListing.Entry): List<SafDirectoryListing.Entry>? =
+        directoryCache?.get(dir.documentUri.toString())?.let { it.byExactName.values.toList() }
+            ?: queryDirectory(dir.documentUri)
+
+    /** Walks the whole tree once, one [DocumentsContract] query per directory. */
+    private fun buildDirectoryCache(startUri: Uri): Map<String, DirectoryIndex> {
         val out = mutableMapOf<String, DirectoryIndex>()
-        fun walk(dir: DocumentFile) {
-            val children = dir.listFiles() ?: return
-            val named = children.mapNotNull { child -> child.name?.let { it to child } }
-            val byLowerName = mutableMapOf<String, DocumentFile>()
-            named.forEach { (name, child) -> byLowerName.putIfAbsent(name.lowercase(), child) }
-            out[dir.uri.toString()] = DirectoryIndex(named.toMap(), byLowerName)
-            children
+        fun walk(dirUri: Uri) {
+            val entries = queryDirectory(dirUri) ?: return
+            val byLowerName = mutableMapOf<String, SafDirectoryListing.Entry>()
+            entries.forEach { e -> byLowerName.putIfAbsent(e.name.lowercase(), e) }
+            out[dirUri.toString()] = DirectoryIndex(
+                byExactName = entries.associateBy { it.name },
+                byLowerName = byLowerName,
+            )
+            entries
                 .filter { it.isDirectory && !VaultHousekeeping.shouldSkipDirectory(it.name) }
-                .forEach { walk(it) }
+                .forEach { walk(it.documentUri) }
         }
-        walk(start)
+        walk(startUri)
         return out
+    }
+
+    /** Lists children of [parentUri] with a single query; null means a provider failure (not an empty folder). */
+    private fun queryDirectory(parentUri: Uri): List<SafDirectoryListing.Entry>? {
+        val parentId = documentIdOf(parentUri) ?: return null
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(root.uri, parentId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_SIZE,
+        )
+        val cursor = context.contentResolver.query(childrenUri, projection, null, null, null) ?: return null
+        cursor.use { return SafDirectoryListing.fromCursor(it, root.uri) }
+    }
+
+    private fun documentIdOf(uri: Uri): String? = runCatching {
+        if (DocumentsContract.isTreeUri(uri)) DocumentsContract.getTreeDocumentId(uri)
+        else DocumentsContract.getDocumentId(uri)
+    }.getOrNull()
+
+    private fun findEntry(relativePath: String): SafDirectoryListing.Entry? {
+        val norm = VaultPaths.normalizeNotePath(relativePath)
+        var current: SafDirectoryListing.Entry? = null
+        var parentUri = root.uri
+        val parts = norm.split('/')
+        for ((index, segment) in parts.withIndex()) {
+            val child = lookupEntry(parentUri, segment) ?: return null
+            if (index < parts.lastIndex) {
+                if (!child.isDirectory) return null
+            } else if (child.isDirectory) return null
+            current = child
+            parentUri = child.documentUri
+        }
+        return current
+    }
+
+    private fun findDirEntry(relativeDir: String): SafDirectoryListing.Entry? {
+        val norm = VaultPaths.normalize(relativeDir)
+        if (norm.isEmpty()) return SafDirectoryListing.Entry("", root.uri, isDirectory = true, 0L, -1L)
+        var current: SafDirectoryListing.Entry? = null
+        var parentUri = root.uri
+        for (segment in norm.split('/').filter { it.isNotEmpty() }) {
+            val child = lookupEntry(parentUri, segment) ?: return null
+            if (!child.isDirectory) return null
+            current = child
+            parentUri = child.documentUri
+        }
+        return current
+    }
+
+    private fun lookupEntry(parentUri: Uri, name: String): SafDirectoryListing.Entry? {
+        directoryCache?.get(parentUri.toString())?.let { index ->
+            index.byExactName[name]?.let { return it }
+            return if (caseInsensitiveLookup) index.byLowerName[name.lowercase()] else null
+        }
+        val entries = queryDirectory(parentUri) ?: return null
+        entries.firstOrNull { it.name == name }?.let { return it }
+        return if (caseInsensitiveLookup) entries.firstOrNull { it.name.equals(name, ignoreCase = true) } else null
     }
 
     private fun resolveDir(relativeDir: String): DocumentFile? {
