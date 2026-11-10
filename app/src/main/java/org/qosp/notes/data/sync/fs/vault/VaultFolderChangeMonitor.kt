@@ -43,15 +43,23 @@ class VaultFolderChangeMonitor(
         }
     }
 
-    /** Test seam: collapses bursts and suppresses self-triggered events (no [ContentObserver] required). */
+    /**
+     * Test seam: collapses bursts into one sync (no [ContentObserver] required).
+     *
+     * Events that arrive within [selfWriteWindowMs] of our own write are not dropped: an external
+     * change (e.g. Syncthing) arriving right after our write must still be picked up. Instead the
+     * sync is deferred until the self-write window has elapsed, plus the debounce delay.
+     */
     internal fun onVaultChanged() {
-        if (vaultWriteClock.millisSinceLastWrite() < selfWriteWindowMs) {
-            Log.d(tag, "Ignoring self-triggered vault change")
-            return
+        val sinceWrite = vaultWriteClock.millisSinceLastWrite()
+        val delayMs = if (sinceWrite < selfWriteWindowMs) {
+            debounceDelayMs + (selfWriteWindowMs - sinceWrite)
+        } else {
+            debounceDelayMs
         }
         debounceJob?.cancel()
         debounceJob = syncScope.launch {
-            delay(debounceDelayMs)
+            delay(delayMs)
             Log.d(tag, "Vault tree change; scheduling sync")
             noteRepository.syncNotes()
         }

@@ -69,17 +69,21 @@ class VaultFolderChangeMonitorTest {
     }
 
     @Test
-    fun changeWithinSelfWriteWindow_isSuppressed() = runTest {
+    fun changeWithinSelfWriteWindow_isDeferredNotDropped() = runTest {
         var now = 5_000L
         val clock = VaultWriteClock(now = { now })
         val scope = SyncScope(CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
         val monitor = TestScopeMonitor(scope, clock)
         clock.markWrite()
-        now = 6_000L // 1000ms after the write: inside the 3s window.
+        now = 6_000L // 1000ms after the write: inside the 3s window (2000ms remaining).
         monitor.onVaultChanged()
-        advanceTimeBy(200L)
-        advanceUntilIdle()
+        // Not yet: deferred until the window (2000ms) + debounce (100ms).
+        advanceTimeBy(100L)
         coVerify(exactly = 0) { noteRepository.syncNotes() }
+        // After the window + debounce, exactly one sync runs.
+        advanceTimeBy(2_000L)
+        advanceUntilIdle()
+        coVerify(exactly = 1) { noteRepository.syncNotes() }
     }
 
     @Test
