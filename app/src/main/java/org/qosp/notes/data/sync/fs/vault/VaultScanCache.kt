@@ -7,12 +7,16 @@ import java.io.File
 /**
  * Persistent per-vault scan cache in app-private storage: relativePath -> (lastModifiedMs, size, raw).
  * A note whose listing (mtime, size) is unchanged reuses the cached raw text instead of opening the
- * file. Any read/corruption error yields an empty cache (full read), and writes are atomic (temp + rename).
+ * file. The map is loaded from disk once and kept in memory; a corrupt/missing file yields an empty
+ * cache (full read). [save] is atomic (temp file + rename) and best-effort.
  */
 class VaultScanCache(private val cacheFile: File) {
 
     @Serializable
     data class Entry(val lastModifiedMs: Long, val size: Long, val raw: String)
+
+    @Volatile
+    private var entries: Map<String, Entry>? = null
 
     /** Cached raw for [relativePath] when its listing (mtime, size) is unchanged, else null. */
     fun lookup(relativePath: String, lastModifiedMs: Long, size: Long): String? {
@@ -20,19 +24,23 @@ class VaultScanCache(private val cacheFile: File) {
         return if (entry.lastModifiedMs == lastModifiedMs && entry.size == size) entry.raw else null
     }
 
-    /** Reads the cache; returns empty on any error (missing/corrupt file). */
+    /** Returns the in-memory map, loading it from disk once; empty on any error (missing/corrupt file). */
     fun load(): Map<String, Entry> {
-        if (!cacheFile.exists()) return emptyMap()
-        return runCatching {
-            json.decodeFromString<Map<String, Entry>>(cacheFile.readText())
+        entries?.let { return it }
+        val loaded = runCatching {
+            if (!cacheFile.exists()) emptyMap()
+            else json.decodeFromString<Map<String, Entry>>(cacheFile.readText())
         }.getOrElse { emptyMap() }
+        entries = loaded
+        return loaded
     }
 
-    /** Atomically replaces the cache contents (temp file + rename). Best-effort: a write failure is ignored. */
-    fun save(entries: Map<String, Entry>) {
+    /** Replaces the in-memory map and atomically persists it (best-effort). */
+    fun save(newEntries: Map<String, Entry>) {
+        entries = newEntries
         runCatching {
             cacheFile.parentFile?.mkdirs()
-            val body = json.encodeToString(entries)
+            val body = json.encodeToString(newEntries)
             val tmp = File(cacheFile.parentFile, cacheFile.name + ".tmp")
             tmp.writeText(body)
             if (!tmp.renameTo(cacheFile)) {
@@ -40,13 +48,6 @@ class VaultScanCache(private val cacheFile: File) {
                 tmp.delete()
             }
         }
-    }
-
-    /** Drops one path's entry (no-op when the cache is absent, unreadable, or lacks the path). */
-    fun remove(relativePath: String) {
-        val entries = load()
-        if (entries.isEmpty() || relativePath !in entries) return
-        save(entries - relativePath)
     }
 
     companion object {

@@ -79,9 +79,10 @@ class StorageBackend(
 
     private fun vaultFs(): VaultFs = injectedVaultFs ?: lazySafVaultFs
 
-    /** Per-vault scan cache in app-private storage, keyed by the vault scope. */
-    private fun vaultScanCache(fs: VaultFs): VaultScanCache =
-        VaultScanCache(File(context.filesDir, "vault-scan-cache/${fs.scopeId}.json"))
+    /** Per-vault scan cache in app-private storage, keyed by the vault scope (one instance per backend). */
+    private val scanCache: VaultScanCache by lazy {
+        VaultScanCache(File(context.filesDir, "vault-scan-cache/${vaultFs().scopeId}.json"))
+    }
 
     private fun vaultWriteStore(fs: VaultFs): VaultWriteStore = when (fs) {
         is SafVaultFs -> SafVaultWriteStore(context, fs.root, fs)
@@ -197,6 +198,8 @@ class StorageBackend(
         } else {
             targetPath
         }
+        // oldRaw is the single read of the current file in this method: pass it through so writeNoteAt
+        // preserves the on-disk front matter without re-reading (the recovery journal still reads it once).
         val syncNote = writeNoteAt(
             writePath,
             noteForWrite,
@@ -264,7 +267,7 @@ class StorageBackend(
                 val raw = read.rawTexts[file.relativePath] ?: throw IOException("Cannot read ${file.relativePath}")
                 pathToSyncNote(file.relativePath, raw, file.lastModifiedMs)
             }
-            vaultScanCache(fs).save(read.cacheEntries)
+            scanCache.save(read.cacheEntries)
             notes
         } catch (e: Exception) {
             Log.e(TAG, "getAll: scan failed", e)
@@ -281,7 +284,7 @@ class StorageBackend(
 
     /** Reads each candidate at most once, reusing cached raw text when the listing (mtime, size) is unchanged. */
     private fun readNoteTextsWithCache(fs: VaultFs, candidates: List<VaultDocumentTree.IndexedVaultFile>): ScanReadResult {
-        val cache = vaultScanCache(fs)
+        val cache = scanCache
         val existing = cache.load()
         val rawTexts = mutableMapOf<String, String>()
         val cacheEntries = mutableMapOf<String, VaultScanCache.Entry>()
@@ -541,7 +544,6 @@ class StorageBackend(
         val writeContext = VaultWriteContext(store.vaultScopeId(), generationAtCapture)
         VaultRecoverableWrite(store).write(path, text, writeContext)
         vaultWriteClock.markWrite()
-        vaultScanCache(fs).remove(path)
         invalidateVaultIndex()
         if (vaultSyncCoordinator.isStaleMapping(generationAtCapture)) {
             throw IOException("Vault generation changed during write; refusing to treat result as committed")

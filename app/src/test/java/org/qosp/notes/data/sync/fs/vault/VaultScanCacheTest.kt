@@ -64,19 +64,6 @@ class VaultScanCacheTest {
     }
 
     @Test
-    fun remove_dropsSingleEntry() {
-        val c = cache()
-        c.save(
-            mapOf(
-                "a.md" to VaultScanCache.Entry(1000L, 1L, "a"),
-                "b.md" to VaultScanCache.Entry(1000L, 1L, "b"),
-            ),
-        )
-        c.remove("a.md")
-        assertEquals(setOf("b.md"), c.load().keys)
-    }
-
-    @Test
     fun save_writesAtomically_leavesNoTempFile() {
         val c = cache()
         c.save(mapOf("a.md" to VaultScanCache.Entry(1000L, 5L, "hello")))
