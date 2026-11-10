@@ -57,7 +57,6 @@ import io.noties.markwon.editor.MarkwonEditor
 import io.noties.markwon.editor.MarkwonEditorTextWatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.commonmark.node.Code
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -114,6 +113,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 private typealias Data = EditorViewModel.Data
@@ -509,10 +509,10 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
     override fun onPause() {
         model.selectedRange = with(binding.editTextContent) { selectionStart to selectionEnd }
         val title = pendingTitle
-        if (title != null && title != data.note?.title) {
-            runBlocking { model.flushPendingTitle(title) }
-        }
         pendingTitle = null
+        // Flush in the app-wide sync scope: onPause must stay non-blocking and the write has to
+        // survive the fragment being destroyed right afterwards.
+        model.flushAsync(title?.takeIf { it != data.note?.title })
         super.onPause()
     }
 
@@ -1063,7 +1063,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
     private fun setupMarkdown() {
         markwonTextWatcher = MarkwonEditorTextWatcher.withPreRender(
-            markwonEditor, Executors.newCachedThreadPool(),
+            markwonEditor, markdownExecutor,
             binding.editTextContent
         )
     }
@@ -1317,5 +1317,9 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
     companion object {
         const val MARKDOWN_DIALOG_RESULT = "MARKDOWN_DIALOG_RESULT"
+
+        // Markdown pre-rendering is off-main-thread; one process-wide pool avoids leaking a new
+        // cached thread pool every time an editor is opened.
+        private val markdownExecutor: ExecutorService by lazy { Executors.newCachedThreadPool() }
     }
 }
