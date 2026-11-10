@@ -30,7 +30,7 @@ class VaultQuarantineScenariosTest {
     )
 
     @Test
-    fun staleGenerationJournal_withBackup_isKeptAndTruncatedFileIsNotImported() = runTest {
+    fun staleGenerationJournal_withBackup_isRestoredAndLaterSaveSucceeds() = runTest {
         val h = NoteRepositoryVaultHarness(this)
         try {
             val id = h.insertAndSync(Note(title = "Note", content = "good body"))
@@ -44,8 +44,12 @@ class VaultQuarantineScenariosTest {
             h.syncNotes()
 
             assertEquals("good body", h.getNote(id)!!.content.trim())
-            assertTrue(store.readJournal()?.entries?.any { it.notePath == path } == true)
+            assertTrue("good body" in h.vaultFs.readText(path)!!)
+            assertEquals(null, store.readJournal())
             assertEquals(false, h.getNote(id)!!.isDeleted)
+
+            h.updateAndSync(h.getNote(id)!!.copy(content = "second body"))
+            assertTrue("second body" in h.vaultFs.readText(path)!!)
         } finally {
             h.close()
         }

@@ -21,31 +21,32 @@ object VaultRecoveryService {
         store: VaultWriteStore,
         vaultGeneration: Long,
     ): Outcome {
-        val journal = store.readJournal()
-        if (journal == null || journal.entries.isEmpty()) {
+        val stored = store.readJournal()
+        if (stored == null || stored.entries.isEmpty()) {
             return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
         }
         val scope = store.vaultScopeId()
-        if (journal.vaultScopeId != scope) {
+        if (stored.vaultScopeId != scope) {
             Log.w(TAG, "Foreign-scope recovery journal; clearing (scope=$scope)")
             store.writeJournal(null)
             return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
         }
 
-        if (journal.vaultGeneration != vaultGeneration) {
-            // Re-picking the same folder bumps the generation, but a write killed mid-publish may have left
-            // the note truncated, with the only good copy in the backup. Keep what can still be recovered
-            // (same scope, so same folder) and fence its paths until a later run settles them.
-            val recoverable = journal.entries.filter { store.hasRecoveryFiles(it) }
+        // Re-picking the same folder bumps the generation, but a write killed mid-publish may have left
+        // the note truncated, with the only good copy in the backup. The scope check proved it is the same
+        // folder, so adopt the journal under the current generation and let the loop below verify hashes
+        // and restore.
+        val journal = if (stored.vaultGeneration != vaultGeneration) {
+            val recoverable = stored.entries.filter { store.hasRecoveryFiles(it) }
             if (recoverable.isEmpty()) {
-                Log.w(TAG, "Stale recovery journal gen=${journal.vaultGeneration} active=$vaultGeneration; nothing recoverable, clearing")
+                Log.w(TAG, "Stale recovery journal gen=${stored.vaultGeneration} active=$vaultGeneration; nothing recoverable, clearing")
                 store.writeJournal(null)
                 return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
             }
-            val paths = recoverable.map { it.notePath }
-            Log.w(TAG, "Stale recovery journal gen=${journal.vaultGeneration} active=$vaultGeneration; quarantining $paths")
-            store.writeJournal(journal.copy(entries = recoverable))
-            return Outcome(paths.toSet(), emptySet(), writesBlocked = false, scanBlocked = false)
+            Log.w(TAG, "Stale recovery journal gen=${stored.vaultGeneration} active=$vaultGeneration; adopting ${recoverable.size} entries")
+            stored.copy(vaultGeneration = vaultGeneration, entries = recoverable).also { store.writeJournal(it) }
+        } else {
+            stored
         }
 
         val writer = VaultRecoverableWrite(store)

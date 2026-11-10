@@ -76,7 +76,7 @@ class VaultRecoveryServiceTest {
     }
 
     @Test
-    fun staleGeneration_withRecoverableBackup_keepsJournalAndQuarantines() {
+    fun staleGeneration_withRecoverableBackup_restoresBackupAndClearsJournal() {
         val store = MemoryVaultWriteStore()
         val path = "Work/Note.md"
         store.seedVerified(path, "TRUNCATED")
@@ -97,9 +97,10 @@ class VaultRecoveryServiceTest {
             ),
         )
         val outcome = VaultRecoveryService.recoverPending(store, vaultGeneration = 2L)
-        assertTrue(path in outcome.quarantinedPaths)
-        assertEquals(listOf(path), store.readJournal()?.entries?.map { it.notePath })
-        assertEquals("GOOD", store.readBackup(backup))
+        assertTrue(outcome.quarantinedPaths.isEmpty())
+        assertTrue(path in outcome.recoveredPaths)
+        assertEquals("GOOD", store.readVerified(path))
+        assertNull(store.readJournal())
     }
 
     @Test
@@ -123,8 +124,11 @@ class VaultRecoveryServiceTest {
             ),
         )
         val outcome = VaultRecoveryService.recoverPending(store, vaultGeneration = 2L)
-        assertEquals(setOf("A.md"), outcome.quarantinedPaths)
-        assertEquals(listOf("A.md"), store.readJournal()?.entries?.map { it.notePath })
+        assertTrue(outcome.quarantinedPaths.isEmpty())
+        assertEquals(setOf("A.md"), outcome.recoveredPaths)
+        assertEquals("GOOD", store.readVerified("A.md"))
+        assertEquals("PARTIAL", store.readVerified("B.md"))
+        assertNull(store.readJournal())
     }
 
     @Test
