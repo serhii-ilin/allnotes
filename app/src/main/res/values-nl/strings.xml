@@ -95,9 +95,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi of mobiele data</string>
     <string name="preferences_sync_when_on">Synchroniseren wanneer verbonden met</string>
-    <string name="preferences_background_sync">Synchronisatie op de achtergrond</string>
-    <string name="preferences_background_sync_enabled">Ingeschakeld</string>
-    <string name="preferences_background_sync_disabled">Uitgeschakeld</string>
     <string name="preferences_new_notes_synchronizable">Nieuwe notities synchroniseerbaar</string>
     <!-- About -->
     <string name="about_version">Versie</string>

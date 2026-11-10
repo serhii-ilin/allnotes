@@ -51,7 +51,6 @@ class PreferenceRepository(
                     defaultEditorMode = prefs.getEnum(),
                     cloudService = prefs.getEnum<CloudService>().toVaultMode(),
                     syncMode = prefs.getEnum(),
-                    backgroundSync = prefs.getEnum(),
                     trustSelfSignedCertificate = prefs.getEnum(),
                 )
             }

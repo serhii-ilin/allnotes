@@ -42,13 +42,6 @@
                         app:iconSrc="@drawable/ic_wifi"/>
 
                     <org.qosp.notes.ui.utils.views.PreferenceView
-                        android:id="@+id/setting_background_sync"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        app:text="@string/preferences_background_sync"
-                        app:iconSrc="@drawable/ic_sync"/>
-
-                    <org.qosp.notes.ui.utils.views.PreferenceView
                         android:id="@+id/setting_notes_syncable_by_default"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -144,8 +137,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         app:iconSrc="@drawable/ic_file"
-                        app:subText="@string/preferences_file_storage_location"
-                        app:text="@string/preferences_file_storage_select"/>
+                        app:subText="@string/preferences_file_storage_choose_hint"
+                        app:text="@string/preferences_file_storage_location"/>
 
                     <org.qosp.notes.ui.utils.views.PreferenceView
                         android:id="@+id/setting_vault_rebuild_index"
@@ -154,6 +147,14 @@
                         app:iconSrc="@drawable/ic_sync"
                         app:subText="@string/preferences_vault_rebuild_index_hint"
                         app:text="@string/preferences_vault_rebuild_index"/>
+
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/vault_rescan_progress"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="16dp"
+                        android:indeterminate="true"
+                        android:visibility="gone"/>
 
                     <org.qosp.notes.ui.utils.views.PreferenceView
                         android:id="@+id/setting_vault_clear_recovery"

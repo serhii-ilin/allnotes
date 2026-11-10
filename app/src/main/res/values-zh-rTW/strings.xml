@@ -92,9 +92,6 @@
     <string name="preferences_sync_on_wifi">無線網路</string>
     <string name="preferences_sync_on_wifi_data">無線網路或數據網路</string>
     <string name="preferences_sync_when_on">使用何種網路時同步</string>
-    <string name="preferences_background_sync">背景同步</string>
-    <string name="preferences_background_sync_enabled">啟用</string>
-    <string name="preferences_background_sync_disabled">停用</string>
     <string name="preferences_new_notes_synchronizable">可同步的新筆記</string>
     <!-- About 關於-->
     <string name="about_version">版本</string>

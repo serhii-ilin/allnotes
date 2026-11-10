@@ -92,9 +92,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi nebo Data</string>
     <string name="preferences_sync_when_on">Synchronizace přes</string>
-    <string name="preferences_background_sync">Synchronizace na pozadí</string>
-    <string name="preferences_background_sync_enabled">Povoleno</string>
-    <string name="preferences_background_sync_disabled">Zakázáno</string>
     <string name="preferences_new_notes_synchronizable">Synchronizovat nové poznámky</string>
     <!-- About -->
 	<string name="about_version">Verze</string>

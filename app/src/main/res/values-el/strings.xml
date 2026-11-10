@@ -70,9 +70,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi ή δεδομένα</string>
     <string name="preferences_sync_when_on">Να γίνεται συγχρονισμός μόνο με</string>
-    <string name="preferences_background_sync">Συγχρονισμός στο παρασκήνιο</string>
-    <string name="preferences_background_sync_enabled">Ενεργοποιημένος</string>
-    <string name="preferences_background_sync_disabled">Απενεργοποιημένος</string>
     <string name="preferences_new_notes_synchronizable">Συγχρονισμός νέων σημειώσεων</string>
     <string name="about_version">Έκδοση</string>
     <string name="about_website">Ιστοσελίδα</string>

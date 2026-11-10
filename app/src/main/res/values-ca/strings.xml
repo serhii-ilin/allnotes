@@ -80,9 +80,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi o dades</string>
     <string name="preferences_sync_when_on">Activa la sincronització quan estigui actiu</string>
-    <string name="preferences_background_sync">Sincronització en segon pla</string>
-    <string name="preferences_background_sync_enabled">Activada</string>
-    <string name="preferences_background_sync_disabled">Desactivada</string>
     <string name="preferences_new_notes_synchronizable">Noves notes sincronitzables</string>
     <!-- About -->
     <string name="about_version">Versió</string>

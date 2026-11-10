@@ -23,6 +23,5 @@ data class AppPreferences(
     val defaultEditorMode: DefaultEditorMode = defaultOf(),
     val cloudService: CloudService = defaultOf(),
     val syncMode: SyncMode = defaultOf(),
-    val backgroundSync: BackgroundSync = defaultOf(),
     val trustSelfSignedCertificate: TrustSelfSignedCertificate = defaultOf(),
 )

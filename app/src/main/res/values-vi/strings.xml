@@ -92,9 +92,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi hoặc dữ liệu</string>
     <string name="preferences_sync_when_on">Đồng bộ hóa khi bật</string>
-    <string name="preferences_background_sync">Đồng bộ hóa nền</string>
-    <string name="preferences_background_sync_enabled">Đã bật</string>
-    <string name="preferences_background_sync_disabled">Đã tắt</string>
     <string name="preferences_new_notes_synchronizable">Ghi chú mới có thể đồng bộ hóa</string>
     <!-- About -->
     <string name="about_version">Phiên bản</string>

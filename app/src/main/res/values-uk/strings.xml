@@ -75,9 +75,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi чи мобільна мережа</string>
     <string name="preferences_sync_when_on">Синхронізувати коли під\'єднані до</string>
-    <string name="preferences_background_sync">Синхронізація на фоні</string>
-    <string name="preferences_background_sync_enabled">Увімкнено</string>
-    <string name="preferences_background_sync_disabled">Вимкнено</string>
     <string name="preferences_new_notes_synchronizable">Доступні нові нотатки для синхронізації</string>
     <!-- About -->
     <string name="about_version">Версія</string>

@@ -103,9 +103,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi veya Veri</string>
     <string name="preferences_sync_when_on">Şu durumda senkronize et</string>
-    <string name="preferences_background_sync">Arka planda senkronizasyon</string>
-    <string name="preferences_background_sync_enabled">Etkin</string>
-    <string name="preferences_background_sync_disabled">Devre dışı</string>
     <string name="preferences_new_notes_synchronizable">Yeni notlar senkronize edilebilir</string>
     <!-- About -->
     <string name="about_version">Sürüm</string>

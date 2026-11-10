@@ -77,9 +77,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi ou Dados Móveis</string>
     <string name="preferences_sync_when_on">Sincronizar quando estiver no</string>
-    <string name="preferences_background_sync">Sincronização em segundo plano</string>
-    <string name="preferences_background_sync_enabled">Habilitado</string>
-    <string name="preferences_background_sync_disabled">Desabilitado</string>
     <string name="preferences_new_notes_synchronizable">Novas anotações sincronizáveis</string>
     <!-- About -->
     <string name="about_version">Versão</string>

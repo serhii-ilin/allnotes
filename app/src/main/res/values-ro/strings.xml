@@ -131,9 +131,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi sau Date</string>
     <string name="preferences_sync_when_on">Sincronizează când este activ</string>
-    <string name="preferences_background_sync">Sincronizare în fundal</string>
-    <string name="preferences_background_sync_enabled">Activat</string>
-    <string name="preferences_background_sync_disabled">Dezactivat</string>
     <string name="preferences_new_notes_synchronizable">Notițe noi sincronizabile</string>
     <string name="preferences_trust_self_signed_certificate">Acceptă certificat auto-semnat</string>
 

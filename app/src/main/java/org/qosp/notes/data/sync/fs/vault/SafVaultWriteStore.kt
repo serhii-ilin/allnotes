@@ -114,8 +114,13 @@ class SafVaultWriteStore(
         File(backupDir, ticket.storageName).delete()
     }
 
-    fun clearAllRecoveryState() {
+    fun recoveryItemCount(): Int = recoveryRoot.walkTopDown().count { it.isFile }
+
+    /** Deletes all recovery files for this vault scope and returns how many files were removed. */
+    fun clearAllRecoveryState(): Int {
+        val count = recoveryItemCount()
         recoveryRoot.deleteRecursively()
+        return count
     }
 
     private fun findByRelativePath(relativePath: String): DocumentFile? {

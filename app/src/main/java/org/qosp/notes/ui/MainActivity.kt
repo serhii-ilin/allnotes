@@ -39,7 +39,7 @@ import org.qosp.notes.data.model.Attachment
 import org.qosp.notes.data.model.Notebook
 import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.fs.StorageConfig
-import org.qosp.notes.data.sync.fs.toFriendlyString
+import org.qosp.notes.data.sync.fs.toVaultFolderName
 import org.qosp.notes.databinding.ActivityMainBinding
 import org.qosp.notes.preferences.PreferenceRepository
 import org.qosp.notes.data.repo.NoteRepository
@@ -299,7 +299,7 @@ class MainActivity : BaseActivity() {
                     val uri = StorageConfig.storageLocation(preferenceRepository)
                         .filterNotNull().firstOrNull()?.location
                     if (backend != null && uri != null && uri.toString().isNotEmpty()) {
-                        textViewUsername.text = uri.toFriendlyString(applicationContext)
+                        textViewUsername.text = uri.toVaultFolderName(applicationContext)
                         textViewProvider.text = getString(R.string.preferences_cloud_service_files)
                     } else {
                         textViewUsername.text = getString(R.string.vault_onboarding_title)

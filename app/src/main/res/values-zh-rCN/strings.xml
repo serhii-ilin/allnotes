@@ -88,9 +88,6 @@
     <string name="preferences_sync_on_wifi">无线局域网</string>
     <string name="preferences_sync_on_wifi_data">无线局域网与流量数据</string>
     <string name="preferences_sync_when_on">启用时同步</string>
-    <string name="preferences_background_sync">后台同步</string>
-    <string name="preferences_background_sync_enabled">启用</string>
-    <string name="preferences_background_sync_disabled">禁用</string>
     <string name="preferences_new_notes_synchronizable">可同步的新笔记</string>
     <!-- About -->
     <string name="about_version">版本</string>

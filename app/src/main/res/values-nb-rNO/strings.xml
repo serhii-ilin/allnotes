@@ -75,9 +75,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi eller mobildata</string>
     <string name="preferences_sync_when_on">Synkroniser når på</string>
-    <string name="preferences_background_sync">Bakgrunnssynkronisering</string>
-    <string name="preferences_background_sync_enabled">På</string>
-    <string name="preferences_background_sync_disabled">Av</string>
     <string name="preferences_new_notes_synchronizable">Nye synkroniserbare notater</string>
     <!-- About -->
     <string name="about_version">Versjon</string>

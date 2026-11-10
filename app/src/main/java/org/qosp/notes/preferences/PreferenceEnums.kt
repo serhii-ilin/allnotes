@@ -164,11 +164,6 @@ enum class SyncMode(override val nameResource: Int) : HasNameResource, EnumPrefe
     ALWAYS(R.string.preferences_sync_on_wifi_data),
 }
 
-enum class BackgroundSync(override val nameResource: Int) : HasNameResource, EnumPreference by key("background_sync") {
-    ENABLED(R.string.preferences_background_sync_enabled) { override val isDefault = true },
-    DISABLED(R.string.preferences_background_sync_disabled),
-}
-
 enum class TrustSelfSignedCertificate(override val nameResource: Int) : HasNameResource,
     EnumPreference by key("trust_self_signed_certificate") {
     NO(R.string.no) {

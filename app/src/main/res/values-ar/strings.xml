@@ -104,9 +104,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi أو البيانات</string>
     <string name="preferences_sync_when_on">المزامنة عند</string>
-    <string name="preferences_background_sync">المزامنة في الخلفية</string>
-    <string name="preferences_background_sync_enabled">مُفعلة</string>
-    <string name="preferences_background_sync_disabled">مُعطلة</string>
     <string name="preferences_new_notes_synchronizable">الملاحظات الجديدة قابلة للمزامنة</string>
     <!-- About -->
     <string name="about_version">الإصدار</string>

@@ -72,9 +72,6 @@
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi o rete cellulare</string>
     <string name="preferences_sync_when_on">Sincronizzazione tramite</string>
-    <string name="preferences_background_sync">Sincronizzazione in background</string>
-    <string name="preferences_background_sync_enabled">Abilitata</string>
-    <string name="preferences_background_sync_disabled">Disabilitata</string>
     <string name="preferences_new_notes_synchronizable">Nuove note sincronizzabili</string>
     <string name="preferences_dark_theme_mode">Modalità tema scuro</string>
     <string name="preferences_theme_dark_mode_standard">Standard</string>

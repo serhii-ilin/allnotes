@@ -95,9 +95,6 @@
     <string name="preferences_sync_on_wifi">WLAN</string>
     <string name="preferences_sync_on_wifi_data">WLAN oder mobile Daten</string>
     <string name="preferences_sync_when_on">Synchronisierung bei</string>
-    <string name="preferences_background_sync">Hintergrundsynchronisierung</string>
-    <string name="preferences_background_sync_enabled">Aktiviert</string>
-    <string name="preferences_background_sync_disabled">Deaktiviert</string>
     <string name="preferences_new_notes_synchronizable">Neue Notizen synchronisieren</string>
     <!-- About -->
     <string name="about_version">Version</string>
