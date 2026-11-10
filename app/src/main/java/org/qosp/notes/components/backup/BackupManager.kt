@@ -127,14 +127,9 @@ class BackupManager(
                     }
                 }
             )
-            notesMap[note.id] = noteRepository.insertNote(newNote)
-        }
-
-        backup.idMappings.forEach {
-            val noteId = notesMap[it.localNoteId] ?: return@forEach
-            val newMapping = it.copy(mappingId = 0L, localNoteId = noteId)
-
-            idMappingRepository.assignProviderToNote(newMapping)
+            // Backed-up id mappings are skipped on purpose: their vault paths and content:// URIs point at the
+            // vault as it was at backup time. The sync below exports or links the restored notes afresh.
+            notesMap[note.id] = noteRepository.insertNote(newNote, sync = false)
         }
 
         backup.joins.forEach { join ->
@@ -154,6 +149,8 @@ class BackupManager(
                 dateTime = reminder.date
             )
         }
+
+        noteRepository.syncNotes()
     }
 
     fun backupFromZipFile(

@@ -34,9 +34,6 @@ interface IdMappingDao {
     @Query("SELECT * FROM cloud_ids WHERE localNoteId = :localId AND provider = :provider LIMIT 1")
     suspend fun getByLocalIdAndProvider(localId: Long, provider: CloudService): IdMapping?
 
-    @Query("SELECT * FROM cloud_ids WHERE localNoteId = :localId AND provider IS NULL LIMIT 1")
-    suspend fun getNonRemoteByLocalId(localId: Long): IdMapping?
-
     @Query("SELECT * FROM cloud_ids WHERE localNoteId = :localId AND provider IS NOT NULL AND remoteNoteId IS NOT NULL")
     suspend fun getAllByLocalId(localId: Long): List<IdMapping>
 
