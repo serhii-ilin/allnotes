@@ -33,6 +33,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
+import org.qosp.notes.BuildConfig
 import org.qosp.notes.R
 import org.qosp.notes.components.backup.BackupService
 import org.qosp.notes.data.model.Attachment
@@ -51,6 +52,8 @@ import org.qosp.notes.ui.utils.closeAndThen
 import org.qosp.notes.ui.utils.collect
 import org.qosp.notes.ui.utils.hideKeyboard
 import org.qosp.notes.ui.utils.navigateSafely
+import org.qosp.notes.ui.whatsnew.WhatsNewViewModel
+import org.qosp.notes.ui.whatsnew.showWhatsNewDialog
 import org.qosp.notes.ui.widget.WidgetUpdateHelper
 
 class MainActivity : BaseActivity() {
@@ -60,6 +63,7 @@ class MainActivity : BaseActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val activityModel: ActivityViewModel by viewModel()
+    private val whatsNewModel: WhatsNewViewModel by viewModel()
     private val backendProvider by inject<BackendProvider>()
     private val noteRepository by inject<NoteRepository>()
     private var vaultFolderPromptShown = false
@@ -109,6 +113,9 @@ class MainActivity : BaseActivity() {
         WidgetUpdateHelper.updateAllWidgets(this)
         if (intent != null) handleIntent(intent)
 
+        // Avoid re-showing the dialog when this activity is recreated (e.g. after a theme change)
+        if (savedInstanceState == null) showWhatsNewIfNeeded()
+
         onBackPressedDispatcher.addCallback(this) {
             if (binding.drawer.isDrawerOpen(GravityCompat.START)) {
                 binding.drawer.closeDrawer(GravityCompat.START)
@@ -121,6 +128,18 @@ class MainActivity : BaseActivity() {
     }
 
     private val vaultForegroundRescan: VaultForegroundRescan by inject()
+
+    private fun showWhatsNewIfNeeded() {
+        // Firebase TestLab runs should not be interrupted by the "What's New" dialog
+        if (BuildConfig.TESTLAB_BUILD) return
+
+        lifecycleScope.launch {
+            val item = whatsNewModel.whatsNewToShow().first() ?: return@launch
+            showWhatsNewDialog(item) {
+                lifecycleScope.launch { whatsNewModel.setLatestWhatsNewId() }
+            }
+        }
+    }
 
     override fun onResume() {
         super.onResume()

@@ -39,7 +39,7 @@ class KoinModulesTest : KoinTest {
                 SyncScope::class,
             ),
             injections = injectedParameters(
-                definition<org.qosp.notes.ui.launcher.LauncherViewModel>(
+                definition<org.qosp.notes.ui.whatsnew.WhatsNewViewModel>(
                     Application::class
                 ),
                 definition<org.qosp.notes.components.workers.BinCleaningWorker>(
