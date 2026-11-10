@@ -208,27 +208,27 @@
     <string name="never">Ніколи</string>
     <plurals name="more_items">
         <item quantity="one">+%d елемент</item>
-        <item quantity="few"/>
-        <item quantity="many"/>
-        <item quantity="other"/>
+        <item quantity="few">+%d елементи</item>
+        <item quantity="many">+%d елементів</item>
+        <item quantity="other">+%d елемента</item>
     </plurals>
     <plurals name="selected_notes">
-        <item quantity="one">Обрано %d нотаток</item>
-        <item quantity="few"/>
-        <item quantity="many"/>
-        <item quantity="other"/>
+        <item quantity="one">Обрано %d нотатку</item>
+        <item quantity="few">Обрано %d нотатки</item>
+        <item quantity="many">Обрано %d нотаток</item>
+        <item quantity="other">Обрано %d нотатки</item>
     </plurals>
     <plurals name="selected_notebooks">
         <item quantity="one">Обрано %d записник</item>
-        <item quantity="few"/>
-        <item quantity="many"/>
-        <item quantity="other"/>
+        <item quantity="few">Обрано %d записники</item>
+        <item quantity="many">Обрано %d записників</item>
+        <item quantity="other">Обрано %d записника</item>
     </plurals>
     <plurals name="selected_tags">
         <item quantity="one">Обрано %d помітку</item>
-        <item quantity="few"/>
-        <item quantity="many"/>
-        <item quantity="other"/>
+        <item quantity="few">Обрано %d помітки</item>
+        <item quantity="many">Обрано %d поміток</item>
+        <item quantity="other">Обрано %d помітки</item>
     </plurals>
     <string name="preferences_cloud_service_files">Зберігання файлів</string>
     <string name="preferences_file_storage_location">Місце зберігання</string>

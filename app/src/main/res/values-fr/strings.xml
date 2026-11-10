@@ -214,22 +214,22 @@
     <string name="never">Jamais</string>
     <plurals name="more_items">
         <item quantity="one">+%d élément</item>
-        <item quantity="many"/>
+        <item quantity="many">+%d d\'éléments</item>
         <item quantity="other">+%d éléments</item>
     </plurals>
     <plurals name="selected_notes">
         <item quantity="one">%d note sélectionnée</item>
-        <item quantity="many"/>
+        <item quantity="many">%d de notes sélectionnées</item>
         <item quantity="other">%d notes sélectionnées</item>
     </plurals>
     <plurals name="selected_notebooks">
         <item quantity="one">%d carnet sélectionné</item>
-        <item quantity="many"/>
+        <item quantity="many">%d de carnets sélectionnés</item>
         <item quantity="other">%d carnets sélectionnés</item>
     </plurals>
     <plurals name="selected_tags">
         <item quantity="one">%d étiquette sélectionnée</item>
-        <item quantity="many"/>
+        <item quantity="many">%d d\'étiquettes sélectionnées</item>
         <item quantity="other">%d étiquettes sélectionnées</item>
     </plurals>
     <string name="preferences_cloud_service_files">Stockage de fichiers</string>

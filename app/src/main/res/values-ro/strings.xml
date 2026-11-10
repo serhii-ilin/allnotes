@@ -292,22 +292,26 @@
 
     <plurals name="more_items">
         <item quantity="one">+%d element</item>
-        <item quantity="other">+%d elemente</item>
+        <item quantity="few">+%d elemente</item>
+        <item quantity="other">+%d de elemente</item>
     </plurals>
 
     <plurals name="selected_notes">
         <item quantity="one">%d notiță selectată</item>
-        <item quantity="other">%d notițe selectate</item>
+        <item quantity="few">%d notițe selectate</item>
+        <item quantity="other">%d de notițe selectate</item>
     </plurals>
 
     <plurals name="selected_notebooks">
         <item quantity="one">%d caiet selectat</item>
-        <item quantity="other">%d caiete selectate</item>
+        <item quantity="few">%d caiete selectate</item>
+        <item quantity="other">%d de caiete selectate</item>
     </plurals>
 
     <plurals name="selected_tags">
         <item quantity="one">%d etichetă selectată</item>
-        <item quantity="other">%d etichete selectate</item>
+        <item quantity="few">%d etichete selectate</item>
+        <item quantity="other">%d de etichete selectate</item>
     </plurals>
     <string name="preferences_cloud_service_files">Stocare fișiere</string>
     <string name="error_report_email" translatable="false">sixface@msn.com</string>
