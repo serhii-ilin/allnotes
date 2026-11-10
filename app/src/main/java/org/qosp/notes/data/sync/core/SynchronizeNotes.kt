@@ -35,6 +35,8 @@ class SynchronizeNotes(
         vaultExportCutoffEpoch: Long? = null,
         /** When set, a mapped file missing from the scan is neither counted nor binned (mass-missing scan). */
         suppressMissingBins: Boolean = false,
+        /** Unmapped notes that must not be exported this pass (their legacy mapping was just dropped). */
+        deferExportLocalIds: Set<Long> = emptySet(),
     ): SyncNotesResult {
         logDebug("SynchronizeNotes: Starting synchronization with method: $method")
 
@@ -130,9 +132,9 @@ class SynchronizeNotes(
                                     val alreadyRecorded = mappingState?.conflictRemoteHash == remoteHash ||
                                         parsedExtras.conflictRemoteHash == remoteHash
                                     if (alreadyRecorded) {
-                                        logDebug("Vault conflict already recorded for ${localNote.title}")
+                                        logDebug("Vault conflict already recorded for note ${localNote.id}")
                                     } else {
-                                        logDebug("Vault conflict: ${localNote.title} at $vaultPath")
+                                        logDebug("Vault conflict: note ${localNote.id} at $vaultPath")
                                         vaultConflicts.add(VaultSyncConflict(localNote, remoteNote))
                                     }
                                 } else if (dirty) {
@@ -143,12 +145,12 @@ class SynchronizeNotes(
                                     val contentDirty = localHash != baseline
                                     when {
                                         contentDirty && localNote.modifiedDate >= remoteNote.lastModified -> {
-                                            logDebug("Vault push while dirty: ${localNote.title}")
+                                            logDebug("Vault push while dirty: note ${localNote.id}")
                                             remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
                                         }
                                         membershipDirty && !contentDirty -> when {
                                             remoteHash == baseline -> {
-                                                logDebug("Vault push attachment membership: ${localNote.title}")
+                                                logDebug("Vault push attachment membership: note ${localNote.id}")
                                                 remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
                                             }
                                             localHash == baseline -> {
@@ -166,11 +168,11 @@ class SynchronizeNotes(
                                     val mtimeChanged = abs(localNote.modifiedDate - remoteNote.lastModified) > 1
                                     when {
                                         hashChanged && (mtimeChanged || localHash == baseline) -> {
-                                            logDebug("Vault pull (hash): ${remoteNote.title}")
+                                            logDebug("Vault pull (hash): ${remoteNote.idStr}")
                                             localUpdates.add(NoteAction.Update(localNote, remoteNote))
                                         }
                                         localHash != baseline && localNote.modifiedDate > remoteNote.lastModified -> {
-                                            logDebug("Vault push (hash): ${localNote.title}")
+                                            logDebug("Vault push (hash): note ${localNote.id}")
                                             remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
                                         }
                                         mtimeChanged && localNote.modifiedDate > remoteNote.lastModified -> {
@@ -183,14 +185,14 @@ class SynchronizeNotes(
                                 }
                             }
                         } else if (service == CloudService.FILE_STORAGE && !remoteScanSucceeded) {
-                            logDebug("Skipping delete; vault scan incomplete for ${localNote.title}")
+                            logDebug("Skipping delete; vault scan incomplete for note ${localNote.id}")
                         } else if (
                             service == CloudService.FILE_STORAGE &&
                             mapping.storageUri?.contains("://") == true
                         ) {
-                            logDebug("Awaiting legacy relink for ${localNote.title}")
+                            logDebug("Awaiting legacy relink for note ${localNote.id}")
                         } else if (service == CloudService.FILE_STORAGE && suppressMissingBins) {
-                            logDebug("Mass-missing scan; keeping note without counting: ${localNote.title}")
+                            logDebug("Mass-missing scan; keeping note without counting: note ${localNote.id}")
                         } else if (
                             service == CloudService.FILE_STORAGE &&
                             !VaultPaths.vaultMappingPath(mapping.storageUri).isNullOrBlank() &&
@@ -198,7 +200,7 @@ class SynchronizeNotes(
                         ) {
                             // One scan that does not list the file is not proof it is gone; bin only on a repeat.
                             val prior = VaultMappingState.resolve(mapping.extras) ?: VaultMappingState(baselineHash = "")
-                            logDebug("Vault file missing once, keeping note: ${localNote.title}")
+                            logDebug("Vault file missing once, keeping note: note ${localNote.id}")
                             mappingUpdates.add(
                                 mapping.copy(
                                     extras = VaultMappingState.encode(
@@ -214,7 +216,7 @@ class SynchronizeNotes(
                                 idStr = "",
                                 id = 0,
                             )
-                            logDebug("May be deleted remotely: $syncNote")
+                            logDebug("May be deleted remotely: note ${localNote.id}")
                             localUpdates.add(NoteAction.Delete(localNote, syncNote))
                             if (service == CloudService.FILE_STORAGE) {
                                 val vaultPath = VaultPaths.vaultMappingPath(mapping.storageUri)
@@ -238,7 +240,9 @@ class SynchronizeNotes(
                         }
 
                     } else if (service == CloudService.FILE_STORAGE && vaultExportCutoffEpoch == null) {
-                        logDebug("Skip vault export until folder is configured: ${localNote.title}")
+                        logDebug("Skip vault export until folder is configured: note ${localNote.id}")
+                    } else if (service == CloudService.FILE_STORAGE && localNote.id in deferExportLocalIds) {
+                        logDebug("Deferring vault export of note ${localNote.id} to the next sync")
                     } else if (service == CloudService.FILE_STORAGE) {
                         val notebookName = localNote.notebookId?.let {
                             notebookDao.getById(it).firstOrNull()?.name
@@ -261,7 +265,7 @@ class SynchronizeNotes(
                                 title = localNote.title,
                                 lastModified = localNote.modifiedDate,
                             )
-                            logDebug("Export or new vault-backed local note: ${localNote.title}")
+                            logDebug("Export or new vault-backed local note: note ${localNote.id}")
                             remoteUpdates.add(NoteAction.Create(localNote, remoteNoteMetaData))
                         }
                     }
@@ -278,9 +282,9 @@ class SynchronizeNotes(
                                 val pendingDelete =
                                     VaultMappingState.resolve(mapping.extras)?.pendingVaultDelete == true
                                 if (pendingDelete) {
-                                    logDebug("Vault file present but delete pending; skip restore: ${remoteNote.title}")
+                                    logDebug("Vault file present but delete pending; skip restore: ${remoteNote.idStr}")
                                 } else {
-                                    logDebug("Vault file returned; restoring binned note: ${remoteNote.title}")
+                                    logDebug("Vault file returned; restoring binned note: ${remoteNote.idStr}")
                                     localUpdates.add(NoteAction.Update(localNote, remoteNote))
                                     if (mapping.isDeletedLocally && binnedPath == remoteNote.idStr) {
                                         mappingUpdates.add(
@@ -299,16 +303,16 @@ class SynchronizeNotes(
                             }
                             localNote == null -> {
                                 val dummyLocalNote = Note(id = mapping.localNoteId)
-                                logDebug("Local note deleted. Deleting remotely: ${remoteNote.title}")
+                                logDebug("Local note deleted. Deleting remotely: ${remoteNote.idStr}")
                                 remoteUpdates.add(NoteAction.Delete(dummyLocalNote, remoteNote))
                             }
                             mapping.isDeletedLocally &&
                                 VaultMappingState.resolve(mapping.extras)?.pendingVaultDelete == true -> {
-                                logDebug("Skip re-link: vault delete pending for ${remoteNote.title}")
+                                logDebug("Skip re-link: vault delete pending for ${remoteNote.idStr}")
                             }
                             mapping.isDeletedLocally &&
                                 binnedPath == VaultPaths.normalizeNotePath(remoteNote.idStr) -> {
-                                logDebug("Re-link binned mapping to returned file: ${remoteNote.title}")
+                                logDebug("Re-link binned mapping to returned file: ${remoteNote.idStr}")
                                 mappingUpdates.add(
                                     mapping.copy(
                                         isDeletedLocally = false,
@@ -322,7 +326,7 @@ class SynchronizeNotes(
                                 )
                             }
                             mapping.isDeletedLocally -> {
-                                logDebug("Remote note ignored for binned local: ${remoteNote.title}")
+                                logDebug("Remote note ignored for binned local: ${remoteNote.idStr}")
                             }
                         }
                     } else {
@@ -334,13 +338,13 @@ class SynchronizeNotes(
                             sharedClaimedPaths,
                         )
                         if (linked != null) {
-                            logDebug("Link remote import to local: ${linked.title}")
+                            logDebug("Link remote import to local: note ${linked.id}")
                             mappingUpdates.add(remoteNote.getMapping(linked.id, service))
                         } else {
                             val newLocalNote = Note(
                                 title = remoteNote.title, modifiedDate = remoteNote.lastModified
                             )
-                            logDebug("New Remote note: ${remoteNote.title}")
+                            logDebug("New Remote note: ${remoteNote.idStr}")
                             localUpdates.add(NoteAction.Create(newLocalNote, remoteNote))
                         }
                     }
@@ -363,11 +367,11 @@ class SynchronizeNotes(
                             mappingUpdates.add(remoteNote.getMapping(localNote.id, service))
                         } else if (localNote.modifiedDate > remoteNote.lastModified) {
                             // Local note is newer, update remote
-                            logDebug("Local note (${localNote.title}) is newer ${localNote.modifiedDate}, ${remoteNote.lastModified}")
+                            logDebug("Local note (${localNote.id}) is newer ${localNote.modifiedDate}, ${remoteNote.lastModified}")
                             remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
                         } else if (localNote.modifiedDate < remoteNote.lastModified) {
                             // Remote note is newer, update local
-                            logDebug("Remote note(${remoteNote.title}) is newer ${remoteNote.lastModified}, ${localNote.modifiedDate}")
+                            logDebug("Remote note(${remoteNote.idStr}) is newer ${remoteNote.lastModified}, ${localNote.modifiedDate}")
                             localUpdates.add(NoteAction.Update(localNote, remoteNote))
                         }
                         // If equal, no action needed
@@ -378,7 +382,7 @@ class SynchronizeNotes(
                             idStr = "", content = localNote.content,
                             title = localNote.title, lastModified = localNote.modifiedDate
                         )
-                        logDebug("New local note: ${localNote.title}")
+                        logDebug("New local note: note ${localNote.id}")
                         remoteUpdates.add(NoteAction.Create(localNote, syncNote))
                     }
                 }
@@ -392,7 +396,7 @@ class SynchronizeNotes(
                         val newLocalNote = Note(
                             title = remoteNote.title, modifiedDate = remoteNote.lastModified
                         )
-                        logDebug("New Remote note: ${remoteNote.title}")
+                        logDebug("New Remote note: ${remoteNote.idStr}")
                         localUpdates.add(NoteAction.Create(newLocalNote, remoteNote))
                     }
                     // If the local note exists, it was already handled in the local notes loop

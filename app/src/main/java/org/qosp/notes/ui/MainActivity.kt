@@ -47,6 +47,8 @@ import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.qosp.notes.preferences.SortNavdrawerNotebooksMethod
 import org.qosp.notes.ui.attachments.fromUri
+import org.qosp.notes.ui.settings.SettingsViewModel
+import org.qosp.notes.data.sync.fs.toDisplayPath
 import org.qosp.notes.ui.utils.closeAndThen
 import org.qosp.notes.ui.utils.collect
 import org.qosp.notes.ui.utils.hideKeyboard
@@ -64,6 +66,7 @@ class MainActivity : BaseActivity() {
     private val activityModel: ActivityViewModel by viewModel()
     private val whatsNewModel: WhatsNewViewModel by viewModel()
     private val backendProvider by inject<BackendProvider>()
+    private val settingsModel: SettingsViewModel by viewModel()
     private var vaultFolderPromptShown = false
 
     private val topLevelMenu get() = binding.navigationView.menu
@@ -149,7 +152,10 @@ class MainActivity : BaseActivity() {
                 .getEncryptedString(PreferenceRepository.STORAGE_LOCATION)
                 .first()
             if (location.isNotBlank()) {
-                if (vaultForegroundRescan.shouldRunRescan()) {
+                val upgradePrompt = activityModel.vaultUpgradePromptIfNeeded()
+                if (upgradePrompt != null) {
+                    showVaultUpgradeDialog(upgradePrompt)
+                } else if (vaultForegroundRescan.shouldRunRescan()) {
                     // Keeps vault-relative paths in ActivityViewModel in step with the refreshed index.
                     activityModel.syncAsync().await()
                 }
@@ -162,6 +168,28 @@ class MainActivity : BaseActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
+    }
+
+    private fun showVaultUpgradeDialog(prompt: ActivityViewModel.VaultUpgradePrompt) {
+        val path = Uri.parse(prompt.location).toDisplayPath(this)
+        var message = getString(R.string.vault_upgrade_message, path)
+        if (prompt.hadNextcloud) {
+            message += "\n\n" + getString(R.string.vault_upgrade_nextcloud_note)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.vault_upgrade_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.vault_upgrade_use_folder) { _, _ ->
+                lifecycleScope.launch {
+                    settingsModel.confirmExistingVaultFolder(prompt.location)
+                    activityModel.syncAsync().await()
+                }
+            }
+            .setNeutralButton(R.string.vault_upgrade_choose_other) { _, _ ->
+                navController.navigateSafely(R.id.fragment_settings)
+            }
+            .setNegativeButton(R.string.vault_upgrade_not_now, null)
+            .show()
     }
 
     private fun promptForVaultFolderIfNeeded() {

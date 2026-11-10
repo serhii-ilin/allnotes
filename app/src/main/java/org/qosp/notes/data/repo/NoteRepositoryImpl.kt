@@ -188,6 +188,20 @@ class NoteRepositoryImpl(
             }
         }
 
+        // Upgraded installs have a folder but no confirmation yet; touching it could import or export
+        // against the wrong folder. Until the user confirms, the vault is read and written by nothing.
+        val vaultCutoff = if (syncProvider.type == CloudService.FILE_STORAGE) {
+            val configuredAt = preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT)
+                .first().toLongOrNull()
+            if (configuredAt == null) {
+                Log.i(tag, "syncNotes: vault folder not confirmed yet; skipping sync")
+                return@run Success
+            }
+            configuredAt
+        } else {
+            null
+        }
+
         var pendingRemoteUpdates: List<NoteAction> = emptyList()
         val lockedResult = vaultSyncCoordinator.withVaultLock sync@{
             if (syncProvider.type == CloudService.FILE_STORAGE) {
@@ -235,16 +249,12 @@ class NoteRepositoryImpl(
                         ),
                     )
                 }
-                if (syncProvider.type == CloudService.FILE_STORAGE) {
+                val deferredExportIds = if (syncProvider.type == CloudService.FILE_STORAGE) {
                     val legacyMappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
                         .filter { it.storageUri?.contains("://") == true }
                     relinkLegacyContentMappings(legacyMappings, localNotes, allRemoteNotes)
-                }
-                val vaultCutoff = if (syncProvider.type == CloudService.FILE_STORAGE) {
-                    preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT)
-                        .first().toLongOrNull() ?: 0L
                 } else {
-                    null
+                    emptySet()
                 }
                 if (syncProvider.type == CloudService.FILE_STORAGE) {
                     vaultTreeAccess.warmFrom(preferenceRepository)
@@ -264,6 +274,7 @@ class NoteRepositoryImpl(
                         remoteScanSucceeded = remoteScanSucceeded,
                         vaultExportCutoffEpoch = vaultCutoff,
                         suppressMissingBins = massMissing,
+                        deferExportLocalIds = deferredExportIds,
                     )
                 Log.d(
                     tag, "sync updates: ${syncResult.localUpdates.size} local, " +
@@ -374,7 +385,7 @@ class NoteRepositoryImpl(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(tag, "applyLocalUpdates: Failed to apply action $action: ${e.message}")
+                Log.e(tag, "applyLocalUpdates: Failed to apply ${action::class.simpleName}: ${e.message}")
             }
         }
     }
@@ -397,7 +408,7 @@ class NoteRepositoryImpl(
                     )
                 }
             } catch (e: Exception) {
-                Log.e(tag, "applyRemoteUpdates: Failed to apply action $action: ${e.message}")
+                Log.e(tag, "applyRemoteUpdates: Failed to apply ${action::class.simpleName}: ${e.message}")
             }
         }
     }
@@ -413,7 +424,7 @@ class NoteRepositoryImpl(
     }
 
     override suspend fun insertNote(note: Note, sync: Boolean): Long {
-        Log.d(tag, "insertNote: Creating note '${note.title}', isLocalOnly=${note.isLocalOnly}")
+        Log.d(tag, "insertNote: Creating note, isLocalOnly=${note.isLocalOnly}")
         val noteId = noteDao.insert(note.toEntity())
         if (note.isLocalOnly.not() && backendProvider.isSyncing && sync) {
             val note1 = note.copy(id = noteId)
@@ -433,7 +444,7 @@ class NoteRepositoryImpl(
     }
 
     private suspend fun updateNote(note: Note, sync: Boolean) {
-        Log.d(tag, "updateNote: Updating note ID=${note.id}, title='${note.title}'")
+        Log.d(tag, "updateNote: Updating note ID=${note.id}")
         noteDao.update(note.toEntity())
         if (note.isLocalOnly.not() && backendProvider.isSyncing && sync) {
             processRemoteActions(note.id, Update(note, vaultFence = captureVaultFence()))
@@ -656,6 +667,12 @@ class NoteRepositoryImpl(
     override suspend fun deleteIdMappingsForCloudService(cloudService: CloudService) =
         idMappingDao.deleteAllMappingsFor(cloudService)
 
+    override suspend fun deleteActiveIdMappingsForCloudService(cloudService: CloudService) =
+        idMappingDao.deleteActiveMappingsFor(cloudService)
+
+    override suspend fun countIdMappings(cloudService: CloudService): Int =
+        idMappingDao.getCountByCloudService(cloudService)
+
     private suspend fun upsertVaultMapping(mapping: IdMapping) {
         val provider = mapping.provider ?: return
         var toStore = mapping
@@ -733,62 +750,76 @@ class NoteRepositoryImpl(
         return idMappingDao.getByLocalIdAndProvider(noteId, CloudService.FILE_STORAGE)?.storageUri
     }
 
+    /**
+     * Relinks old `content://` mappings to vault files by content. Returns the notes whose mapping matched no
+     * file and was dropped; they must not be exported in the same sync, because the folder's files may still
+     * hold their content under a name this pass could not tie to them.
+     */
     private suspend fun relinkLegacyContentMappings(
         legacyMappings: List<IdMapping>,
         localNotes: List<Note>,
         remotes: List<SyncNote>,
-    ) {
-        if (legacyMappings.isEmpty()) return
+    ): Set<Long> {
+        if (legacyMappings.isEmpty()) return emptySet()
         val claimedPaths = mutableSetOf<String>()
         val unmatched = legacyMappings.toMutableList()
-        for (legacy in legacyMappings) {
-            val local = localNotes.find { it.id == legacy.localNoteId } ?: continue
-            val remote = remotes
-                .asSequence()
-                .filter { VaultPaths.normalizeNotePath(it.idStr) !in claimedPaths }
-                .firstOrNull { sync ->
-                val desired = VaultPaths.normalizeNotePath(sync.idStr)
-                val doc = VaultNoteDocument.parse(sync.content.orEmpty())
-                val title = doc.frontMatter.title?.takeIf { it.isNotBlank() }
-                    ?: VaultPaths.noteBaseName(sync.idStr)
-                val titleMatch = title.equals(local.title, ignoreCase = true)
-                val bodyMatch = VaultContentHash.ofText(local.content) ==
-                    VaultContentHash.ofText(doc.body)
-                val hashMatch = VaultSyncImport.canonicalFileHash(local, desired, null, null) ==
-                    VaultSyncImport.logicalHashFromRemoteFile(sync, local, desired, null)
-                titleMatch && (bodyMatch || hashMatch)
-                } ?: continue
-            val desired = VaultPaths.normalizeNotePath(remote.idStr)
-            if (desired in claimedPaths) continue
-            val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
-            val imported = VaultSyncImport.noteFromRemote(remote, local)
-            val gen = vaultSyncCoordinator.currentGeneration()
-            val state = VaultMappingState.fromDiskSync(
-                remote.content.orEmpty(),
-                imported,
-                desired,
-                VaultSyncImport.vaultPathsFromNote(imported),
-                gen,
-                notebookName,
-            )
-            val updated = legacy.copy(
-                storageUri = desired,
-                extras = VaultMappingState.encode(state),
-                isDeletedLocally = false,
-            )
-            idMappingDao.update(updated)
-            claimedPaths.add(desired)
-            unmatched.remove(legacy)
-            Log.i(tag, "Relinked legacy mapping for note ${local.id} → $desired")
+
+        class Candidate(val remote: SyncNote, val desired: String, val titleMatch: Boolean, val contentMatch: Boolean)
+
+        fun candidates(local: Note): List<Candidate> = remotes.mapNotNull { sync ->
+            val desired = VaultPaths.normalizeNotePath(sync.idStr)
+            if (desired in claimedPaths) return@mapNotNull null
+            val doc = VaultNoteDocument.parse(sync.content.orEmpty())
+            val title = doc.frontMatter.title?.takeIf { it.isNotBlank() }
+                ?: VaultPaths.noteBaseName(sync.idStr)
+            val bodyMatch = VaultContentHash.ofText(local.content) == VaultContentHash.ofText(doc.body)
+            val hashMatch = VaultSyncImport.canonicalFileHash(local, desired, null, null) ==
+                VaultSyncImport.logicalHashFromRemoteFile(sync, local, desired, null)
+            val titleMatch = title.equals(local.title, ignoreCase = true)
+            // Without a title match, a blank body would link any blank file.
+            Candidate(sync, desired, titleMatch, (bodyMatch || hashMatch) && (titleMatch || local.content.isNotBlank()))
+        }.filter { it.contentMatch }
+
+        // Title + body first, so an exact match is not taken by another note that only shares the body.
+        val passes = listOf<(Candidate) -> Boolean>({ it.titleMatch }, { true })
+        for (matchesPass in passes) {
+            for (legacy in legacyMappings) {
+                if (legacy !in unmatched) continue
+                val local = localNotes.find { it.id == legacy.localNoteId } ?: continue
+                val remote = candidates(local).firstOrNull(matchesPass)?.remote ?: continue
+                val desired = VaultPaths.normalizeNotePath(remote.idStr)
+                val notebookName = local.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+                val imported = VaultSyncImport.noteFromRemote(remote, local)
+                val gen = vaultSyncCoordinator.currentGeneration()
+                val state = VaultMappingState.fromDiskSync(
+                    remote.content.orEmpty(),
+                    imported,
+                    desired,
+                    VaultSyncImport.vaultPathsFromNote(imported),
+                    gen,
+                    notebookName,
+                )
+                val updated = legacy.copy(
+                    storageUri = desired,
+                    extras = VaultMappingState.encode(state),
+                    isDeletedLocally = false,
+                )
+                idMappingDao.update(updated)
+                claimedPaths.add(desired)
+                unmatched.remove(legacy)
+                Log.i(tag, "Relinked legacy mapping for note ${local.id} → $desired")
+            }
         }
-        // Rows that matched no file are dropped, not bound to a guessed file. The note then has no mapping and
-        // exports as a new file on this sync. A mapping left with no remote would instead be read as a remote
-        // delete, and the note would be binned.
+        // Rows that matched no file are dropped, not bound to a guessed file. A mapping left with no remote would
+        // be read as a remote delete, and the note would be binned. The note exports on the next sync instead.
+        val deferred = mutableSetOf<Long>()
         for (stuck in unmatched) {
             if (localNotes.none { it.id == stuck.localNoteId }) continue
             Log.w(tag, "Dropped unmatched legacy content URI mapping for note ${stuck.localNoteId}")
             idMappingDao.deleteByLocalId(stuck.localNoteId)
+            deferred.add(stuck.localNoteId)
         }
+        return deferred
     }
 
     private suspend fun refreshVaultAttachmentIndex(syncProvider: ISyncBackend) {

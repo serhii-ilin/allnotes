@@ -453,6 +453,9 @@ class VaultFolderBlockerScenariosTest {
             ),
         )
         h.syncNotes()
+        // The dropped legacy note is held back for one sync, then exported.
+        assertEquals(0, h.mappingCountFor(id))
+        h.syncNotes()
         assertFalse(h.getNote(id)!!.isDeleted)
         val storageUri = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)?.storageUri
         assertNotNull(storageUri)
@@ -477,6 +480,7 @@ class VaultFolderBlockerScenariosTest {
                 storageUri = "content://com.example/tree/doc/same",
             ),
         )
+        h.syncNotes()
         h.syncNotes()
         assertEquals(fileBefore, h.vaultFs.readText("Same.md"))
         val live = h.noteDao.getAll(org.qosp.notes.preferences.SortMethod.TITLE_ASC).first().filterNot { it.isDeleted }

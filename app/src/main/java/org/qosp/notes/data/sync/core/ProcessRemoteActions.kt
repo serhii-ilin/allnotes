@@ -59,7 +59,6 @@ class ProcessRemoteActions(
 
         if (pendingJobs[noteId] != null) return // If there's an existing job, let it finish.
         val job = syncingScope.launch { // Create a new job to process the operation
-            var last: String = ""
             try {
                 // Add debounce delay to allow for batching of rapid operations
                 delay(Config.RemoteUpdateDebounceTime)
@@ -89,20 +88,17 @@ class ProcessRemoteActions(
                         }
                         when (action) {
                             is Create -> {
-                                last = action.note.content.takeLast(4)
-                                Log.d(tag, "insertRemoteNote: for note ID=$noteId ending ...$last")
+                                Log.d(tag, "insertRemoteNote: for note ID=$noteId")
                                 insertRemote(provider, action.note)
                             }
 
                             is Update -> {
-                                last = action.note.content.takeLast(4)
-                                Log.d(tag, "updateRemoteNote: for note ID=$noteId ending ...$last")
+                                Log.d(tag, "updateRemoteNote: for note ID=$noteId")
                                 updateRemote(action.note, provider)
                             }
 
                             is Delete -> {
-                                last = action.note.content.takeLast(4)
-                                Log.d(tag, "deleteRemoteNotes: for $noteId ending ...$last")
+                                Log.d(tag, "deleteRemoteNotes: for $noteId")
                                 deleteRemoteNotes(action.note, provider, action.removeAssets)
                             }
                         }
@@ -121,7 +117,7 @@ class ProcessRemoteActions(
             } finally {
                 // Remove the job from the maps when done
                 pendingJobs.remove(noteId)
-                Log.d(tag, "Completed ...$last")
+                Log.d(tag, "Completed remote actions for note $noteId")
             }
         }
         // Store the job in the map

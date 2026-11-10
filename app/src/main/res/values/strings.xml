@@ -149,6 +149,12 @@
     <string name="preferences_file_storage_select">Select Storage location</string>
     <string name="vault_onboarding_title">Choose a notes folder</string>
     <string name="vault_onboarding_message">Quillpad keeps notes as Markdown files in a folder you choose. Notes stay on this device until you pick a folder; you can change or back up that folder anytime.</string>
+    <string name="vault_upgrade_title">Use this notes folder?</string>
+    <string name="vault_upgrade_message">Quillpad now keeps every note as a Markdown file in your storage folder: %1$s. Use this folder?</string>
+    <string name="vault_upgrade_nextcloud_note">Nextcloud is no longer supported and the server will not be contacted. The notes on this device will be saved into the folder.</string>
+    <string name="vault_upgrade_use_folder">Use this folder</string>
+    <string name="vault_upgrade_choose_other">Choose another folder</string>
+    <string name="vault_upgrade_not_now">Not now</string>
     <string name="vault_onboarding_hint">No folder selected</string>
 
     <!-- About -->

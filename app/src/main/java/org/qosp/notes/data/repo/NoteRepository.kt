@@ -36,5 +36,10 @@ interface NoteRepository {
     suspend fun getNotesByCloudService(provider: CloudService): Map<IdMapping, Note?>
     suspend fun deleteIdMappingsForCloudService(cloudService: CloudService)
 
+    /** Like [deleteIdMappingsForCloudService] but keeps binned rows, which track notes the user deleted. */
+    suspend fun deleteActiveIdMappingsForCloudService(cloudService: CloudService)
+
+    suspend fun countIdMappings(cloudService: CloudService): Int
+
     suspend fun getVaultRelativePath(noteId: Long): String?
 }

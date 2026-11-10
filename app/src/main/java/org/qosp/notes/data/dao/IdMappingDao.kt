@@ -28,6 +28,9 @@ interface IdMappingDao {
     @Query("DELETE from cloud_ids WHERE provider = :cloudService")
     suspend fun deleteAllMappingsFor(cloudService: CloudService)
 
+    @Query("DELETE from cloud_ids WHERE provider = :cloudService AND isDeletedLocally = 0")
+    suspend fun deleteActiveMappingsFor(cloudService: CloudService)
+
     @Query("SELECT * FROM cloud_ids WHERE localNoteId = :localId AND provider = :provider LIMIT 1")
     suspend fun getByLocalIdAndProvider(localId: Long, provider: CloudService): IdMapping?
 

@@ -358,6 +358,8 @@ class EditorViewModelSaveTest {
         override fun getNotesWithoutNotebook(sortMethod: SortMethod): Flow<List<Note>> = unsupported()
         override suspend fun getNotesByCloudService(provider: CloudService): Map<IdMapping, Note?> = unsupported()
         override suspend fun deleteIdMappingsForCloudService(cloudService: CloudService) { unsupported<Unit>() }
+        override suspend fun deleteActiveIdMappingsForCloudService(cloudService: CloudService) { unsupported<Unit>() }
+        override suspend fun countIdMappings(cloudService: CloudService): Int = unsupported()
         override suspend fun getVaultRelativePath(noteId: Long): String? = null
 
         private fun <T> unsupported(): T = throw UnsupportedOperationException("not used in this test")

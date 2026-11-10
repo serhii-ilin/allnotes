@@ -139,25 +139,50 @@ class SettingsViewModel(
      */
     fun applyVaultFolderChange(newLocation: String, previousLocation: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val triggerSync = vaultSyncCoordinator.withVaultLock {
-                if (newLocation == previousLocation && newLocation.isNotBlank()) {
-                    vaultTreeAccess.warmFrom(Uri.parse(newLocation))
-                    return@withVaultLock true
-                }
-                vaultSyncCoordinator.bumpGeneration()
-                preferenceRepository.putEncryptedStrings(
-                    PreferenceRepository.STORAGE_LOCATION to newLocation,
-                    PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
-                )
-                if (previousLocation.isNotBlank() && newLocation != previousLocation) {
-                    noteRepository.deleteIdMappingsForCloudService(CloudService.FILE_STORAGE)
-                }
-                vaultTreeAccess.warmFrom(Uri.parse(newLocation))
-                true
-            }
-            if (triggerSync) {
+            if (configureVaultFolder(newLocation, previousLocation)) {
                 noteRepository.syncNotes()
             }
         }
+    }
+
+    /**
+     * Applies the folder configuration under the vault lock and returns whether a sync should follow.
+     * Re-selecting the current folder confirms it when it has no cutoff yet (an install upgraded from the old
+     * app). A blank [previousLocation] with mappings left over means the prefs were reset (for example after a
+     * backup restore), so those mappings belong to an unknown folder and are wiped like on a folder change.
+     */
+    suspend fun configureVaultFolder(newLocation: String, previousLocation: String): Boolean =
+        vaultSyncCoordinator.withVaultLock {
+            val sameFolder = newLocation == previousLocation && newLocation.isNotBlank()
+            if (sameFolder) {
+                val confirmed = preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT)
+                    .first().isNotBlank()
+                if (!confirmed) {
+                    vaultSyncCoordinator.bumpGeneration()
+                    preferenceRepository.putEncryptedStrings(
+                        PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
+                    )
+                }
+                vaultTreeAccess.warmFrom(Uri.parse(newLocation))
+                return@withVaultLock true
+            }
+            vaultSyncCoordinator.bumpGeneration()
+            preferenceRepository.putEncryptedStrings(
+                PreferenceRepository.STORAGE_LOCATION to newLocation,
+                PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
+            )
+            val staleAfterReset = previousLocation.isBlank() &&
+                noteRepository.countIdMappings(CloudService.FILE_STORAGE) > 0
+            if ((previousLocation.isNotBlank() && newLocation != previousLocation) || staleAfterReset) {
+                // Binned rows stay: they record notes the user deleted and gate later file deletes.
+                noteRepository.deleteActiveIdMappingsForCloudService(CloudService.FILE_STORAGE)
+            }
+            vaultTreeAccess.warmFrom(Uri.parse(newLocation))
+            true
+        }
+
+    /** The user accepted the folder an upgraded install already had; the caller runs the sync. */
+    suspend fun confirmExistingVaultFolder(location: String) {
+        configureVaultFolder(location, location)
     }
 }

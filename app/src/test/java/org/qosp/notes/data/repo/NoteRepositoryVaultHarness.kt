@@ -91,6 +91,9 @@ class NoteRepositoryVaultHarness(
 
     private val providerFlow = MutableStateFlow<ISyncBackend?>(backend)
 
+    /** Blank means the vault folder has not been confirmed yet (an install upgraded from the old app). */
+    var vaultConfiguredAt: String = "1"
+
     val repository: NoteRepositoryImpl
     private val processRemoteActions: ProcessRemoteActions
     private val prefsRef: PreferenceRepository
@@ -104,8 +107,8 @@ class NoteRepositoryVaultHarness(
         every { Log.e(any<String>(), any<String>()) } returns 0
         every { Log.i(any<String>(), any<String>()) } returns 0
         coEvery { prefs.getEncryptedString(PreferenceRepository.STORAGE_LOCATION) } returns flowOf("content://vault")
-        coEvery { prefs.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT) } returns flowOf("1")
         coEvery { prefs.getEncryptedString(any()) } returns flowOf("1")
+        coEvery { prefs.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT) } answers { flowOf(vaultConfiguredAt) }
         every { backendProvider.isSyncing } returns true
         every { backendProvider.syncProvider } returns providerFlow
         val scope = SyncScope(CoroutineScope(UnconfinedTestDispatcher(testScope.testScheduler)))

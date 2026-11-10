@@ -80,6 +80,25 @@ class ActivityViewModel(
         }
     }
 
+    private var vaultUpgradePromptChecked = false
+
+    /**
+     * Returns the details for the one-time "use this folder?" dialog when an upgraded install has a storage
+     * folder but never confirmed it, at most once per process.
+     */
+    suspend fun vaultUpgradePromptIfNeeded(): VaultUpgradePrompt? {
+        if (vaultUpgradePromptChecked) return null
+        val location = preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
+        val configuredAt = preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT).first()
+        if (!needsVaultUpgradeConfirmation(location, configuredAt)) return null
+        vaultUpgradePromptChecked = true
+        val hadNextcloud = noteRepository.countIdMappings(CloudService.NEXTCLOUD) > 0 ||
+            preferenceRepository.get<CloudService>().first() == CloudService.NEXTCLOUD
+        return VaultUpgradePrompt(location, hadNextcloud)
+    }
+
+    data class VaultUpgradePrompt(val location: String, val hadNextcloud: Boolean)
+
     suspend fun refreshVaultRelativePaths() {
         _vaultRelativePaths.value = noteRepository.getNotesByCloudService(CloudService.FILE_STORAGE)
             .mapNotNull { (mapping, _) ->
@@ -244,3 +263,7 @@ class ActivityViewModel(
         viewModelScope.launch(Dispatchers.IO) { forEach { block(it) } }
     }
 }
+
+/** True for an install upgraded from the old app: a folder is set but the user never confirmed it. */
+fun needsVaultUpgradeConfirmation(location: String, configuredAt: String): Boolean =
+    location.isNotBlank() && configuredAt.isBlank()
