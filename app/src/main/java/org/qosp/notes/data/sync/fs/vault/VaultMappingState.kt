@@ -26,6 +26,8 @@ data class VaultMappingState(
     val missingScanCount: Int = 0,
     /** True only when the user binned the note. A bin caused by a missing file never deletes the vault file. */
     val userBinned: Boolean = false,
+    /** Where the bin moved the note's file (`.trash/<original path>`); null when nothing was moved. */
+    val trashedPath: String? = null,
 ) {
     val vaultAttachmentPathSet: Set<String> = vaultAttachmentPaths.toSet()
 
@@ -89,6 +91,7 @@ data class VaultMappingState(
                 binnedVaultPath = existing?.binnedVaultPath,
                 pendingVaultDelete = existing?.pendingVaultDelete == true,
                 userBinned = existing?.userBinned == true,
+                trashedPath = existing?.trashedPath,
             )
         }
     }

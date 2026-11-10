@@ -34,6 +34,19 @@ interface ISyncBackend {
     suspend fun createNote(note: Note, linkExisting: Boolean = true): SyncNote
     suspend fun updateNote(note: Note, mapping: IdMapping): IdMapping
     suspend fun deleteNote(mapping: IdMapping, removeAssets: Boolean = true): Boolean
+
+    /**
+     * Binning: moves the note's file into the backend's bin instead of deleting it. Returns the bin path, or null
+     * when there was no file to move. Throws when the move fails, so the caller retries.
+     */
+    suspend fun trashNote(mapping: IdMapping): String? {
+        deleteNote(mapping, removeAssets = false)
+        return null
+    }
+
+    /** Moves a file back out of the bin to [toPath] (or a free sibling). Null when the bin file is gone. */
+    suspend fun restoreFromTrash(trashedPath: String, toPath: String, forNoteId: Long): String? = null
+
     suspend fun getNote(mapping: IdMapping): SyncNote?
     suspend fun getAll(knownMappedPaths: Set<String> = emptySet()): List<SyncNote>?
 }

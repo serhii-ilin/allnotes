@@ -552,6 +552,7 @@ class VaultFolderBlockerScenariosTest {
         assertTrue(h.getNote(id)!!.isDeleted)
         val mapping = h.idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)
         assertTrue("mapping should be binned or gone: $mapping", mapping == null || mapping.isDeletedLocally)
-        assertTrue(h.vaultFs.snapshotPaths().none { it.endsWith("Racing.md") })
+        // A binned note's file may only sit in the vault's bin.
+        assertTrue(h.vaultFs.snapshotPaths().none { it.endsWith("Racing.md") && !it.startsWith(".trash/") })
     }
 }

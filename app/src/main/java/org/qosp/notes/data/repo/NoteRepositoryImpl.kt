@@ -150,17 +150,29 @@ class NoteRepositoryImpl(
             val path = VaultMappingState.resolve(mapping.extras)?.binnedVaultPath
                 ?: VaultPaths.vaultMappingPath(mapping.storageUri)
                 ?: continue
-            val deleteMapping = mapping.copy(storageUri = path)
-            val deleted = syncProvider.deleteNote(deleteMapping, removeAssets = false)
-            if (deleted) {
-                val state = VaultMappingState.resolve(mapping.extras)
-                    ?: VaultMappingState(baselineHash = "")
-                idMappingDao.update(
-                    mapping.copy(
-                        extras = VaultMappingState.encode(state.copy(pendingVaultDelete = false)),
-                    ),
-                )
+            // Another live note may hold the path by now: its file is not ours to move.
+            val pathTaken = idMappingDao.countActiveMappingsAtPath(
+                syncProvider.type,
+                path,
+                mapping.localNoteId,
+                syncProvider.caseInsensitivePaths,
+            ) > 0
+            // Rows from before the bin lived in .trash take the same path: the file moves if it is still there.
+            val trashed = try {
+                if (pathTaken) null else syncProvider.trashNote(mapping.copy(storageUri = path))
+            } catch (e: Exception) {
+                Log.w(tag, "flushPendingVaultDeletes: could not move to the bin, will retry: ${e.message}")
+                continue
             }
+            val state = VaultMappingState.resolve(mapping.extras)
+                ?: VaultMappingState(baselineHash = "")
+            idMappingDao.update(
+                mapping.copy(
+                    extras = VaultMappingState.encode(
+                        state.copy(pendingVaultDelete = false, trashedPath = trashed ?: state.trashedPath),
+                    ),
+                ),
+            )
         }
     }
 
@@ -520,7 +532,10 @@ class NoteRepositoryImpl(
                                 n.id,
                                 backendProvider.syncProvider.value?.caseInsensitivePaths == true,
                             ) > 0
-                            if (pathTaken) {
+                            val fromTrash = state?.trashedPath != null && restoreFromTrash(mapping, state, restored, norm)
+                            if (fromTrash) {
+                                // The file is back and the mapping re-activated.
+                            } else if (pathTaken) {
                                 restoreToFreshVaultFile(mapping, restored)
                             } else {
                                 idMappingDao.update(
@@ -549,6 +564,46 @@ class NoteRepositoryImpl(
                 }
                 processRemoteActions(n.id, op)
             }
+        }
+    }
+
+    /**
+     * Moves a binned note's file back out of `.trash` and re-activates its mapping, baselined on the moved file.
+     * False when the bin file is gone, so the caller falls back to writing a fresh file.
+     */
+    private suspend fun restoreFromTrash(
+        mapping: IdMapping,
+        state: VaultMappingState,
+        restored: Note,
+        originalPath: String,
+    ): Boolean {
+        val provider = backendProvider.syncProvider.value ?: return false
+        val trashedPath = state.trashedPath ?: return false
+        return vaultSyncCoordinator.withVaultLock {
+            val target = try {
+                provider.restoreFromTrash(trashedPath, originalPath, restored.id)
+            } catch (e: Exception) {
+                Log.w(tag, "restoreFromTrash: move failed, re-creating the file: ${e.message}")
+                null
+            } ?: return@withVaultLock false
+            val moved = provider.getNote(mapping.copy(storageUri = target)) ?: return@withVaultLock false
+            val notebookName = restored.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+            val fresh = VaultMappingState.fromDiskSync(
+                moved.content.orEmpty(),
+                restored,
+                target,
+                state.vaultAttachmentPaths,
+                vaultSyncCoordinator.currentGeneration(),
+                notebookName,
+            )
+            idMappingDao.update(
+                mapping.copy(
+                    storageUri = target,
+                    isDeletedLocally = false,
+                    extras = VaultMappingState.encode(fresh),
+                ),
+            )
+            true
         }
     }
 
@@ -625,6 +680,9 @@ class NoteRepositoryImpl(
                 )
                 if (others == 0) {
                     syncProvider.deleteNote(mapping.copy(storageUri = path), removeAssets = true)
+                } else if (state?.trashedPath != null) {
+                    // The original path is another note's now; only the bin copy is this note's.
+                    syncProvider.deleteNote(mapping.copy(storageUri = null), removeAssets = true)
                 }
                 idMappingDao.deleteByLocalId(note.id)
             }

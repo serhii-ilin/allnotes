@@ -154,7 +154,13 @@ class ProcessRemoteActions(
             } else {
                 mapping
             }
-            syncProvider.deleteNote(mapping = mappingForDelete, removeAssets = removeAssets)
+            // A user bin moves the file to the bin instead of deleting it; a throw leaves pendingVaultDelete set.
+            val trashed = if (!removeAssets && syncProvider.type == CloudService.FILE_STORAGE) {
+                syncProvider.trashNote(mappingForDelete)
+            } else {
+                syncProvider.deleteNote(mapping = mappingForDelete, removeAssets = removeAssets)
+                null
+            }
             if (removeAssets) {
                 idMappingDao.deleteByLocalId(note.id)
             } else if (syncProvider.type == CloudService.FILE_STORAGE && !vaultPath.isNullOrBlank()) {
@@ -162,6 +168,7 @@ class ProcessRemoteActions(
                 val state = (prior ?: VaultMappingState(baselineHash = "")).copy(
                     binnedVaultPath = vaultPath,
                     vaultAttachmentPaths = prior?.vaultAttachmentPaths ?: emptyList(),
+                    trashedPath = trashed,
                 )
                 idMappingDao.update(
                     mapping.copy(

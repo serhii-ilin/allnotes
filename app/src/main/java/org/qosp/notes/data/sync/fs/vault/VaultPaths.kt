@@ -182,6 +182,8 @@ object VaultPaths {
     }
 
     const val VAULT_REL_PREFIX = "vaultrel:"
+    /** The vault's bin. A dot-folder, so scans never import from it. */
+    const val TRASH_DIR = ".trash"
     const val STAGING_DIR = ".quillpad-staging"
     const val PENDING_DIR = ".quillpad-staging/pending"
     const val RECOVERY_DIR = ".quillpad-staging/recovery"

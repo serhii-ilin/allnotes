@@ -273,12 +273,64 @@ class StorageBackend(
 
     override suspend fun deleteNote(mapping: IdMapping, removeAssets: Boolean): Boolean = VaultIo.run {
         val fs = vaultFs()
-        val path = VaultPaths.vaultMappingPath(mapping.storageUri) ?: return@run false
         val mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
+        val trashed = mappingState?.trashedPath?.let { VaultPaths.normalizeNotePath(it) }
+        var removedTrash = false
+        if (trashed != null && removeAssets) {
+            removedTrash = fs.delete(trashed)
+            deleteEmptyTrashFolders(fs, trashed)
+            invalidateVaultIndex()
+        }
+        val path = VaultPaths.vaultMappingPath(mapping.storageUri) ?: return@run removedTrash
         if (removeAssets) {
             deleteOwnedAssets(fs, path, mappingState?.vaultAttachmentPathSet.orEmpty())
         }
+        // The note's file lives in the bin: whatever sits at the original path now is not this note's.
+        if (trashed != null) return@run removedTrash
         return@run fs.delete(path)
+    }
+
+    override suspend fun trashNote(mapping: IdMapping): String? = VaultIo.run {
+        val fs = vaultFs()
+        val path = VaultPaths.vaultMappingPath(mapping.storageUri) ?: return@run null
+        if (!fs.isFile(path)) return@run null
+        val target = VaultPaths.uniqueSiblingPath(VaultPaths.normalize("${VaultPaths.TRASH_DIR}/$path")) {
+            fs.isFile(it)
+        }
+        fs.renameFile(path, target)
+        invalidateVaultIndex()
+        if (fs.isFile(path)) {
+            // The copy landed but the source would not go: undo, or the note would exist twice.
+            fs.delete(path)
+            if (fs.isFile(path)) {
+                fs.delete(target)
+                throw IOException("Cannot move $path to the bin")
+            }
+        }
+        deleteFolderIfEmpty(fs, VaultPaths.parentPath(path))
+        return@run target
+    }
+
+    override suspend fun restoreFromTrash(trashedPath: String, toPath: String, forNoteId: Long): String? =
+        VaultIo.run {
+            val fs = vaultFs()
+            val from = VaultPaths.normalizeNotePath(trashedPath)
+            if (!fs.isFile(from)) return@run null
+            val target = uniqueNotePath(fs, toPath, forNoteId = forNoteId)
+            fs.renameFile(from, target)
+            invalidateVaultIndex()
+            deleteEmptyTrashFolders(fs, from)
+            return@run target
+        }
+
+    /** Drops folders left empty under the bin, up to (not including) `.trash` itself. */
+    private fun deleteEmptyTrashFolders(fs: VaultFs, removedFile: String) {
+        var folder = VaultPaths.parentPath(removedFile)
+        while (folder.startsWith("${VaultPaths.TRASH_DIR}/")) {
+            val remaining = runCatching { fs.listChildren(folder) }.getOrNull() ?: return
+            if (remaining.isNotEmpty() || !fs.delete(folder)) return
+            folder = VaultPaths.parentPath(folder)
+        }
     }
 
     override suspend fun getNote(mapping: IdMapping): SyncNote? = VaultIo.run {
