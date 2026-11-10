@@ -127,6 +127,10 @@
     <string name="vault_rescan_failed">Rescan failed</string>
     <string name="vault_rescan_failed_reason">Rescan failed: %s</string>
     <string name="vault_nothing_to_clear">Nothing to clear</string>
+    <plurals name="vault_files_missing_kept">
+        <item quantity="one">%d note\'s file is missing from the vault folder; it was kept.</item>
+        <item quantity="other">%d notes\' files are missing from the vault folder; they were kept.</item>
+    </plurals>
     <plurals name="vault_rescan_done">
         <item quantity="one">Vault rescanned · %d note indexed</item>
         <item quantity="other">Vault rescanned · %d notes indexed</item>

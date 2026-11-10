@@ -33,6 +33,8 @@ class SynchronizeNotes(
         method: SyncMethod = SyncMethod.MAPPING,
         remoteScanSucceeded: Boolean = true,
         vaultExportCutoffEpoch: Long? = null,
+        /** When set, a mapped file missing from the scan is neither counted nor binned (mass-missing scan). */
+        suppressMissingBins: Boolean = false,
     ): SyncNotesResult {
         logDebug("SynchronizeNotes: Starting synchronization with method: $method")
 
@@ -187,6 +189,8 @@ class SynchronizeNotes(
                             mapping.storageUri?.contains("://") == true
                         ) {
                             logDebug("Awaiting legacy relink for ${localNote.title}")
+                        } else if (service == CloudService.FILE_STORAGE && suppressMissingBins) {
+                            logDebug("Mass-missing scan; keeping note without counting: ${localNote.title}")
                         } else if (
                             service == CloudService.FILE_STORAGE &&
                             !VaultPaths.vaultMappingPath(mapping.storageUri).isNullOrBlank() &&

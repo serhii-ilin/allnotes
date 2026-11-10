@@ -38,7 +38,10 @@ data class VaultMappingState(
             if (extras.isNullOrBlank()) return null
             return runCatching {
                 if (extras.startsWith("{")) json.decodeFromString<VaultMappingState>(extras) else null
-            }.getOrNull()
+            }.getOrNull()?.let { state ->
+                // Only a user bin ever set pendingVaultDelete, and rows from before userBinned existed lack the flag.
+                if (state.pendingVaultDelete && !state.userBinned) state.copy(userBinned = true) else state
+            }
         }
 
         fun resolve(extras: String?): VaultMappingState? {

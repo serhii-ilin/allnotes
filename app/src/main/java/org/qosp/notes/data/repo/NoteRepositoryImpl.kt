@@ -1,11 +1,13 @@
 package org.qosp.notes.data.repo
 
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import me.msoul.datastore.defaultOf
+import org.qosp.notes.R
 import org.qosp.notes.data.dao.IdMappingDao
 import org.qosp.notes.data.dao.NoteDao
 import org.qosp.notes.data.dao.NotebookDao
@@ -50,7 +52,7 @@ import org.qosp.notes.preferences.SortMethod
 import org.qosp.notes.ui.utils.Toaster
 import java.time.Instant
 
-/** Mapped files absent from one complete scan that make the scan untrustworthy (or more than half of them). */
+/** At least this many missing mapped files, and more than half of all, count as a mass-missing scan. */
 private const val MASS_MISSING_COUNT = 3
 
 class NoteRepositoryImpl(
@@ -68,6 +70,7 @@ class NoteRepositoryImpl(
     private val vaultTreeAccess: VaultTreeAccess,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
     private val editorSessionRegistry: EditorSessionRegistry,
+    private val context: Context,
 ) : NoteRepository {
 
     private val tag = NoteRepositoryImpl::class.java.simpleName
@@ -126,11 +129,10 @@ class NoteRepositoryImpl(
         )
     }
 
-    private fun isMassMissing(mappedPaths: Set<String>, scan: List<SyncNote>): Boolean {
-        if (mappedPaths.isEmpty()) return false
+    /** Mapped files absent from a complete scan; many at once point at a bad listing, so they are kept. */
+    private fun missingMappedCount(mappedPaths: Set<String>, scan: List<SyncNote>): Int {
         val scanned = scan.map { VaultPaths.normalizeNotePath(it.idStr) }.toSet()
-        val missing = mappedPaths.count { VaultPaths.normalizeNotePath(it) !in scanned }
-        return missing >= MASS_MISSING_COUNT || missing * 2 > mappedPaths.size
+        return mappedPaths.count { VaultPaths.normalizeNotePath(it) !in scanned }
     }
 
     private suspend fun flushPendingVaultDeletes(syncProvider: ISyncBackend) {
@@ -210,16 +212,29 @@ class NoteRepositoryImpl(
                 // emptied folder than every note being deleted. Fail the scan so no note is binned.
                 val emptyScanWhileMapped = syncProvider.type == CloudService.FILE_STORAGE &&
                     scanResult != null && scanResult.isEmpty() && mappedPaths.isNotEmpty()
-                // Many mapped files vanishing in one complete scan points at a bad listing, not many deletions.
-                val massMissing = syncProvider.type == CloudService.FILE_STORAGE && scanResult != null &&
-                    isMassMissing(mappedPaths, scanResult)
-                val remoteScanSucceeded = scanResult != null && !emptyScanWhileMapped && !massMissing
+                val remoteScanSucceeded = scanResult != null && !emptyScanWhileMapped
                 if (!remoteScanSucceeded) {
                     val msg = "Vault scan incomplete; local notes were not changed."
                     Log.w(tag, msg)
                     return@sync GenericError(msg)
                 }
                 val allRemoteNotes = scanResult!!
+                val missingCount = if (syncProvider.type == CloudService.FILE_STORAGE) {
+                    missingMappedCount(mappedPaths, allRemoteNotes)
+                } else {
+                    0
+                }
+                val massMissing = missingCount >= MASS_MISSING_COUNT && missingCount * 2 > mappedPaths.size
+                if (massMissing) {
+                    Log.w(tag, "Vault scan lost $missingCount of ${mappedPaths.size} mapped files; keeping those notes")
+                    toaster.showLong(
+                        context.resources.getQuantityString(
+                            R.plurals.vault_files_missing_kept,
+                            missingCount,
+                            missingCount,
+                        ),
+                    )
+                }
                 if (syncProvider.type == CloudService.FILE_STORAGE) {
                     val legacyMappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
                         .filter { it.storageUri?.contains("://") == true }
@@ -248,6 +263,7 @@ class NoteRepositoryImpl(
                         syncMethod,
                         remoteScanSucceeded = remoteScanSucceeded,
                         vaultExportCutoffEpoch = vaultCutoff,
+                        suppressMissingBins = massMissing,
                     )
                 Log.d(
                     tag, "sync updates: ${syncResult.localUpdates.size} local, " +

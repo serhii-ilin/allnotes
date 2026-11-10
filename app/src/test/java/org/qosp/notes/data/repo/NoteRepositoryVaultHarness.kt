@@ -134,6 +134,8 @@ class NoteRepositoryVaultHarness(
             vaultTreeAccess,
             vaultSyncCoordinator,
             editorSessionRegistry,
+            // Robolectric has no app resources here; the repository only uses the context for toast text.
+            mockk<Context>(relaxed = true),
         )
     }
 
