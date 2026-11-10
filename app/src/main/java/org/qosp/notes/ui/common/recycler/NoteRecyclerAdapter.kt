@@ -19,13 +19,20 @@ class NoteRecyclerAdapter(
 
     private val tasksViewPool = RecyclerView.RecycledViewPool()
     private val attachmentsViewPool = RecyclerView.RecycledViewPool()
+    private var previewRenderer: NotePreviewRenderer? = null
 
     var vaultRelativePaths: Map<Long, String> = emptyMap()
         set(value) {
-            if (field != value) {
-                field = value
-                if (itemCount > 0) {
-                    notifyItemRangeChanged(0, itemCount, Payload.VaultPathChanged)
+            if (field == value) return
+
+            val previous = field
+            field = value
+
+            // Only rebind cards whose path actually moved; a repeated emission must be a no-op.
+            for (position in currentList.indices) {
+                val noteId = currentList[position].id
+                if (previous[noteId] != value[noteId]) {
+                    notifyItemChanged(position, Payload.VaultPathChanged)
                 }
             }
         }
@@ -42,6 +49,9 @@ class NoteRecyclerAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NoteViewHolder {
         val binding = LayoutNoteBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        val renderer = previewRenderer
+            ?: NotePreviewRenderer(markwon, parent.context.applicationContext).also { previewRenderer = it }
+
         return NoteViewHolder(
             binding = binding,
             listener = listener,
@@ -50,6 +60,7 @@ class NoteRecyclerAdapter(
             markwon = markwon,
             tasksViewPool = tasksViewPool,
             attachmentsViewPool = attachmentsViewPool,
+            previewRenderer = renderer,
         )
     }
 
