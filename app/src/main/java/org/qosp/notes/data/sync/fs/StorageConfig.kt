@@ -59,6 +59,9 @@ fun vaultTreeIdentity(uri: Uri): String? {
 
 private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
+/** Whether [tree] is on device storage, the only provider whose listings are trusted enough to delete folders. */
+fun isLocalStorageTree(tree: Uri): Boolean = tree.authority == EXTERNAL_STORAGE_AUTHORITY
+
 /**
  * Whether to warn that [tree] is provided by another app (a cloud drive, say). Once per tree: [warnedTree] is the
  * tree the user was already told about (blank when none), and device storage never warns.

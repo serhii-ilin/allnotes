@@ -44,4 +44,10 @@ class VaultTreeIdentityTest {
         assertTrue(same("content://x/y", "content://x/y"))
         assertFalse(same("content://x/y", "content://x/z"))
     }
+
+    @Test
+    fun onlyDeviceStorageIsLocal() {
+        assertTrue(isLocalStorageTree(Uri.parse("content://$external/tree/primary%3ANotes")))
+        assertFalse(isLocalStorageTree(Uri.parse("content://com.example.cloud.documents/tree/root")))
+    }
 }

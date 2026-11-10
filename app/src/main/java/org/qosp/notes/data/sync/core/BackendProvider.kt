@@ -14,6 +14,7 @@ import org.qosp.notes.data.dao.IdMappingDao
 import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.sync.fs.StorageBackend
 import org.qosp.notes.data.sync.fs.StorageConfig
+import org.qosp.notes.data.sync.fs.isLocalStorageTree
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultWriteClock
 import org.qosp.notes.di.SyncScope
@@ -40,7 +41,15 @@ class BackendProvider(
         .distinctUntilChanged()
         .map { location ->
             location?.let { StorageConfig(it.toUri()) }?.let {
-                StorageBackend(context, it, notebookDao, idMappingDao, vaultSyncCoordinator, vaultWriteClock = vaultWriteClock)
+                StorageBackend(
+                    context,
+                    it,
+                    notebookDao,
+                    idMappingDao,
+                    vaultSyncCoordinator,
+                    vaultWriteClock = vaultWriteClock,
+                    pruneEmptyFolders = isLocalStorageTree(it.location),
+                )
             }
         }
         .stateIn(syncingScope, SharingStarted.Eagerly, null)

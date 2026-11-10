@@ -53,6 +53,8 @@ class StorageBackend(
     private val vaultSyncCoordinator: VaultSyncCoordinator,
     vaultFs: VaultFs? = null,
     private val vaultWriteClock: VaultWriteClock = VaultWriteClock(),
+    /** Deleting a SAF folder removes everything in it, so only providers known to list reliably may prune. */
+    private val pruneEmptyFolders: Boolean = true,
 ) : ISyncBackend {
 
     private val injectedVaultFs: VaultFs? = vaultFs
@@ -327,8 +329,7 @@ class StorageBackend(
     private fun deleteEmptyTrashFolders(fs: VaultFs, removedFile: String) {
         var folder = VaultPaths.parentPath(removedFile)
         while (folder.startsWith("${VaultPaths.TRASH_DIR}/")) {
-            val remaining = runCatching { fs.listChildren(folder) }.getOrNull() ?: return
-            if (remaining.isNotEmpty() || !fs.delete(folder)) return
+            if (!pruneIfEmpty(fs, folder)) return
             folder = VaultPaths.parentPath(folder)
         }
     }
@@ -569,11 +570,24 @@ class StorageBackend(
         return null
     }
 
-    /** Removes a folder a note moved out of, only when nothing is left in it (a failed listing counts as not empty). */
+    /**
+     * Removes a folder a note moved out of, only when two live listings in a row are empty: a SAF directory delete
+     * is recursive, so a provider answering with a short cursor must not cost the user real files. A failed
+     * listing counts as not empty, and so does pruning being off for this provider.
+     */
     private fun deleteFolderIfEmpty(fs: VaultFs, folder: String) {
         if (folder.isEmpty() || VaultHousekeeping.shouldSkipDirectory(folder.substringAfterLast('/'))) return
-        val remaining = runCatching { fs.listChildren(folder) }.getOrNull() ?: return
-        if (remaining.isEmpty()) fs.delete(folder)
+        pruneIfEmpty(fs, folder)
+    }
+
+    /** True when [folder] was deleted. */
+    private fun pruneIfEmpty(fs: VaultFs, folder: String): Boolean {
+        if (!pruneEmptyFolders) return false
+        repeat(2) {
+            val remaining = runCatching { fs.listChildren(folder) }.getOrNull() ?: return false
+            if (remaining.isNotEmpty()) return false
+        }
+        return fs.delete(folder)
     }
 
     private fun deleteOwnedAssets(fs: VaultFs, noteRelativePath: String, ownedVaultRelPaths: Set<String>) {
