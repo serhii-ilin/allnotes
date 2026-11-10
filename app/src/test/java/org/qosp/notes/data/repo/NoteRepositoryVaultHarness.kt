@@ -75,7 +75,6 @@ class NoteRepositoryVaultHarness(
     val noteDao: NoteDao = db.noteDao
     val idMappingDao: IdMappingDao = db.idMappingDao
     private val reminderDao: ReminderDao = db.reminderDao
-    // Real DAO: notes imported from subfolders get a notebook, and a fake id would break the foreign key.
     val notebookDao: NotebookDao = db.notebookDao
     private val prefs = mockk<PreferenceRepository>(relaxed = true)
     private val vaultSyncCoordinator = VaultSyncCoordinator(prefs)
