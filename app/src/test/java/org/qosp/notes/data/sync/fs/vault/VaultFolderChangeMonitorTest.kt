@@ -9,14 +9,18 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.qosp.notes.data.repo.NoteRepository
+import org.qosp.notes.data.sync.core.BaseResult
 import org.qosp.notes.data.sync.core.Success
 import org.qosp.notes.di.SyncScope
 import org.qosp.notes.preferences.PreferenceRepository
@@ -98,5 +102,42 @@ class VaultFolderChangeMonitorTest {
         advanceTimeBy(100L)
         advanceUntilIdle()
         coVerify(exactly = 1) { noteRepository.syncNotes() }
+    }
+
+    @Test
+    fun eventDuringRunningSync_doesNotCancelIt_andRunsOneFollowUp() = runTest {
+        val repo = GateNoteRepository()
+        val monitor = VaultFolderChangeMonitor(
+            context = context,
+            preferenceRepository = prefs,
+            noteRepository = repo,
+            syncScope = SyncScope(CoroutineScope(UnconfinedTestDispatcher(testScheduler))),
+            vaultWriteClock = VaultWriteClock(now = { 0L }),
+            debounceDelayMs = 100L,
+            selfWriteWindowMs = 3_000L,
+        )
+
+        monitor.onVaultChanged()
+        advanceTimeBy(100L) // debounce elapsed
+        runCurrent() // let the first sync start and suspend on the gate
+        monitor.onVaultChanged() // event arrives while the first sync is in flight
+        repo.gate.complete(Unit) // release the first sync
+        advanceUntilIdle()
+        // The first sync ran to completion (not cancelled) plus exactly one follow-up.
+        assertEquals(2, repo.completedSyncs)
+    }
+
+    /** A [NoteRepository] whose [syncNotes] really suspends on a gate in the caller's context. */
+    private class GateNoteRepository(
+        private val delegate: NoteRepository = mockk(relaxed = true),
+    ) : NoteRepository by delegate {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var completedSyncs: Int = 0
+
+        override suspend fun syncNotes(): BaseResult {
+            gate.await()
+            completedSyncs++
+            return Success
+        }
     }
 }
