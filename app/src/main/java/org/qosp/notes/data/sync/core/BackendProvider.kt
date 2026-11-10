@@ -10,6 +10,7 @@ import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.sync.fs.StorageBackend
 import org.qosp.notes.data.sync.fs.StorageConfig
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
+import org.qosp.notes.data.sync.fs.vault.VaultWriteClock
 import org.qosp.notes.di.SyncScope
 import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.preferences.PreferenceRepository
@@ -20,13 +21,14 @@ class BackendProvider(
     syncingScope: SyncScope,
     private val notebookDao: NotebookDao,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
+    private val vaultWriteClock: VaultWriteClock,
 ) {
     val syncProvider: StateFlow<ISyncBackend?> = combine(
         preferenceRepository.getAll().map { it.cloudService },
         StorageConfig.storageLocation(preferenceRepository),
     ) { _, storageConfig ->
         storageConfig?.let {
-            StorageBackend(context, it, notebookDao, vaultSyncCoordinator)
+            StorageBackend(context, it, notebookDao, vaultSyncCoordinator, vaultWriteClock = vaultWriteClock)
         }
     }.stateIn(syncingScope, SharingStarted.Eagerly, null)
 
