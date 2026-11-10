@@ -104,7 +104,9 @@ class ReminderManager(
 
         var notificationTitle = ""
 
-        reminderRepository.getById(reminderId).first()?.let { notificationTitle = it.name }
+        // A reminder removed since the alarm was set (for example by a vault sync) must not notify.
+        val reminder = reminderRepository.getById(reminderId).first() ?: return
+        notificationTitle = reminder.name
         reminderRepository.deleteById(reminderId)
 
         if (notificationTitle.isEmpty()) {

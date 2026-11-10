@@ -144,7 +144,12 @@ class SynchronizeNotes(
                                     )
                                     val contentDirty = localHash != baseline
                                     when {
-                                        contentDirty && localNote.modifiedDate >= remoteNote.lastModified -> {
+                                        // The file still equals the baseline: nothing to merge, and a change that did not
+                                        // touch modifiedDate (a reminder edit) must still reach the file.
+                                        contentDirty && (
+                                            localNote.modifiedDate >= remoteNote.lastModified ||
+                                                remoteHash == baseline
+                                            ) -> {
                                             logDebug("Vault push while dirty: note ${localNote.id}")
                                             remoteUpdates.add(NoteAction.Update(localNote, remoteNote))
                                         }

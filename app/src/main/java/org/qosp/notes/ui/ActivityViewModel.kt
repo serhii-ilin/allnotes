@@ -109,6 +109,7 @@ class ActivityViewModel(
 
     fun syncAsync(): Deferred<BaseResult> = syncScope.async {
         val result = noteRepository.syncNotes()
+        reminderManager.rescheduleAll()
         refreshVaultRelativePaths()
         result
     }

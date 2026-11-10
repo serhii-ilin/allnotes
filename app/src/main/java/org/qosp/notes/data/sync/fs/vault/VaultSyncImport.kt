@@ -109,7 +109,11 @@ object VaultSyncImport {
         val fm = doc.frontMatter
         val imported = noteFromRemote(remote, localNote)
         val fileTags = fm.tags?.map { org.qosp.notes.data.model.Tag(id = 0L, name = it) }
-        val snapshot = imported.copy(tags = fileTags ?: imported.tags)
+        // What the file holds, not Room's reminders: a reminder changed in the file must change this hash.
+        val fileReminders = fm.reminders.orEmpty().map {
+            org.qosp.notes.data.model.Reminder(name = it.name, noteId = localNote.id, date = it.date)
+        }
+        val snapshot = imported.copy(tags = fileTags ?: imported.tags, reminders = fileReminders)
         val notebookName = fm.notebook?.takeIf { it.isNotBlank() } ?: assignedNotebookName
         return canonicalFileHash(snapshot, relativePath, notebookName, fm.preservedYaml)
     }

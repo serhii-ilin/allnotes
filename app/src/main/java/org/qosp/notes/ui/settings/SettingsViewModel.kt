@@ -30,6 +30,7 @@ import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
 import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.preferences.PreferenceRepository
+import org.qosp.notes.ui.reminders.ReminderManager
 import java.time.Instant
 
 class SettingsViewModel(
@@ -39,6 +40,7 @@ class SettingsViewModel(
     private val backendProvider: BackendProvider,
     private val vaultTreeAccess: VaultTreeAccess,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
+    private val reminderManager: ReminderManager,
 ) : ViewModel() {
 
     val appPreferences = preferenceRepository.getAll()
@@ -99,6 +101,7 @@ class SettingsViewModel(
                 // A manual rescan must not trust the (mtime, size) scan cache.
                 backendProvider.clearVaultScanCache()
                 val result = noteRepository.syncNotes()
+                reminderManager.rescheduleAll()
                 val count = noteRepository.getNotesByCloudService(CloudService.FILE_STORAGE).size
                 val message = if (result is Success) {
                     context.resources.getQuantityString(R.plurals.vault_rescan_done, count, count)
@@ -183,6 +186,7 @@ class SettingsViewModel(
         if (configureVaultFolder(newLocation, previousLocation, openAsIs)) {
             backendProvider.awaitBackendFor(newLocation)
             noteRepository.syncNotes()
+            reminderManager.rescheduleAll()
         }
     }
 

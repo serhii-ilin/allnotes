@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.qosp.notes.data.model.Note
+import org.qosp.notes.data.model.Reminder
 import org.qosp.notes.data.model.Tag
 import org.junit.Test
 
@@ -169,5 +170,47 @@ class VaultNoteDocumentTest {
         val out = VaultNoteDocument.mergePreservedFromDisk(raw, updated).renderFullText()
         assertFalse(out.lines().any { it.startsWith("  - ") })
         assertEquals(listOf("a", "b"), VaultNoteDocument.parse(out).frontMatter.tags)
+    }
+
+    @Test
+    fun reminders_roundTrip_asIsoUtcList() {
+        val at = java.time.Instant.parse("2099-11-12T09:00:00Z").epochSecond
+        val note = Note(title = "R", content = "b", reminders = listOf(Reminder("Call \"Bob\"", 0L, at)))
+        val rendered = VaultNoteDocument.fromNote(note, "R.md").renderFullText()
+        assertTrue(rendered, rendered.contains("reminders:\n  - name: \"Call \\\"Bob\\\"\"\n    at: 2099-11-12T09:00:00Z\n"))
+        val parsed = VaultNoteDocument.parse(rendered).frontMatter.reminders
+        assertEquals(listOf(VaultReminder("Call \"Bob\"", at)), parsed)
+    }
+
+    @Test
+    fun reminders_parseEpochSecondsAndKeepOtherKeys() {
+        val raw = "---\ntitle: \"T\"\nreminders:\n  - name: A\n    at: 4102444800\n  - name: B\n    at: 2100-01-01T00:00:00Z\nfoo: bar\n---\nbody\n"
+        val doc = VaultNoteDocument.parse(raw)
+        assertEquals(listOf(VaultReminder("A", 4102444800L), VaultReminder("B", 4102444800L)), doc.frontMatter.reminders)
+        assertEquals("foo: bar", doc.frontMatter.preservedYaml)
+        assertTrue(doc.renderFullText().contains("foo: bar"))
+    }
+
+    @Test
+    fun reminders_emptyKeyIsEmptyList_absentKeyIsNull() {
+        assertEquals(emptyList<VaultReminder>(), VaultNoteDocument.parse("---\nreminders: []\n---\nb\n").frontMatter.reminders)
+        assertEquals(null, VaultNoteDocument.parse("---\ntitle: x\n---\nb\n").frontMatter.reminders)
+    }
+
+    @Test
+    fun noteWithoutReminders_writesNoKey_andExpiredAreDropped() {
+        val none = VaultNoteDocument.fromNote(Note(title = "N", content = "b"), "N.md").renderFullText()
+        assertFalse(none.contains("reminders"))
+        val expired = Note(title = "N", content = "b", reminders = listOf(Reminder("old", 0L, 1000L)))
+        assertEquals(none, VaultNoteDocument.fromNote(expired, "N.md").renderFullText())
+    }
+
+    @Test
+    fun noteWithoutReminders_hashIsTheLegacyHash() {
+        // Frozen from the output before reminders existed: an upgrade must not make notes look modified.
+        val note = Note(title = "Hello", content = "World", creationDate = 1L, modifiedDate = 2L)
+        val legacy = "---\npinned: false\narchived: false\nhidden: false\nisList: false\nmarkdown: true\n" +
+            "color: \"Default\"\nnotebook: \"\"\ntags: []\ncreated: 1\nmodified: 2\n---\nWorld\n"
+        assertEquals(VaultContentHash.ofText(legacy), VaultSyncImport.canonicalFileHash(note, "Hello.md", null, null))
     }
 }

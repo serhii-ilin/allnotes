@@ -133,7 +133,7 @@ class NoteRepositoryVaultHarness(
             scope,
             mockk<Toaster>(relaxed = true),
             prefs,
-            VaultPortableMetadata(noteDao, notebookDao, db.tagDao, db.noteTagDao),
+            VaultPortableMetadata(noteDao, notebookDao, db.tagDao, db.noteTagDao, reminderDao),
             notebookDao,
             vaultTreeAccess,
             vaultSyncCoordinator,

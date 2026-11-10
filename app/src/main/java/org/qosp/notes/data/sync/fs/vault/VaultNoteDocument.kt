@@ -18,11 +18,16 @@ data class VaultFrontMatter(
     val created: Long? = null,
     val modified: Long? = null,
     val markdown: Boolean? = null,
+    /** Null when the file has no `reminders` key; an empty list when the key is there but holds none. */
+    val reminders: List<VaultReminder>? = null,
     /** Unparsed / foreign YAML (Obsidian keys, nested blocks) preserved verbatim on round-trip. */
     val preservedYaml: String = "",
     /** Known Quillpad keys whose on-disk formatting must round-trip verbatim (Obsidian-style). */
     val knownKeysVerbatim: String = "",
 )
+
+/** A note reminder as written in front matter; [date] is epoch seconds. */
+data class VaultReminder(val name: String, val date: Long)
 
 data class VaultNoteDocument(
     val frontMatter: VaultFrontMatter,
@@ -59,7 +64,7 @@ data class VaultNoteDocument(
 
         private val knownRootKeys = setOf(
             "title", "pinned", "archived", "hidden", "isList", "markdown",
-            "color", "notebook", "created", "modified", "tags",
+            "color", "notebook", "created", "modified", "tags", "reminders",
         )
 
         /** Date-time written with a space instead of `T`, e.g. `2024-06-15 12:00` (seconds optional). */
@@ -107,6 +112,12 @@ data class VaultNoteDocument(
                 created = note.creationDate,
                 modified = note.modifiedDate,
                 markdown = note.isMarkdownEnabled,
+                // Expired reminders are left out; a note with none writes no key, so its hash is unchanged.
+                reminders = note.reminders
+                    .filterNot { it.hasExpired() }
+                    .map { VaultReminder(it.name, it.date) }
+                    .sortedWith(compareBy({ it.date }, { it.name }))
+                    .ifEmpty { null },
             )
             val body = if (note.isList) note.taskListToMd() else note.content
             return VaultNoteDocument(fm, body)
@@ -222,6 +233,7 @@ data class VaultNoteDocument(
             var created: Long? = null
             var modified: Long? = null
             var tags: List<String>? = null
+            var reminders: List<VaultReminder>? = null
             val preserved = StringBuilder()
             val knownVerbatim = StringBuilder()
             val lines = yaml.lines()
@@ -265,6 +277,19 @@ data class VaultNoteDocument(
                             "color" -> {
                                 val raw = trimmed.substringAfter(":").trim().trim('"')
                                 color = runCatching { NoteColor.valueOf(raw) }.getOrNull()
+                            }
+                            "reminders" -> {
+                                val inline = trimmed.substringAfter(":").trim()
+                                val items = mutableListOf<String>()
+                                while (i + 1 < lines.size && isYamlContinuation(lines[i + 1])) {
+                                    i++
+                                    items.add(lines[i])
+                                }
+                                reminders = when {
+                                    inline.isEmpty() -> parseReminderItems(items)
+                                    inline == "[]" -> emptyList()
+                                    else -> null
+                                }
                             }
                             "tags" -> {
                                 tags = if ('[' in trimmed) {
@@ -315,8 +340,38 @@ data class VaultNoteDocument(
                 created = created,
                 modified = modified,
                 markdown = markdown,
+                reminders = reminders,
                 knownKeysVerbatim = knownVerbatim.toString().trimEnd(),
             ) to preserved.toString().trimEnd()
+        }
+
+        /** Reads `- name: x` / `at: <iso or epoch>` entries; entries without a readable date are dropped. */
+        private fun parseReminderItems(lines: List<String>): List<VaultReminder> {
+            val result = mutableListOf<VaultReminder>()
+            var name: String? = null
+            var at: Long? = null
+            var open = false
+            fun flush() {
+                if (open && at != null) result.add(VaultReminder(name.orEmpty(), at!!))
+                name = null
+                at = null
+            }
+            for (line in lines) {
+                var t = line.trim()
+                if (t.isEmpty()) continue
+                if (t.startsWith("-")) {
+                    flush()
+                    open = true
+                    t = t.removePrefix("-").trim()
+                }
+                val value = t.substringAfter(":", "").trim()
+                when (t.substringBefore(':').trim()) {
+                    "name" -> name = unescapeYamlScalar(value)
+                    "at", "date" -> at = parseEpoch(value)
+                }
+            }
+            flush()
+            return result
         }
 
         /** Epoch seconds for the date formats Obsidian and other editors write. Values without a zone are UTC. */
@@ -362,6 +417,17 @@ data class VaultNoteDocument(
                         append("tags: [")
                         append(tagList.joinToString(", ") { "\"${escape(it)}\"" })
                         append("]\n")
+                    }
+                }
+            }
+            fm.reminders?.let { list ->
+                if (list.isEmpty()) {
+                    append("reminders: []\n")
+                } else {
+                    append("reminders:\n")
+                    list.forEach {
+                        append("  - name: \"${escape(it.name)}\"\n")
+                        append("    at: ${java.time.Instant.ofEpochSecond(it.date)}\n")
                     }
                 }
             }

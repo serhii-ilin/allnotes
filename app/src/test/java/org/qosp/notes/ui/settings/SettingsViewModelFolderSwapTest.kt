@@ -47,6 +47,7 @@ class SettingsViewModelFolderSwapTest {
             mockk<BackendProvider>(relaxed = true),
             mockk<VaultTreeAccess>(relaxed = true),
             VaultSyncCoordinator(prefs),
+            mockk<org.qosp.notes.ui.reminders.ReminderManager>(relaxed = true),
         )
         return Rig(h, repo, vm, prefs)
     }
