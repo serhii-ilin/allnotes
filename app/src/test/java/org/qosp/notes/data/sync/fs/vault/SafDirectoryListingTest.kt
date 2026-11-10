@@ -70,6 +70,7 @@ class SafDirectoryListingTest {
         val c = cursor()
         c.addRow(arrayOf<Any?>("doc-a", "a.md", "text/markdown", 0L, 1L))
         val entries = SafDirectoryListing.fromCursor(c, treeUri)
+        assertEquals("doc-a", entries[0].docId)
         assertEquals(
             Uri.parse("content://com.test/tree/root-id/document/doc-a"),
             entries[0].documentUri,

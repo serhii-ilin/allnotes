@@ -7,9 +7,11 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.di.SyncScope
 import org.qosp.notes.preferences.PreferenceRepository
@@ -59,9 +61,13 @@ class VaultFolderChangeMonitor(
         }
         debounceJob?.cancel()
         debounceJob = syncScope.launch {
-            delay(delayMs)
-            Log.d(tag, "Vault tree change; scheduling sync")
-            noteRepository.syncNotes()
+            delay(delayMs) // cancellable waiting phase
+            // Once a sync starts it must run to completion: our own writes re-fire the observer, and a
+            // cancellation here would leave partial state (e.g. a note inserted without its mapping).
+            withContext(NonCancellable) {
+                Log.d(tag, "Vault tree change; scheduling sync")
+                noteRepository.syncNotes()
+            }
         }
     }
 

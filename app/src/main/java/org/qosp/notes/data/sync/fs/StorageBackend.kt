@@ -56,7 +56,7 @@ class StorageBackend(
     private val lazySafVaultFs: VaultFs by lazy {
         val root = DocumentFile.fromTreeUri(context, config.location)
             ?: throw IOException("Storage location not accessible")
-        SafVaultFs(context, root)
+        SafVaultFs(context, root, onWrite = { vaultWriteClock.markWrite() })
     }
 
     private val quarantinedNotePaths = mutableSetOf<String>()
@@ -81,7 +81,19 @@ class StorageBackend(
 
     /** Per-vault scan cache in app-private storage, keyed by the vault scope (one instance per backend). */
     private val scanCache: VaultScanCache by lazy {
-        VaultScanCache(File(context.filesDir, "vault-scan-cache/${vaultFs().scopeId}.json"))
+        val scopeId = vaultFs().scopeId
+        // A new scope means the vault folder changed: drop other scopes' caches, which hold plaintext
+        // copies of the previous vault.
+        deleteOtherScopeCaches(scopeId)
+        VaultScanCache(File(context.filesDir, "vault-scan-cache/$scopeId.json"))
+    }
+
+    private fun deleteOtherScopeCaches(keepScopeId: String) {
+        val dir = File(context.filesDir, "vault-scan-cache")
+        val keepName = "$keepScopeId.json"
+        dir.listFiles()?.forEach { file ->
+            if (file.isFile && file.name != keepName) file.delete()
+        }
     }
 
     private fun vaultWriteStore(fs: VaultFs): VaultWriteStore = when (fs) {
@@ -285,17 +297,25 @@ class StorageBackend(
     /** Reads each candidate at most once, reusing cached raw text when the listing (mtime, size) is unchanged. */
     private fun readNoteTextsWithCache(fs: VaultFs, candidates: List<VaultDocumentTree.IndexedVaultFile>): ScanReadResult {
         val cache = scanCache
-        val existing = cache.load()
+        val nowMs = System.currentTimeMillis()
         val rawTexts = mutableMapOf<String, String>()
         val cacheEntries = mutableMapOf<String, VaultScanCache.Entry>()
         for (cand in candidates) {
-            val cached = existing[cand.relativePath]
+            val cached = cache.reusableEntry(cand.relativePath, cand.lastModifiedMs, cand.size)
             val raw = when {
-                cached != null && cached.lastModifiedMs == cand.lastModifiedMs && cached.size == cand.size -> cached.raw
+                cached != null -> cached.raw
                 else -> fs.readText(cand.relativePath) ?: continue
             }
             rawTexts[cand.relativePath] = raw
-            cacheEntries[cand.relativePath] = VaultScanCache.Entry(cand.lastModifiedMs, cand.size, raw)
+            // Preserve the original entry (and its scan time) on a hit; store a fresh entry only for
+            // known, stable metadata. Unknown metadata (mtime <= 0 or size < 0) is never cached.
+            val entry = when {
+                cached != null -> cached
+                cand.lastModifiedMs > 0 && cand.size >= 0 ->
+                    VaultScanCache.Entry(cand.lastModifiedMs, cand.size, raw, nowMs)
+                else -> null
+            }
+            if (entry != null) cacheEntries[cand.relativePath] = entry
         }
         return ScanReadResult(rawTexts, cacheEntries)
     }
