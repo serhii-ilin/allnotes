@@ -33,6 +33,9 @@ interface NoteDao {
     @Update
     suspend fun update(vararg notes: NoteEntity)
 
+    @Query("UPDATE notes SET isLocalOnly = 0 WHERE isLocalOnly = 1")
+    suspend fun clearLocalOnlyFlags()
+
     @Transaction
     @Query("UPDATE notes SET modifiedDate = :modified WHERE id = :id")
     suspend fun updateLastModified(id: Long, modified: Long = Instant.now().epochSecond)
@@ -74,7 +77,7 @@ interface NoteDao {
             SimpleSQLiteQuery(
                 """
                 SELECT * FROM notes
-                WHERE isDeleted = 0 AND isLocalOnly = 0
+                WHERE isDeleted = 0
                 AND id NOT IN (
                     SELECT localNoteId FROM cloud_ids
                     WHERE provider = '${provider.name}'

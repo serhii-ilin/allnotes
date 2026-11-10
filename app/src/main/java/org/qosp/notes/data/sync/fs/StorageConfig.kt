@@ -41,6 +41,17 @@ fun Uri.toFriendlyString(context: Context): String {
     }
 }
 
+/**
+ * Whether two picked URIs are the same SAF tree. The URI string can differ for one tree (encoding of the document
+ * id), so compare the authority and the decoded tree document id. Unparseable URIs only match when equal.
+ */
+fun isSameVaultTree(a: Uri, b: Uri): Boolean {
+    if (a == b) return true
+    val idA = runCatching { DocumentsContract.getTreeDocumentId(a) }.getOrNull() ?: return false
+    val idB = runCatching { DocumentsContract.getTreeDocumentId(b) }.getOrNull() ?: return false
+    return a.authority == b.authority && idA == idB
+}
+
 private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
 /** Human-readable path for a SAF tree document id, or null when the provider layout isn't understood. */

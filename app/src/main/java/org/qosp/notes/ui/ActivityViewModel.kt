@@ -168,10 +168,6 @@ class ActivityViewModel(
     fun moveNotes(notebookId: Long?, vararg notes: Note) =
         update(*notes) { it.copy(notebookId = notebookId, modifiedDate = Instant.now().epochSecond) }
 
-    fun makeNotesSyncable(vararg notes: Note) = update(*notes) { it.copy(isLocalOnly = false) }
-
-    fun makeNotesLocal(vararg notes: Note) = update(*notes) { it.copy(isLocalOnly = true) }
-
     fun makeNotesFullPreview(vararg notes: Note) = update(*notes) { it.copy(isCompactPreview = false) }
 
     fun makeNotesCompactPreview(vararg notes: Note) = update(*notes) { it.copy(isCompactPreview = true) }

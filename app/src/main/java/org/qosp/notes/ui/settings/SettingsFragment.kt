@@ -52,12 +52,30 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
         uri?.let {
             val previousLocation = storageLocation?.toString() ?: ""
             val newLocation = it.toString()
-            model.applyVaultFolderChange(newLocation, previousLocation)
             Log.i(TAG, "Storing location: $it")
             val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             context?.contentResolver?.takePersistableUriPermission(it, takeFlags)
+            model.applyVaultFolderChange(newLocation, previousLocation)
         }
+    }
+
+    private fun showFolderSwapDialog(prompt: SettingsViewModel.FolderSwapPrompt) {
+        val context = context ?: return
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.vault_swap_title)
+            .setMessage(getString(R.string.vault_swap_message, prompt.newLocation.toUri().toDisplayPath(context)))
+            .setPositiveButton(R.string.vault_swap_move) { _, _ ->
+                model.resolveFolderSwap(SettingsViewModel.FolderSwapChoice.MOVE_NOTES)
+            }
+            .setNeutralButton(R.string.vault_swap_open) { _, _ ->
+                model.resolveFolderSwap(SettingsViewModel.FolderSwapChoice.OPEN_AS_IS)
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ ->
+                model.resolveFolderSwap(SettingsViewModel.FolderSwapChoice.CANCEL)
+            }
+            .setOnCancelListener { model.resolveFolderSwap(SettingsViewModel.FolderSwapChoice.CANCEL) }
+            .show()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -192,6 +210,8 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
         model.vaultMessages.collect(viewLifecycleOwner) { msg ->
             Snackbar.make(binding.root, msg, Snackbar.LENGTH_LONG).show()
         }
+
+        model.folderSwapPrompts.collect(viewLifecycleOwner) { prompt -> showFolderSwapDialog(prompt) }
     }
 
     private fun setupColorSchemeListener() = binding.settingColorScheme.setOnClickListener {

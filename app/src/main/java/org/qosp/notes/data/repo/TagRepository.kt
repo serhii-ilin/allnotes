@@ -40,7 +40,6 @@ class TagRepository(
         val affectedNotes = tags
             .map { noteTagDao.getNotesByTagId(it.id).first() }
             .flatten()
-            .filterNot { it.isLocalOnly }
 
         tagDao.delete(*tags)
 
@@ -60,7 +59,7 @@ class TagRepository(
 
         if (shouldSync) {
             syncScope.launch {
-                val note = noteRepository.getById(noteId).first()?.takeUnless { it.isLocalOnly } ?: return@launch
+                val note = noteRepository.getById(noteId).first() ?: return@launch
                 noteRepository.updateNotes(note)
             }
         }
@@ -71,7 +70,7 @@ class TagRepository(
 
         if (shouldSync) {
             syncScope.launch {
-                val note = noteRepository.getById(noteId).first()?.takeUnless { it.isLocalOnly } ?: return@launch
+                val note = noteRepository.getById(noteId).first() ?: return@launch
                 noteRepository.updateNotes(note)
             }
         }

@@ -258,14 +258,6 @@ class ProcessRemoteActions(
         upgradeAttachmentPathsAfterPush(note.id, syncProvider)
         persistBaselineAfterPush(note.id, syncProvider)
         noteDao.updateLastModified(note.id, created.lastModified)
-            val live = noteDao.getById(note.id).first() ?: note
-            noteDao.update(
-                live.copy(
-                    isLocalOnly = false,
-                    isDeleted = live.isDeleted,
-                    deletionDate = live.deletionDate,
-                ).toEntity(),
-            )
         } catch (e: Exception) {
             Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
             toaster.showShort(e.message ?: "Failed to create note")

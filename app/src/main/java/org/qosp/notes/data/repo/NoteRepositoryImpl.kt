@@ -160,12 +160,6 @@ class NoteRepositoryImpl(
         }
     }
 
-    private suspend fun cleanMappingsForLocalNotes(vararg notes: Note) {
-        val n = notes.filter { it.isLocalOnly }
-        Log.d(tag, "cleanMappingsForLocalNotes: Cleaning ${n.size} local-only notes from ${notes.size} total")
-        idMappingDao.setNotesToBeDeleted(*n.map { it.id }.toLongArray())
-    }
-
     override suspend fun syncNotes(): BaseResult = VaultIo.run {
         Log.d(tag, "syncNotes: Starting synchronization")
 
@@ -209,6 +203,8 @@ class NoteRepositoryImpl(
             }
             val syncMethod = SyncMethod.MAPPING
             try {
+                // The "local only" feature is gone; notes that still carry the flag are exported like any other.
+                noteDao.clearLocalOnlyFlags()
                 val vaultMappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
                     .associateBy { it.localNoteId }
                 val localNotes = getAll().first()
@@ -424,9 +420,9 @@ class NoteRepositoryImpl(
     }
 
     override suspend fun insertNote(note: Note, sync: Boolean): Long {
-        Log.d(tag, "insertNote: Creating note, isLocalOnly=${note.isLocalOnly}")
+        Log.d(tag, "insertNote: Creating note")
         val noteId = noteDao.insert(note.toEntity())
-        if (note.isLocalOnly.not() && backendProvider.isSyncing && sync) {
+        if (backendProvider.isSyncing && sync) {
             val note1 = note.copy(id = noteId)
             processRemoteActions(note1.id, Create(note1, vaultFence = captureVaultFence()))
         }
@@ -436,7 +432,7 @@ class NoteRepositoryImpl(
     override suspend fun updateNotes(vararg notes: Note, sync: Boolean) = notes.forEach { updateNote(it, sync) }
 
     override suspend fun pushNotesToVault(vararg notes: Note) {
-        notes.filterNot { it.isLocalOnly }.forEach { note ->
+        notes.forEach { note ->
             if (backendProvider.isSyncing) {
                 processRemoteActions(note.id, Update(note, vaultFence = captureVaultFence()))
             }
@@ -446,7 +442,7 @@ class NoteRepositoryImpl(
     private suspend fun updateNote(note: Note, sync: Boolean) {
         Log.d(tag, "updateNote: Updating note ID=${note.id}")
         noteDao.update(note.toEntity())
-        if (note.isLocalOnly.not() && backendProvider.isSyncing && sync) {
+        if (backendProvider.isSyncing && sync) {
             processRemoteActions(note.id, Update(note, vaultFence = captureVaultFence()))
         }
     }
@@ -458,8 +454,7 @@ class NoteRepositoryImpl(
 
         noteDao.update(*entities)
         reminderDao.deleteIfNoteIdIn(notes.map { it.id })
-        cleanMappingsForLocalNotes(*notes)
-        notes.filterNot { it.isLocalOnly }.forEach { note ->
+        notes.forEach { note ->
             idMappingDao.getByLocalIdAndProvider(note.id, CloudService.FILE_STORAGE)?.let { mapping ->
                 val vaultPath = VaultPaths.vaultMappingPath(mapping.storageUri)
                 if (!vaultPath.isNullOrBlank()) {
@@ -495,7 +490,6 @@ class NoteRepositoryImpl(
             .map { it.toEntity().copy(isDeleted = false, deletionDate = null) }
             .toTypedArray()
         noteDao.update(*array)
-        cleanMappingsForLocalNotes(*notes)
         if (backendProvider.isSyncing) {
             notes.forEach { n ->
                 val restored = n.copy(isDeleted = false, deletionDate = null)
@@ -579,7 +573,7 @@ class NoteRepositoryImpl(
         Log.d(tag, "deleteNotes: Permanently deleting ${notes.size} notes")
         val array = notes.map { it.toEntity() }.toTypedArray()
         noteDao.delete(*array)
-        if (sync) notes.filterNot { it.isLocalOnly }.forEach {
+        if (sync) notes.forEach {
             processRemoteActions(it.id, Delete(it, vaultFence = captureVaultFence()))
         }
     }

@@ -18,7 +18,6 @@ class NotebookRepository(
         val affectedNotes = notebooks
             .map { noteRepository.getByNotebook(it.id).first() }
             .flatten()
-            .filterNot { it.isLocalOnly }
 
         notebookDao.delete(*notebooks)
     }

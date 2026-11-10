@@ -1,11 +1,13 @@
 package org.qosp.notes.ui.settings
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.msoul.datastore.EnumPreference
@@ -21,6 +24,7 @@ import org.qosp.notes.R
 import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.core.Success
+import org.qosp.notes.data.sync.fs.isSameVaultTree
 import org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
@@ -134,53 +138,131 @@ class SettingsViewModel(
         }
     }
 
+    /** A picked folder that is a different tree than the current vault; waits here until the user answers. */
+    data class FolderSwapPrompt(val newLocation: String, val previousLocation: String)
+
+    enum class FolderSwapChoice { MOVE_NOTES, OPEN_AS_IS, CANCEL }
+
+    private var pendingFolderSwap: FolderSwapPrompt? = null
+    private val _folderSwapPrompts = Channel<FolderSwapPrompt>(Channel.BUFFERED)
+    val folderSwapPrompts: Flow<FolderSwapPrompt> = _folderSwapPrompts.receiveAsFlow()
+
     /**
-     * Atomically switch vault folder: URI, cutoff, mapping wipe when path changes, and tree warm-up.
+     * Entry point after the user picked a folder. A different tree than the current vault is not applied: it
+     * asks the fragment to show the swap dialog and holds the pick until [resolveFolderSwap].
      */
     fun applyVaultFolderChange(newLocation: String, previousLocation: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            if (configureVaultFolder(newLocation, previousLocation)) {
-                backendProvider.awaitBackendFor(newLocation)
-                noteRepository.syncNotes()
-            }
+        viewModelScope.launch(Dispatchers.IO) { requestVaultFolderChange(newLocation, previousLocation) }
+    }
+
+    suspend fun requestVaultFolderChange(newLocation: String, previousLocation: String) {
+        if (needsFolderSwapDecision(newLocation, previousLocation)) {
+            // A newer pick replaces an unanswered one; its permission is released unless it is the vault.
+            pendingFolderSwap?.let { releasePermissionUnlessCurrent(it.newLocation, previousLocation) }
+            val prompt = FolderSwapPrompt(newLocation, previousLocation)
+            pendingFolderSwap = prompt
+            _folderSwapPrompts.send(prompt)
+            return
         }
+        applyAndSync(newLocation, previousLocation, openAsIs = false)
+    }
+
+    fun resolveFolderSwap(choice: FolderSwapChoice) {
+        viewModelScope.launch(Dispatchers.IO) { resolveFolderSwapNow(choice) }
+    }
+
+    suspend fun resolveFolderSwapNow(choice: FolderSwapChoice) {
+        val prompt = pendingFolderSwap ?: return
+        pendingFolderSwap = null
+        when (choice) {
+            FolderSwapChoice.MOVE_NOTES -> applyAndSync(prompt.newLocation, prompt.previousLocation, openAsIs = false)
+            FolderSwapChoice.OPEN_AS_IS -> applyAndSync(prompt.newLocation, prompt.previousLocation, openAsIs = true)
+            FolderSwapChoice.CANCEL -> releasePermissionUnlessCurrent(prompt.newLocation, prompt.previousLocation)
+        }
+    }
+
+    private suspend fun applyAndSync(newLocation: String, previousLocation: String, openAsIs: Boolean) {
+        if (configureVaultFolder(newLocation, previousLocation, openAsIs)) {
+            backendProvider.awaitBackendFor(newLocation)
+            noteRepository.syncNotes()
+        }
+    }
+
+    private suspend fun needsFolderSwapDecision(newLocation: String, previousLocation: String): Boolean {
+        if (previousLocation.isNotBlank()) {
+            return !isSameVaultTree(Uri.parse(newLocation), Uri.parse(previousLocation))
+        }
+        // Blank prefs with active mappings left over: those notes belong to an unknown folder.
+        return noteRepository.getNotesByCloudService(CloudService.FILE_STORAGE).keys.any { !it.isDeletedLocally }
+    }
+
+    private suspend fun releasePermissionUnlessCurrent(location: String, previousLocation: String) {
+        val current = preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
+            .ifBlank { previousLocation }
+        if (current.isNotBlank() && isSameVaultTree(Uri.parse(location), Uri.parse(current))) return
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(location), flags) }
     }
 
     /**
      * Applies the folder configuration under the vault lock and returns whether a sync should follow.
-     * Re-selecting the current folder confirms it when it has no cutoff yet (an install upgraded from the old
-     * app). A blank [previousLocation] with mappings left over means the prefs were reset (for example after a
-     * backup restore), so those mappings belong to an unknown folder and are wiped like on a folder change.
+     * Re-selecting the current tree (even through a differently encoded URI) keeps everything and only confirms
+     * it when it has no cutoff yet (an install upgraded from the old app). A blank [previousLocation] with
+     * mappings left over means the prefs were reset (for example after a backup restore), so those mappings
+     * belong to an unknown folder and are wiped like on a folder change.
+     *
+     * On a different tree every FILE_STORAGE mapping goes, binned rows included: their recorded path points
+     * into the old folder and could "restore" a binned note from a same-named file in the new one. After a
+     * prefs reset the tree is unknown, so binned rows stay. With [openAsIs] the notes that were backed by the
+     * old folder are also dropped from Room (never from the vault), so only the new folder's notes remain.
      */
-    suspend fun configureVaultFolder(newLocation: String, previousLocation: String): Boolean =
-        vaultSyncCoordinator.withVaultLock {
-            val sameFolder = newLocation == previousLocation && newLocation.isNotBlank()
-            if (sameFolder) {
-                val confirmed = preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT)
-                    .first().isNotBlank()
-                if (!confirmed) {
-                    vaultSyncCoordinator.bumpGeneration()
-                    preferenceRepository.putEncryptedStrings(
-                        PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
-                    )
-                }
-                vaultTreeAccess.warmFrom(Uri.parse(newLocation))
-                return@withVaultLock true
+    suspend fun configureVaultFolder(
+        newLocation: String,
+        previousLocation: String,
+        openAsIs: Boolean = false,
+    ): Boolean = vaultSyncCoordinator.withVaultLock {
+        val sameFolder = newLocation.isNotBlank() && previousLocation.isNotBlank() &&
+            isSameVaultTree(Uri.parse(newLocation), Uri.parse(previousLocation))
+        if (sameFolder) {
+            val confirmed = preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT)
+                .first().isNotBlank()
+            if (!confirmed) {
+                vaultSyncCoordinator.bumpGeneration()
+                preferenceRepository.putEncryptedStrings(
+                    PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
+                )
             }
-            vaultSyncCoordinator.bumpGeneration()
-            preferenceRepository.putEncryptedStrings(
-                PreferenceRepository.STORAGE_LOCATION to newLocation,
-                PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
-            )
-            val staleAfterReset = previousLocation.isBlank() &&
-                noteRepository.countIdMappings(CloudService.FILE_STORAGE) > 0
-            if ((previousLocation.isNotBlank() && newLocation != previousLocation) || staleAfterReset) {
-                // Binned rows stay: they record notes the user deleted and gate later file deletes.
-                noteRepository.deleteActiveIdMappingsForCloudService(CloudService.FILE_STORAGE)
+            if (newLocation != previousLocation) {
+                preferenceRepository.putEncryptedStrings(PreferenceRepository.STORAGE_LOCATION to newLocation)
             }
             vaultTreeAccess.warmFrom(Uri.parse(newLocation))
-            true
+            return@withVaultLock true
         }
+        val treeKnown = previousLocation.isNotBlank()
+        val staleAfterReset = !treeKnown && noteRepository.countIdMappings(CloudService.FILE_STORAGE) > 0
+        if (treeKnown || staleAfterReset) {
+            // The scan cache belongs to the folder being left.
+            backendProvider.clearVaultScanCache()
+            if (openAsIs) {
+                val mappedNotes = noteRepository.getNotesByCloudService(CloudService.FILE_STORAGE)
+                    .filter { (mapping, _) -> !mapping.isDeletedLocally }
+                    .values.filterNotNull()
+                noteRepository.deleteNotes(*mappedNotes.toTypedArray(), sync = false)
+            }
+            if (treeKnown) {
+                noteRepository.deleteIdMappingsForCloudService(CloudService.FILE_STORAGE)
+            } else {
+                noteRepository.deleteActiveIdMappingsForCloudService(CloudService.FILE_STORAGE)
+            }
+        }
+        vaultSyncCoordinator.bumpGeneration()
+        preferenceRepository.putEncryptedStrings(
+            PreferenceRepository.STORAGE_LOCATION to newLocation,
+            PreferenceRepository.VAULT_CONFIGURED_AT to Instant.now().epochSecond.toString(),
+        )
+        vaultTreeAccess.warmFrom(Uri.parse(newLocation))
+        true
+    }
 
     /** The user accepted the folder an upgraded install already had; the caller runs the sync. */
     suspend fun confirmExistingVaultFolder(location: String) {

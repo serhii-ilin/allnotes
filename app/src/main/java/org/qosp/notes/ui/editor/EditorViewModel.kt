@@ -154,7 +154,6 @@ class EditorViewModel(
                         notebookId = newNoteNotebookId,
                         isList = newNoteIsList,
                         attachments = newNoteAttachments,
-                        isLocalOnly = false
                     ),
                 )
             }
