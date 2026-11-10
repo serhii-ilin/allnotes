@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Tracks notes whose editor still has unflushed content.
@@ -33,8 +34,15 @@ class EditorSessionRegistry {
 
     fun isPending(noteId: Long): Boolean = pendingNoteIds.value.containsKey(noteId)
 
-    /** Suspends until [noteId] has no editor write left to land. */
-    suspend fun awaitIdle(noteId: Long) {
-        pendingNoteIds.first { !it.containsKey(noteId) }
+    /**
+     * Suspends until [noteId] has no editor write left to land. Bounded: if a previous session's
+     * write failed and never cleared its marker, opening the note must still work.
+     */
+    suspend fun awaitIdle(noteId: Long, timeoutMs: Long = AWAIT_IDLE_TIMEOUT_MS) {
+        withTimeoutOrNull(timeoutMs) { pendingNoteIds.first { !it.containsKey(noteId) } }
+    }
+
+    private companion object {
+        const val AWAIT_IDLE_TIMEOUT_MS = 5_000L
     }
 }
