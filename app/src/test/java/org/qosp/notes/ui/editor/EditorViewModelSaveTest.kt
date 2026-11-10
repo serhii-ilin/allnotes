@@ -244,13 +244,34 @@ class EditorViewModelSaveTest {
             newNoteIsList = false,
             newNoteNotebookId = null,
         )
-        advanceUntilIdle()
+        advanceTimeBy(1_000)
 
         assertEquals("must not read Room while the old session is still flushing", 0, repository.reads)
 
         registry.markIdle(NOTE_ID)
         advanceUntilIdle()
         assertTrue(repository.reads > 0)
+    }
+
+    @Test
+    fun initialize_stopsWaitingForAStuckPreviousSession() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository(Note(id = NOTE_ID, title = "title", content = "start"))
+        val registry = EditorSessionRegistry()
+        registry.markPending(NOTE_ID) // never cleared, e.g. the previous session's write failed
+        val (model, _) = createViewModel(repository, registry, initialize = false)
+
+        backgroundScope.launch { model.data.collect {} }
+        model.initialize(
+            noteId = NOTE_ID,
+            newNoteTitle = "",
+            newNoteContent = "",
+            newNoteAttachments = emptyList(),
+            newNoteIsList = false,
+            newNoteNotebookId = null,
+        )
+        advanceTimeBy(6_000)
+
+        assertTrue("the note must still open after the wait times out", repository.reads > 0)
     }
 
     private fun TestScope.createViewModel(
