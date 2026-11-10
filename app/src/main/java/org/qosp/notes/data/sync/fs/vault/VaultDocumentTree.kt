@@ -6,10 +6,21 @@ import java.io.IOException
 /** SAF helpers for nested vault paths. */
 object VaultDocumentTree {
     data class IndexedFile(val relativePath: String, val file: DocumentFile)
-    data class IndexedVaultFile(val relativePath: String)
+    data class IndexedVaultFile(
+        val relativePath: String,
+        val lastModifiedMs: Long = 0L,
+        val size: Long = -1L,
+    )
 
     fun indexNotes(fs: VaultFs): List<IndexedVaultFile> {
-        val candidates = mutableListOf<String>()
+        val candidates = listNoteCandidates(fs)
+        val rawTexts = readRawTexts(fs, candidates.map { it.relativePath })
+        return filterIndexed(candidates, rawTexts)
+    }
+
+    /** Walks the tree once via [VaultFs.listChildren] and returns note-file candidates with listing metadata. */
+    fun listNoteCandidates(fs: VaultFs): List<IndexedVaultFile> {
+        val candidates = mutableListOf<IndexedVaultFile>()
         fun walk(dir: String) {
             val children = fs.listChildren(dir)
             children.forEach { child ->
@@ -18,19 +29,42 @@ object VaultDocumentTree {
                         if (!VaultHousekeeping.shouldSkipDirectory(child.name)) walk(child.relativePath)
                     }
                     VaultHousekeeping.shouldIndexFile(child.name) -> {
-                        candidates.add(child.relativePath)
+                        candidates.add(
+                            IndexedVaultFile(
+                                relativePath = VaultPaths.normalizeNotePath(child.relativePath),
+                                lastModifiedMs = child.lastModifiedMs,
+                                size = child.size,
+                            ),
+                        )
                     }
                 }
             }
         }
         walk("")
-        val notePaths = candidates.map { VaultPaths.normalizeNotePath(it) }.toSet()
-        val referencedAttachments = referencedVaultPathsFromNotes(fs, notePaths)
-        return candidates.mapNotNull { rel ->
-            val norm = VaultPaths.normalizeNotePath(rel)
+        return candidates
+    }
+
+    /** Reads each note path once into a raw-text map (unreadable notes are omitted). */
+    fun readRawTexts(fs: VaultFs, notePaths: List<String>): Map<String, String> {
+        val out = mutableMapOf<String, String>()
+        for (path in notePaths) {
+            fs.readText(path)?.let { out[path] = it }
+        }
+        return out
+    }
+
+    /** Drops asset-folder and referenced-attachment markdown from [candidates], using already-read [rawTexts]. */
+    fun filterIndexed(
+        candidates: List<IndexedVaultFile>,
+        rawTexts: Map<String, String>,
+    ): List<IndexedVaultFile> {
+        val notePaths = candidates.map { it.relativePath }.toSet()
+        val referencedAttachments = referencedVaultPathsFromNotes(rawTexts, notePaths)
+        return candidates.mapNotNull { cand ->
+            val norm = cand.relativePath
             if (isUnderNoteAssetFolder(norm, notePaths)) return@mapNotNull null
             if (isReferencedAttachmentMarkdown(norm, notePaths, referencedAttachments)) return@mapNotNull null
-            IndexedVaultFile(norm)
+            cand
         }
     }
 
@@ -65,10 +99,10 @@ object VaultDocumentTree {
         return siblingNotePath in indexedNotePaths
     }
 
-    private fun referencedVaultPathsFromNotes(fs: VaultFs, notePaths: Set<String>): Set<String> {
+    private fun referencedVaultPathsFromNotes(rawTexts: Map<String, String>, notePaths: Set<String>): Set<String> {
         val out = mutableSetOf<String>()
         for (path in notePaths) {
-            val raw = fs.readText(path) ?: continue
+            val raw = rawTexts[path] ?: continue
             val body = VaultNoteDocument.parse(raw).body
             VaultAttachments.parseFromBody(body, path).forEach { att ->
                 if (VaultPaths.isVaultRelativeAttachment(att.path)) {
