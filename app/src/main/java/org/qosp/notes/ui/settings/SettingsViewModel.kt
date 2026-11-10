@@ -7,7 +7,6 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,8 +14,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.msoul.datastore.EnumPreference
@@ -143,9 +143,10 @@ class SettingsViewModel(
 
     enum class FolderSwapChoice { MOVE_NOTES, OPEN_AS_IS, CANCEL }
 
-    private var pendingFolderSwap: FolderSwapPrompt? = null
-    private val _folderSwapPrompts = Channel<FolderSwapPrompt>(Channel.BUFFERED)
-    val folderSwapPrompts: Flow<FolderSwapPrompt> = _folderSwapPrompts.receiveAsFlow()
+    // State, not a one-shot event: a dialog dismissed by rotation or a recreated fragment is shown again until
+    // the user actually answers.
+    private val pendingFolderSwap = MutableStateFlow<FolderSwapPrompt?>(null)
+    val folderSwapPrompts: Flow<FolderSwapPrompt> = pendingFolderSwap.filterNotNull()
 
     /**
      * Entry point after the user picked a folder. A different tree than the current vault is not applied: it
@@ -158,10 +159,8 @@ class SettingsViewModel(
     suspend fun requestVaultFolderChange(newLocation: String, previousLocation: String) {
         if (needsFolderSwapDecision(newLocation, previousLocation)) {
             // A newer pick replaces an unanswered one; its permission is released unless it is the vault.
-            pendingFolderSwap?.let { releasePermissionUnlessCurrent(it.newLocation, previousLocation) }
-            val prompt = FolderSwapPrompt(newLocation, previousLocation)
-            pendingFolderSwap = prompt
-            _folderSwapPrompts.send(prompt)
+            pendingFolderSwap.value?.let { releasePermissionUnlessCurrent(it.newLocation, previousLocation) }
+            pendingFolderSwap.value = FolderSwapPrompt(newLocation, previousLocation)
             return
         }
         applyAndSync(newLocation, previousLocation, openAsIs = false)
@@ -172,8 +171,7 @@ class SettingsViewModel(
     }
 
     suspend fun resolveFolderSwapNow(choice: FolderSwapChoice) {
-        val prompt = pendingFolderSwap ?: return
-        pendingFolderSwap = null
+        val prompt = pendingFolderSwap.getAndUpdate { null } ?: return
         when (choice) {
             FolderSwapChoice.MOVE_NOTES -> applyAndSync(prompt.newLocation, prompt.previousLocation, openAsIs = false)
             FolderSwapChoice.OPEN_AS_IS -> applyAndSync(prompt.newLocation, prompt.previousLocation, openAsIs = true)

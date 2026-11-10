@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.Toolbar
 import androidx.core.net.toUri
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -60,9 +61,12 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
         }
     }
 
+    private var folderSwapDialog: AlertDialog? = null
+
     private fun showFolderSwapDialog(prompt: SettingsViewModel.FolderSwapPrompt) {
         val context = context ?: return
-        MaterialAlertDialogBuilder(context)
+        if (folderSwapDialog?.isShowing == true) return
+        folderSwapDialog = MaterialAlertDialogBuilder(context)
             .setTitle(R.string.vault_swap_title)
             .setMessage(getString(R.string.vault_swap_message, prompt.newLocation.toUri().toDisplayPath(context)))
             .setPositiveButton(R.string.vault_swap_move) { _, _ ->
@@ -76,6 +80,13 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
             }
             .setOnCancelListener { model.resolveFolderSwap(SettingsViewModel.FolderSwapChoice.CANCEL) }
             .show()
+    }
+
+    override fun onDestroyView() {
+        // Dismissing (unlike cancelling) leaves the pick pending, so the recreated view shows the dialog again.
+        folderSwapDialog?.dismiss()
+        folderSwapDialog = null
+        super.onDestroyView()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

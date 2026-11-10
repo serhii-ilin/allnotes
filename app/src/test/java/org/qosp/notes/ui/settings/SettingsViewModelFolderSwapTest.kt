@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -81,6 +82,22 @@ class SettingsViewModelFolderSwapTest {
         assertNotNull(h.idMappingDao.getByLocalIdAndProvider(active, CloudService.FILE_STORAGE))
         coVerify(exactly = 0) { r.repo.syncNotes() }
         coVerify(exactly = 0) { r.prefs.putEncryptedStrings(*varargAny { true }) }
+    }
+
+    @Test
+    fun prompt_staysPendingForARecreatedView_untilAnswered() = runTest {
+        val h = NoteRepositoryVaultHarness(this)
+        h.seedMapped("Active", "Active.md")
+        val r = rig(h, oldTree)
+        r.vm.requestVaultFolderChange(newTree, oldTree)
+
+        // A view recreated after rotation collects again and must get the same unanswered prompt.
+        withTimeout(1_000) { r.vm.folderSwapPrompts.first() }
+        val again = withTimeout(1_000) { r.vm.folderSwapPrompts.first() }
+        assertEquals(SettingsViewModel.FolderSwapPrompt(newTree, oldTree), again)
+
+        r.vm.resolveFolderSwapNow(SettingsViewModel.FolderSwapChoice.CANCEL)
+        assertNull(withTimeoutOrNull(100) { r.vm.folderSwapPrompts.first() })
     }
 
     @Test
