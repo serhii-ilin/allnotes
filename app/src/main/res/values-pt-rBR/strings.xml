@@ -60,27 +60,8 @@
     <string name="preferences_backup_strategy_include_files">Criar cópia de tudo</string>
     <string name="preferences_backup_strategy_keep_info">Criar cópia apenas da descrição e do caminho</string>
     <string name="preferences_backup_strategy_keep_nothing">Não criar cópia dos anexos</string>
-    <string name="preferences_header_syncing">Sincronização</string>
-    <string name="preferences_go_to_sync_settings">Ir para configurações de sincronização</string>
-    <string name="preferences_currently_syncing_with">Sincronizando atualmente com %s</string>
-    <string name="preferences_currently_not_syncing">Atualmente não está sincronizando</string>
-    <string name="preferences_cloud_service">Serviço de sincronia</string>
     <string name="preferences_cloud_service_disabled">Desabilitado</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string
-        name="preferences_nextcloud_limited_features">Tenha em mente que o Nextcloud Notes não suporta recursos como etiquetas, anexos, lembretes, listas de tarefas e mais.
-    </string>
-    <string name="preferences_nextcloud_account">Conta Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">URL de instancia do Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">Coloque suas credenciais</string>
-    <string name="preferences_nextcloud_set_server_url">Coloque a URL do server</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi ou Dados Móveis</string>
-    <string name="preferences_sync_when_on">Sincronizar quando estiver no</string>
-    <string name="preferences_background_sync">Sincronização em segundo plano</string>
-    <string name="preferences_background_sync_enabled">Habilitado</string>
-    <string name="preferences_background_sync_disabled">Desabilitado</string>
-    <string name="preferences_new_notes_synchronizable">Novas anotações sincronizáveis</string>
     <!-- About -->
     <string name="about_version">Versão</string>
     <string name="about_website">Site</string>
@@ -97,8 +78,6 @@
     <string name="ok">OK</string>
     <string name="indicator_notes_empty">Suas anotações aparecerão aqui.</string>
     <string name="indicator_untitled">Sem titulo</string>
-    <string name="hint_username">Nome de usuário</string>
-    <string name="hint_password">Senha</string>
     <string name="action_save">Salvar</string>
     <string name="action_cancel">Cancelar</string>
     <string name="action_delete">Excluir</string>
@@ -178,7 +157,6 @@
     <string name="action_add_task">Tarefa</string>
     <string name="action_convert_to_note">Converter para anotação</string>
     <string name="action_convert_to_list">Converter para lista</string>
-    <string name="action_do_not_sync">Não sincronizar</string>
     <string name="action_change_color">Mudar cor</string>
     <string name="action_enable_markdown">Habilitar marcação</string>
     <string name="action_disable_markdown">Desabilitar marcação</string>
@@ -222,20 +200,6 @@
     <string name="notifications_channel_backups">Cópias de segurança</string>
     <string name="notifications_channel_playback">Reprodução de mídia</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Isto não é uma URL HTTPS válida.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Você atualmente está conectado como <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Você atualmente não está conectado.</string>
-    <string name="action_nextcloud_authenticate">Autenticar</string>
-    <string name="indicator_offline_account">Contas offline</string>
-    <string name="indicator_connecting">Conectando…</string>
-    <string name="message_something_went_wrong">Algo deu errado.</string>
-    <string name="message_server_connection_failed">Não foi possível conectar ao servidor. Verifique o endereço do servidor e sua conexão de rede.</string>
-    <string name="message_invalid_credentials">Não foi possível autenticar com o servidor devido a credenciais inválidas.</string>
-    <string name="message_logged_in_successfully">Conectado com sucesso!</string>
-    <string name="message_server_not_compatible">Versão do servidor não é compatível com esse app.</string>
-    <string name="message_internet_not_available">Conexão com a Internet não está disponível.</string>
-    <string name="message_credentials_cannot_be_blank">As credenciais não podem ficar em branco.</string>
-    <string name="preference_nextcloud_clear_credentials">Limpar credenciais e URL do servidor</string>
     <string name="notification_media_play_pause">Reproduzir / Pausar</string>
     <string name="notification_media_stop">Parar</string>
     <!-- App shortcuts -->
@@ -244,28 +208,25 @@
     <string name="never">Nunca</string>
     <plurals name="more_items">
         <item quantity="one">+%d item</item>
-        <item quantity="many"/>
+        <item quantity="many">+%d de itens</item>
         <item quantity="other">+%d itens</item>
     </plurals>
     <plurals name="selected_notes">
         <item quantity="one">%d anotação selecionada</item>
-        <item quantity="many"/>
+        <item quantity="many">%d de anotações selecionadas</item>
         <item quantity="other">%d anotações selecionadas</item>
     </plurals>
     <plurals name="selected_notebooks">
         <item quantity="one">%d caderno de notas selecionado</item>
-        <item quantity="many"/>
+        <item quantity="many">%d de cadernos de notas selecionados</item>
         <item quantity="other">%d cadernos de notas selecionados</item>
     </plurals>
     <plurals name="selected_tags">
         <item quantity="one">%d etiqueta selecionada</item>
-        <item quantity="many"/>
+        <item quantity="many">%d de etiquetas selecionadas</item>
         <item quantity="other">%d etiquetas selecionadas</item>
     </plurals>
     <string name="preferences_cloud_service_files">Armazenamento de arquivo</string>
-    <string name="preferences_file_storage_info">Selecione uma pasta do armazenamento local ou de um provedor de nuvem.
-    Todas as notas serão armazenadas como arquivos Markdown.
-  </string>
     <string name="preferences_file_storage_location">Local de armazenamento</string>
     <string name="preferences_file_storage_select">Selecione o local de armazenamento</string>
     <string name="preferences_color_scheme_gray">Cinza</string>

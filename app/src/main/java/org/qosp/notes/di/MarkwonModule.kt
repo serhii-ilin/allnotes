@@ -40,6 +40,9 @@ import org.qosp.notes.ui.utils.resolveAttribute
 object MarkwonModule {
 
     val markwonModule = module {
+        // Task-list colors are resolved from the current theme when the instance is built, so a
+        // shared Markwon would keep light-theme colors after a day/night switch. Building one per
+        // adapter/editor is cheap and keeps colors correct.
         factory<Markwon> {
             getMarkwon(
                 context = androidContext(),
@@ -47,6 +50,7 @@ object MarkwonModule {
                 vaultTreeAccess = get(),
             )
         }
+        // The editor is cheap to build as well and must match the Markwon it wraps.
         factory<MarkwonEditor> { getMarkWonEditor(markwon = get()) }
     }
 

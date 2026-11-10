@@ -3,10 +3,12 @@ package org.qosp.notes.data.sync.fs
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.qosp.notes.R
 import org.qosp.notes.preferences.PreferenceRepository
 
 data class StorageConfig(val location: Uri) {
@@ -37,4 +39,43 @@ fun Uri.toFriendlyString(context: Context): String {
     } else {
         providerName
     }
+}
+
+private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
+
+/** Human-readable path for a SAF tree document id, or null when the provider layout isn't understood. */
+fun formatVaultTreePath(authority: String?, treeDocumentId: String?, internalStorageLabel: String): String? {
+    if (treeDocumentId == null) return null
+    if (treeDocumentId.startsWith("raw:")) return treeDocumentId.removePrefix("raw:")
+    if (authority != EXTERNAL_STORAGE_AUTHORITY) return null
+
+    val volume = treeDocumentId.substringBefore(':')
+    val path = treeDocumentId.substringAfter(':', "").trim('/')
+    val root = if (volume == "primary") internalStorageLabel else volume
+    return if (path.isEmpty()) root else "$root/$path"
+}
+
+fun Uri.toDisplayPath(context: Context): String {
+    val treeId = runCatching { DocumentsContract.getTreeDocumentId(this) }.getOrNull()
+    return formatVaultTreePath(authority, treeId, context.getString(R.string.storage_internal_label))
+        ?: toFriendlyString(context)
+}
+
+/** Folder name for a device-storage tree document id (`primary:Documents/Notes` -> `Notes`); the volume root maps to its label. */
+fun formatExternalStorageFolderName(treeDocumentId: String, internalStorageLabel: String): String {
+    val volume = treeDocumentId.substringBefore(':')
+    val folder = treeDocumentId.substringAfter(':', "").trim('/').substringAfterLast('/')
+    return folder.ifEmpty { if (volume == "primary") internalStorageLabel else volume }
+}
+
+/** Short name for the nav drawer: just the folder for device storage, provider and folder for other providers. */
+fun Uri.toVaultFolderName(context: Context): String {
+    if (authority != EXTERNAL_STORAGE_AUTHORITY) return toFriendlyString(context)
+    val treeId = runCatching { DocumentsContract.getTreeDocumentId(this) }.getOrNull()
+        ?: return toFriendlyString(context)
+    val label = context.getString(R.string.storage_internal_label)
+    val isRoot = treeId.substringAfter(':', "").trim('/').isEmpty()
+    if (isRoot) return formatExternalStorageFolderName(treeId, label)
+    return DocumentFile.fromTreeUri(context, this)?.name?.takeIf { it.isNotEmpty() }
+        ?: formatExternalStorageFolderName(treeId, label)
 }

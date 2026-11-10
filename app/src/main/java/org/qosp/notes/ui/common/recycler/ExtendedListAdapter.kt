@@ -47,14 +47,15 @@ abstract class ExtendedListAdapter<T, VH : RecyclerView.ViewHolder?>(
         owner: SavedStateRegistryOwner,
         onSelectionChangedListener: (List<Long>) -> Unit = {}
     ) {
+        // Called from onViewCreated, so the view lifecycle already exists. Observing
+        // viewLifecycleOwnerLiveData with the fragment as owner would add one more observer
+        // (keeping an old adapter alive) every time the view is recreated.
         if (owner is Fragment) {
-            owner.viewLifecycleOwnerLiveData.observe(owner) { viewLifecycleOwner ->
-                viewLifecycleOwner.lifecycle.addObserver(object : DefaultLifecycleObserver {
-                    override fun onDestroy(owner: LifecycleOwner) {
-                        releaseReferences()
-                    }
-                })
-            }
+            owner.viewLifecycleOwner.lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onDestroy(owner: LifecycleOwner) {
+                    releaseReferences()
+                }
+            })
         }
 
         registry = owner.savedStateRegistry

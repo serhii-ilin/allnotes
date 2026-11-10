@@ -4,7 +4,6 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.view.Menu
 import android.view.View
-import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.annotation.CallSuper
 import androidx.annotation.LayoutRes
@@ -32,10 +31,6 @@ import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import org.qosp.notes.R
 import org.qosp.notes.data.model.Note
-import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
-import org.qosp.notes.data.sync.core.BaseResult
-import org.qosp.notes.data.sync.core.ServerNotSupported
-import org.qosp.notes.data.sync.core.Unauthorized
 import org.qosp.notes.databinding.LayoutNoteBinding
 import org.qosp.notes.preferences.LayoutMode
 import org.qosp.notes.ui.common.recycler.NoteRecyclerAdapter
@@ -70,6 +65,7 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
     protected var mainMenu: Menu? = null
 
     protected var data = Data()
+    private var appliedLayoutMode: LayoutMode? = null
 
     private var snackbar: Snackbar? = null
     private var showHiddenNotes: Boolean
@@ -80,7 +76,6 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
         }
 
     val markwon: Markwon by inject()
-    private val vaultForegroundRescan: VaultForegroundRescan by inject()
 
     // Bug:
     //
@@ -103,18 +98,6 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
                 controller.removeOnDestinationChangedListener(this)
                 isListenerSet = false
             }
-        }
-    }
-
-    private fun BaseResult.showToastOnCriticalError() {
-        val resId = when (this) {
-            ServerNotSupported -> R.string.message_server_not_compatible
-            Unauthorized -> R.string.message_invalid_credentials
-            else -> null
-        }
-
-        resId?.let {
-            Toast.makeText(requireContext(), getString(it), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -188,18 +171,9 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 activityModel.vaultRelativePaths.collect { paths ->
+                    // The adapter notifies only the cards whose path changed; doing it here as
+                    // well caused every card to rebind each time the screen was started again.
                     recyclerAdapter.vaultRelativePaths = paths
-                    if (recyclerAdapter.itemCount > 0) {
-                        recyclerAdapter.notifyItemRangeChanged(
-                            0,
-                            recyclerAdapter.itemCount,
-                            setOf(
-                                NoteRecyclerAdapter.Payload.VaultPathChanged,
-                                NoteRecyclerAdapter.Payload.ContentChanged,
-                                NoteRecyclerAdapter.Payload.TasksChanged,
-                            ),
-                        )
-                    }
                 }
             }
         }
@@ -246,10 +220,7 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
         swipeRefreshLayout.setOnRefreshListener {
             viewLifecycleOwner.lifecycleScope
                 .launch {
-                    activityModel
-                        .syncAsync()
-                        .await()
-                        .showToastOnCriticalError()
+                    activityModel.syncAsync().await()
                     swipeRefreshLayout.isRefreshing = false
                 }
         }
@@ -266,14 +237,6 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
                     sendMessage(getString(R.string.indicator_empty_note_discarded))
                 }
 
-                if (model.isSyncingEnabled() && !recyclerAdapter.searchMode &&
-                    vaultForegroundRescan.shouldRunRescan()
-                ) {
-                    activityModel
-                        .syncAsync()
-                        .await()
-                        .showToastOnCriticalError()
-                }
                 swipeRefreshLayout.isRefreshing = false
             }
         }
@@ -303,12 +266,16 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
         // Submit the list to the adapter
         onNotesChanged(data.notes)
 
-        // Update recycler layout and note order
-        recyclerView.layoutManager = when (data.layoutMode) {
-            LayoutMode.LIST -> LinearLayoutManager(requireContext())
-            LayoutMode.GRID -> StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL)
+        // Update the layout manager only when the mode changes: replacing it on every data
+        // emission discards all attached views and resets the scroll position.
+        if (appliedLayoutMode != data.layoutMode || recyclerView.layoutManager == null) {
+            appliedLayoutMode = data.layoutMode
+            recyclerView.layoutManager = when (data.layoutMode) {
+                LayoutMode.LIST -> LinearLayoutManager(requireContext())
+                LayoutMode.GRID -> StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL)
+            }
+            onLayoutModeChanged()
         }
-        onLayoutModeChanged()
         onSortMethodChanged()
     }
 

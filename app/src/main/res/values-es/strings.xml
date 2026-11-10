@@ -57,25 +57,8 @@
     <string name="preferences_backup_strategy_include_files">Guardar todo</string>
     <string name="preferences_backup_strategy_keep_info">Guardar sólo la descripción y la ruta local</string>
     <string name="preferences_backup_strategy_keep_nothing">No guardar los adjuntos</string>
-    <string name="preferences_header_syncing">Sincronización</string>
-    <string name="preferences_go_to_sync_settings">Ir a ajustes de sincronización</string>
-    <string name="preferences_currently_syncing_with">Sincronizando actualmente con %s</string>
-    <string name="preferences_currently_not_syncing">No sincronizando actualmente</string>
-    <string name="preferences_cloud_service">Servicio de sincronización</string>
     <string name="preferences_cloud_service_disabled">Deshabilitado</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Recuerda que Nextcloud Notes no soporta etiquetas, adjuntos, recordatorios, listas de tareas y más. Nextcloud Notes necesita ser instalado en Nextcloud Server o el inicio de sesión fallará con Algo salió mal!</string>
-    <string name="preferences_nextcloud_account">Cuenta Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">URL de la instancia Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">Introduce tus credenciales</string>
-    <string name="preferences_nextcloud_set_server_url">Introduce las URL del servidor</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi o datos</string>
-    <string name="preferences_sync_when_on">Sincronizar con</string>
-    <string name="preferences_background_sync">Sincronización en segundo plano</string>
-    <string name="preferences_background_sync_enabled">Habilitada</string>
-    <string name="preferences_background_sync_disabled">Deshabilitada</string>
-    <string name="preferences_new_notes_synchronizable">Sincronizar notas nuevas</string>
     <string name="preferences_dark_theme_mode">Modo de tema oscuro</string>
     <string name="preferences_theme_dark_mode_standard">Estándar</string>
     <string name="preferences_theme_dark_mode_black">Negro</string>
@@ -95,8 +78,6 @@
     <string name="ok">Ok</string>
     <string name="indicator_notes_empty">Tus notas se mostrarán aquí.</string>
     <string name="indicator_untitled">Sin título</string>
-    <string name="hint_username">Nombre de usuario</string>
-    <string name="hint_password">Contraseña</string>
     <string name="action_save">Guardar</string>
     <string name="action_cancel">Cancelar</string>
     <string name="action_delete">Eliminar</string>
@@ -176,7 +157,6 @@
     <string name="action_add_task">Tarea</string>
     <string name="action_convert_to_note">Convertir a nota</string>
     <string name="action_convert_to_list">Convertir a lista</string>
-    <string name="action_do_not_sync">No sincronizar</string>
     <string name="action_change_color">Cambiar color</string>
     <string name="action_enable_markdown">Habilitar formato</string>
     <string name="action_disable_markdown">Deshabilitar formato</string>
@@ -220,20 +200,6 @@
     <string name="notifications_channel_backups">Copias de seguridad</string>
     <string name="notifications_channel_playback">Reproducción multimedia</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Está no es una URL HTTPS válida.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Sesión iniciada como <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">No hay iniciado sesión.</string>
-    <string name="action_nextcloud_authenticate">Autenticar</string>
-    <string name="indicator_offline_account">Cuenta sin conexión</string>
-    <string name="indicator_connecting">Conectando…</string>
-    <string name="message_something_went_wrong">Algo fue mal.</string>
-    <string name="message_server_connection_failed">No se pudo conectar con el servidor. Comprueba la dirección del servidor y tu conexión de red.</string>
-    <string name="message_invalid_credentials">Autenticación con el servidor fallida por credenciales incorrectas.</string>
-    <string name="message_logged_in_successfully">¡Inicio de sesión correcto!</string>
-    <string name="message_server_not_compatible">La versión del servidor no es compatible con esta aplicación.</string>
-    <string name="message_internet_not_available">No hay conexión a Internet.</string>
-    <string name="message_credentials_cannot_be_blank">No dejes en blanco las credenciales.</string>
-    <string name="preference_nextcloud_clear_credentials">Limpiar credenciales y URL del servidor</string>
     <string name="notification_media_play_pause">Reproducir / Pausar</string>
     <string name="notification_media_stop">Detener</string>
     <!-- App shortcuts -->
@@ -261,9 +227,6 @@
         <item quantity="other">%d etiquetas seleccionadas</item>
     </plurals>
     <string name="preferences_cloud_service_files">Almacenamiento de archivos</string>
-    <string name="preferences_file_storage_info">Seleccione una carpeta del almacenamiento local o de un proveedor de nube.
-    Todas las notas se almacenarán como archivos Markdown.
-  </string>
     <string name="preferences_file_storage_location">Ubicación de almacenamiento</string>
     <string name="preferences_file_storage_select">Seleccione la ubicación de almacenamiento</string>
     <string name="preferences_color_scheme_gray">Gris</string>
@@ -292,12 +255,9 @@
     <string name="preferences_default_editor_mode_view">Modo de vista</string>
     <string name="action_change_mode">Modo Vista/Edición</string>
     <string name="action_screen_always_on">Pantalla siempre activa</string>
-    <string name="message_notes_not_installed">La aplicación de Notas no está instalada en tu Nextcloud.</string>
     <string name="preferences_font_size">Tamaño de fuente de texto</string>
     <string name="preferences_show_fab_change_mode">Posición del botón de Edición/Vista de nota</string>
     <string name="preferences_fab">Botón flotante</string>
-    <string name="preferences_trust_self_signed_certificate">Confiar en certificado autofirmado</string>
-    <string name="message_certificates_invalid">Error del certificado. Por favor, habilitar \"Confiar en certificado autofirmado\" para continuar..</string>
     <string name="preferences_move_checked_items">Mover elementos seleccionados en las listas</string>
     <string name="preferences_color_scheme_teal">Verde azulado</string>
     <string name="preferences_color_scheme_cyan">Cian</string>

@@ -60,25 +60,8 @@
     <string name="preferences_backup_strategy_include_files">Sikkerhetskopier alt</string>
     <string name="preferences_backup_strategy_keep_info">Kun sikkerhetskopier beskrivelse og lokal sti</string>
     <string name="preferences_backup_strategy_keep_nothing">Ikke sikkerhetskopier vedlegg</string>
-    <string name="preferences_header_syncing">Synkronisering</string>
-    <string name="preferences_go_to_sync_settings">Åpne synkroniseringsinnstillingene</string>
-    <string name="preferences_currently_syncing_with">Synkroniserer nå med %s</string>
-    <string name="preferences_currently_not_syncing">Synkroniserer ikke</string>
-    <string name="preferences_cloud_service">Synkroniseringstjeneste</string>
     <string name="preferences_cloud_service_disabled">Avskrudd</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Husk at Nextcloud ikke støtter etiketter, vedlegg, påminnelser, gjøremålslister, osv.</string>
-    <string name="preferences_nextcloud_account">Nextcloud-konto</string>
-    <string name="preferences_nextcloud_instance_url">Nettadresse til Nextcloud-instans</string>
-    <string name="preferences_nextcloud_set_your_credentials">Sett opp dine identitetsdetaljer</string>
-    <string name="preferences_nextcloud_set_server_url">Sett tjenerens nettadresse</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi eller mobildata</string>
-    <string name="preferences_sync_when_on">Synkroniser når på</string>
-    <string name="preferences_background_sync">Bakgrunnssynkronisering</string>
-    <string name="preferences_background_sync_enabled">På</string>
-    <string name="preferences_background_sync_disabled">Av</string>
-    <string name="preferences_new_notes_synchronizable">Nye synkroniserbare notater</string>
     <!-- About -->
     <string name="about_version">Versjon</string>
     <string name="about_website">Nettside</string>
@@ -95,8 +78,6 @@
     <string name="ok">OK</string>
     <string name="indicator_notes_empty">Notatene dine vil vises her.</string>
     <string name="indicator_untitled">Uten navn</string>
-    <string name="hint_username">Brukernavn</string>
-    <string name="hint_password">Passord</string>
     <string name="action_save">Lagre</string>
     <string name="action_cancel">Avbryt</string>
     <string name="action_delete">Slett</string>
@@ -176,7 +157,6 @@
     <string name="action_add_task">Gjøremål</string>
     <string name="action_convert_to_note">Konverter til notat</string>
     <string name="action_convert_to_list">Konverter til liste</string>
-    <string name="action_do_not_sync">Ikke synkroniser</string>
     <string name="action_change_color">Endre farge</string>
     <string name="action_enable_markdown">Markdown</string>
     <string name="action_disable_markdown">Skru av markdown</string>
@@ -220,19 +200,6 @@
     <string name="notifications_channel_backups">Sikkerhetskopier</string>
     <string name="notifications_channel_playback">Mediaavspilling</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Dette er ikke en gyldig HTTPS-nettadresse.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Du er innlogget som <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Du er ikke innlogget.</string>
-    <string name="action_nextcloud_authenticate">Bekreft identitet</string>
-    <string name="indicator_offline_account">Frakoblet konto</string>
-    <string name="indicator_connecting">Kobler til …</string>
-    <string name="message_something_went_wrong">Noe gikk galt.</string>
-    <string name="message_invalid_credentials">Kunne ikke identietetsbekrefte hos tjeneren fordi enten brukernavn eller passord var feil.</string>
-    <string name="message_logged_in_successfully">Innlogget!</string>
-    <string name="message_server_not_compatible">Tjenerversjonen er ikke kompatibel med dette programmet.</string>
-    <string name="message_internet_not_available">Du må koble deg til Internett først.</string>
-    <string name="message_credentials_cannot_be_blank">Brukernavn og passord må fylles ut.</string>
-    <string name="preference_nextcloud_clear_credentials">Tøm brukernavn, passord og tjenernettadresse</string>
     <string name="notification_media_play_pause">Spill av/pause</string>
     <string name="notification_media_stop">Stopp</string>
     <!-- App shortcuts -->
@@ -256,9 +223,6 @@
         <item quantity="other">%d etiketter valgt</item>
     </plurals>
     <string name="preferences_cloud_service_files">Fillagring</string>
-    <string name="preferences_file_storage_info">Velg en mappe fra lokal lagring eller fra en skyleverandør. Alle notater
-    vil bli lagret som Markdown-filer.
-  </string>
     <string name="preferences_file_storage_location">Lagringssted</string>
     <string name="preferences_file_storage_select">Velg Lagringssted</string>
     <string name="preferences_color_scheme_gray">Grå</string>
@@ -287,8 +251,6 @@
     <string name="action_change_mode">Rediger/Vis-modus</string>
     <string name="action_screen_always_on">Skjerm alltid på</string>
     <string name="action_disable_screen_always_on">Deaktivert Skjem alltid på</string>
-    <string name="message_certificates_invalid">Sertifikat-feil. Skru på \"Stol på selvsignert sertifikat (SSC)\" for å fortsette.</string>
-    <string name="message_notes_not_installed">Notes-appen er ikke installert i din Nextcloud.</string>
     <string name="action_new_note">Nytt notat</string>
     <string name="note_untitled">Uten navn</string>
     <string name="tasks">oppgave</string>

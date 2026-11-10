@@ -61,25 +61,8 @@
     <string name="preferences_backup_strategy_include_files">Tout sauvegarder</string>
     <string name="preferences_backup_strategy_keep_info">Sauvegarder la description et le chemin d\'accès local</string>
     <string name="preferences_backup_strategy_keep_nothing">Ne pas sauvegarder les pièces jointes</string>
-    <string name="preferences_header_syncing">Synchronisation</string>
-    <string name="preferences_go_to_sync_settings">Paramètres de synchronisation</string>
-    <string name="preferences_currently_syncing_with">Synchronisation avec %s</string>
-    <string name="preferences_currently_not_syncing">Pas de synchronisation</string>
-    <string name="preferences_cloud_service">Service de synchronisation</string>
     <string name="preferences_cloud_service_disabled">Désactivé</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Sachez que Nextcloud Notes ne supporte pas les étiquettes, pièces jointes, rappels, listes de tâches et d\'autres fonctionnalités encore.</string>
-    <string name="preferences_nextcloud_account">Compte Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">Adresse du serveur Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">Définissez vos identifiants</string>
-    <string name="preferences_nextcloud_set_server_url">Définissez l\'URL du serveur</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi ou données mobiles</string>
-    <string name="preferences_sync_when_on">Synchroniser avec la connexion</string>
-    <string name="preferences_background_sync">Synchroniser en arrière-plan</string>
-    <string name="preferences_background_sync_enabled">Activé</string>
-    <string name="preferences_background_sync_disabled">Désactivé</string>
-    <string name="preferences_new_notes_synchronizable">Synchroniser les nouvelles notes</string>
     <string name="preferences_dark_theme_mode">Mode thème sombre</string>
     <string name="preferences_theme_dark_mode_standard">Standard</string>
     <string name="preferences_theme_dark_mode_black">Noire</string>
@@ -101,8 +84,6 @@
     <string name="ok">OK</string>
     <string name="indicator_notes_empty">Vos notes apparaîtront ici.</string>
     <string name="indicator_untitled">Sans titre</string>
-    <string name="hint_username">Nom d\'utilisateur</string>
-    <string name="hint_password">Mot de passe</string>
     <string name="action_save">Sauvegarder</string>
     <string name="action_cancel">Annuler</string>
     <string name="action_delete">Supprimer</string>
@@ -182,7 +163,6 @@
     <string name="action_add_task">Tâche</string>
     <string name="action_convert_to_note">Convertir en note</string>
     <string name="action_convert_to_list">Convertir en liste</string>
-    <string name="action_do_not_sync">Ne pas synchroniser</string>
     <string name="action_change_color">Changer la couleur</string>
     <string name="action_enable_markdown">Activer le Markdown</string>
     <string name="action_disable_markdown">Désactiver le markown</string>
@@ -226,20 +206,6 @@
     <string name="notifications_channel_backups">Sauvegardes</string>
     <string name="notifications_channel_playback">Lecture de médias</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Ceci n\'est pas une URL HTTPS valide.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Connecté en tant que <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Vous n\'êtes pas connecté.</string>
-    <string name="action_nextcloud_authenticate">S\'authentifier</string>
-    <string name="indicator_offline_account">Compte hors ligne</string>
-    <string name="indicator_connecting">Connexion…</string>
-    <string name="message_something_went_wrong">Il y a eu un problème.</string>
-    <string name="message_server_connection_failed">Impossible de se connecter au serveur. Veuillez vérifier l\'adresse du serveur et votre connexion réseau.</string>
-    <string name="message_invalid_credentials">Impossible de s\'authentifier : les identifiants sont invalides.</string>
-    <string name="message_logged_in_successfully">Connexion réussie !</string>
-    <string name="message_server_not_compatible">La version du serveur n\'est pas compatible avec cette application.</string>
-    <string name="message_internet_not_available">Aucune connexion internet disponible.</string>
-    <string name="message_credentials_cannot_be_blank">Les identifiants ne peuvent pas être vides.</string>
-    <string name="preference_nextcloud_clear_credentials">Effacer les identifiants et l\'adresse</string>
     <string name="notification_media_play_pause">Lecture / Pause</string>
     <string name="notification_media_stop">Arrêter</string>
     <!-- App shortcuts -->
@@ -248,28 +214,25 @@
     <string name="never">Jamais</string>
     <plurals name="more_items">
         <item quantity="one">+%d élément</item>
-        <item quantity="many"/>
+        <item quantity="many">+%d d\'éléments</item>
         <item quantity="other">+%d éléments</item>
     </plurals>
     <plurals name="selected_notes">
         <item quantity="one">%d note sélectionnée</item>
-        <item quantity="many"/>
+        <item quantity="many">%d de notes sélectionnées</item>
         <item quantity="other">%d notes sélectionnées</item>
     </plurals>
     <plurals name="selected_notebooks">
         <item quantity="one">%d carnet sélectionné</item>
-        <item quantity="many"/>
+        <item quantity="many">%d de carnets sélectionnés</item>
         <item quantity="other">%d carnets sélectionnés</item>
     </plurals>
     <plurals name="selected_tags">
         <item quantity="one">%d étiquette sélectionnée</item>
-        <item quantity="many"/>
+        <item quantity="many">%d d\'étiquettes sélectionnées</item>
         <item quantity="other">%d étiquettes sélectionnées</item>
     </plurals>
     <string name="preferences_cloud_service_files">Stockage de fichiers</string>
-    <string name="preferences_file_storage_info">Sélectionnez un dossier à partir du stockage local ou d\'un fournisseur de
-    cloud. Toutes les notes seront stockées sous forme de fichiers Markdown.
-  </string>
     <string name="preferences_file_storage_location">Emplacement de stockage</string>
     <string name="preferences_file_storage_select">Sélectionnez l\'emplacement de stockage</string>
     <string name="preferences_color_scheme_gray">Gris</string>
@@ -288,8 +251,6 @@
     <string name="action_uncheck_all_tasks">Décocher tous les éléments</string>
     <string name="preferences_header_view_notebook">Carnet</string>
     <string name="action_change_mode">Mode Édition/Lecture</string>
-    <string name="preferences_trust_self_signed_certificate">Faire confiance au certificat auto-signé</string>
-    <string name="message_certificates_invalid">Erreur de certificat. Veuillez activer \"Faire confiance au certificat auto-signé\" pour continuer...</string>
     <string name="preferences_color_scheme_teal">Sarcelle</string>
     <string name="preferences_color_scheme_cyan">Cyan</string>
     <string name="preferences_color_scheme_brown">Brun</string>

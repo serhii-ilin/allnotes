@@ -2,7 +2,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.androidApplication)
-    alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.kotlinParcelize)
     alias(libs.plugins.kotlinSerialization)
@@ -50,6 +49,11 @@ android {
             )
 
         }
+    }
+
+    lint {
+        // Translations are contributed over time; untranslated strings fall back to English.
+        warning += "MissingTranslation"
     }
 
     dependenciesInfo {
@@ -103,7 +107,6 @@ android {
 
     buildFeatures {
         viewBinding = true
-        compose = true
         buildConfig = true
     }
 
@@ -141,13 +144,6 @@ ksp {
 }
 
 dependencies {
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.ui)
-    implementation(libs.androidx.ui.tooling.preview)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.navigation.compose)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
     implementation(libs.monitor)
     implementation(libs.junit.ktx)
@@ -178,11 +174,9 @@ dependencies {
 
     // Material Components
     implementation(libs.material)
-    implementation(libs.androidx.material)
-    // Optional - Integration with activities
-    implementation(libs.androidx.activity.compose)
-    // Optional - Integration with ViewModels
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+    // Baseline profiles shipped by libraries
+    implementation(libs.androidx.profileinstaller)
 
     // Room
     ksp(libs.roomCompiler)

@@ -110,32 +110,10 @@
     <string name="preferences_backup_strategy_keep_nothing">Nu face backup la atașamente</string>
 
     <!-- Preferences / Syncing -->
-    <string name="preferences_header_syncing">Sincronizare</string>
-    <string name="preferences_go_to_sync_settings">Mergi la setările de sincronizare</string>
-    <string name="preferences_currently_syncing_with">Sincronizare curentă cu %s</string>
-    <string name="preferences_currently_not_syncing">Nu se sincronizează în prezent</string>
-    <string name="preferences_cloud_service">Serviciu sincronizare</string>
     <string name="preferences_cloud_service_disabled">Dezactivat</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Ține minte că Nextcloud Notes nu suportă
-        funcții precum etichete, atașamente, mementouri și altele. Nextcloud Notes trebuie să fie
-        instalat pe Serverul Nextcloud sau autentificarea va eșua cu \"Ceva nu a mers bine\"!</string>
-    <string name="preferences_nextcloud_account">Cont Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">URL instanță Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">Setează datele de autentificare</string>
-    <string name="preferences_nextcloud_set_server_url">Setează URL-ul serverului</string>
-    <string name="preferences_file_storage_info">Selectează un folder din stocarea locală sau de la un
-        furnizor cloud. Toate notițele vor fi stocate ca fișiere Markdown.</string>
     <string name="preferences_file_storage_location">Locație stocare</string>
     <string name="preferences_file_storage_select">Selectează locația de stocare</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi sau Date</string>
-    <string name="preferences_sync_when_on">Sincronizează când este activ</string>
-    <string name="preferences_background_sync">Sincronizare în fundal</string>
-    <string name="preferences_background_sync_enabled">Activat</string>
-    <string name="preferences_background_sync_disabled">Dezactivat</string>
-    <string name="preferences_new_notes_synchronizable">Notițe noi sincronizabile</string>
-    <string name="preferences_trust_self_signed_certificate">Acceptă certificat auto-semnat</string>
 
     <!-- About -->
     <string name="about_version">Versiune</string>
@@ -152,7 +130,6 @@
     <string name="about_libraries">Biblioteci</string>
     <string name="about_libraries_subtext">Vezi bibliotecile terțe și licențele.</string>
 
-
     <!-- General -->
     <string name="default_string">Implicit</string>
     <string name="yes">Da</string>
@@ -160,8 +137,6 @@
     <string name="ok">Bine</string>
     <string name="indicator_notes_empty">Notițele tale vor apărea aici.</string>
     <string name="indicator_untitled">Fără titlu</string>
-    <string name="hint_username">Nume utilizator</string>
-    <string name="hint_password">Parolă</string>
     <string name="action_save">Salvează</string>
     <string name="action_cancel">Anulează</string>
     <string name="action_delete">Șterge</string>
@@ -188,7 +163,6 @@
     <string name="action_full_preview">Previzualizare completă</string>
     <string name="action_screen_always_on">Ecran mereu pornit</string>
 
-
     <!-- Attachments -->
     <string name="attachments_edit_description">Editează descrierea</string>
     <string name="attachments_hint_description">Descriere atașament</string>
@@ -197,7 +171,6 @@
     <string name="action_attach_files">Atașează fișiere</string>
     <string name="action_take_photo">Fă o poză</string>
     <string name="indicator_recorded_clip">Clip înregistrat</string>
-
 
     <!-- Notebooks -->
     <string name="default_notebook">Altele</string>
@@ -210,10 +183,8 @@
     <string name="action_new_notebook">Caiet nou</string>
     <string name="indicator_notebook_already_exists">Caietul cu numele %1$s există deja.</string>
 
-
     <!-- Archive -->
     <string name="indicator_archive_empty">Notițele tale arhivate vor apărea aici.</string>
-
 
     <!-- Deleted -->
     <string name="action_empty_bin">Golește coșul</string>
@@ -228,7 +199,6 @@
     <string name="indicator_deleted_notes_permanently">Notițe șterse permanent.</string>
     <string name="indicator_deleted_note_permanently">Notiță ștearsă permanent.</string>
 
-
     <!-- Reminders -->
     <string name="reminders">Mementouri</string>
     <string name="reminder">Mementou</string>
@@ -239,7 +209,6 @@
     <string name="notification_reminder_fired">Ai un mementou.</string>
     <string name="indicator_cannot_set_past_reminder">Nu se poate seta un mementou pentru o dată din trecut</string>
 
-
     <!-- Tags -->
     <string name="action_new_tag">Etichetă nouă</string>
     <string name="tags_hint_name">Nume etichetă</string>
@@ -247,13 +216,11 @@
     <string name="action_rename_tag">Redenumește eticheta</string>
     <string name="indicator_tag_already_exists">Eticheta cu numele %1$s există deja.</string>
 
-
     <!-- Search -->
     <string name="search_hint">Caută…</string>
     <string name="action_search">Caută</string>
     <string name="indicator_search_empty">Rezultatele căutării vor fi afișate aici.</string>
     <string name="indicator_no_results_found">Nu s-au găsit rezultate.</string>
-
 
     <!-- Editor -->
     <string name="editor_hint_title">Titlu</string>
@@ -261,7 +228,6 @@
     <string name="action_add_task">Sarcină</string>
     <string name="action_convert_to_note">Convertește la notiță</string>
     <string name="action_convert_to_list">Convertește la listă</string>
-    <string name="action_do_not_sync">Nu sincroniza</string>
     <string name="action_change_color">Schimbă culoarea</string>
     <string name="action_enable_markdown">Activează markdown</string>
     <string name="action_disable_markdown">Dezactivează markdown</string>
@@ -305,33 +271,12 @@
     <string name="notification_restore_complete">Restaurare completată</string>
     <string name="notification_restore_failed">Restaurare eșuată</string>
 
-
     <!-- Notification channels -->
     <string name="notifications_channel_reminders">Mementouri</string>
     <string name="notifications_channel_backups">Backup-uri</string>
     <string name="notifications_channel_playback">Redare media</string>
 
     <!-- Syncing -->
-    <string name="message_not_valid_https">Acesta nu este un URL HTTPS valid.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Ești conectat ca <b>%s</b>
-        .</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Nu ești conectat în prezent.</string>
-    <string name="action_nextcloud_authenticate">Autentifică</string>
-    <string name="indicator_offline_account">Cont offline</string>
-    <string name="indicator_connecting">Se conectează…</string>
-    <string name="message_something_went_wrong">Ceva nu a mers bine.</string>
-    <string name="message_invalid_credentials">Nu s-a putut autentifica cu serverul din cauza
-        datelor de autentificare invalide.</string>
-    <string
-        name="message_certificates_invalid">Eroare certificat. Te rugăm să activezi \"Acceptă certificat auto-semnat\"
-        pentru a continua..
-    </string>
-    <string name="message_logged_in_successfully">Conectare reușită!</string>
-    <string name="message_notes_not_installed">Aplicația Notes nu este instalată în Nextcloud-ul tău.</string>
-    <string name="message_server_not_compatible">Versiunea serverului nu este compatibilă cu această aplicație.</string>
-    <string name="message_internet_not_available">Conexiunea la internet nu este disponibilă.</string>
-    <string name="message_credentials_cannot_be_blank">Datele de autentificare nu pot fi goale.</string>
-    <string name="preference_nextcloud_clear_credentials">Șterge datele de autentificare și URL-ul serverului</string>
     <string name="notification_media_play_pause">Redare / Pauză</string>
     <string name="notification_media_stop">Stop</string>
 
@@ -347,22 +292,26 @@
 
     <plurals name="more_items">
         <item quantity="one">+%d element</item>
-        <item quantity="other">+%d elemente</item>
+        <item quantity="few">+%d elemente</item>
+        <item quantity="other">+%d de elemente</item>
     </plurals>
 
     <plurals name="selected_notes">
         <item quantity="one">%d notiță selectată</item>
-        <item quantity="other">%d notițe selectate</item>
+        <item quantity="few">%d notițe selectate</item>
+        <item quantity="other">%d de notițe selectate</item>
     </plurals>
 
     <plurals name="selected_notebooks">
         <item quantity="one">%d caiet selectat</item>
-        <item quantity="other">%d caiete selectate</item>
+        <item quantity="few">%d caiete selectate</item>
+        <item quantity="other">%d de caiete selectate</item>
     </plurals>
 
     <plurals name="selected_tags">
         <item quantity="one">%d etichetă selectată</item>
-        <item quantity="other">%d etichete selectate</item>
+        <item quantity="few">%d etichete selectate</item>
+        <item quantity="other">%d de etichete selectate</item>
     </plurals>
     <string name="preferences_cloud_service_files">Stocare fișiere</string>
     <string name="error_report_email" translatable="false">sixface@msn.com</string>

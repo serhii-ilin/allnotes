@@ -13,6 +13,7 @@ import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
 import org.qosp.notes.data.sync.fs.vault.VaultPortableMetadata
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
+import org.qosp.notes.data.sync.fs.vault.VaultWriteClock
 import org.qosp.notes.data.repo.NoteRepository
 
 object SyncModule {
@@ -27,12 +28,14 @@ object SyncModule {
         singleOf(::VaultSyncCoordinator)
         singleOf(::VaultTreeAccess)
         singleOf(::VaultForegroundRescan)
+        singleOf(::VaultWriteClock)
         single {
             VaultFolderChangeMonitor(
                 context = get(),
                 preferenceRepository = get(),
                 noteRepository = get(),
                 syncScope = get(),
+                vaultWriteClock = get(),
             )
         }
     }

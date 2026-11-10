@@ -108,37 +108,44 @@
     <string name="preferences_backup_strategy_keep_info">Only backup description and local path</string>
     <string name="preferences_backup_strategy_keep_nothing">Do not backup attachments</string>
 
-    <!-- Preferences / Syncing -->
-    <string name="preferences_header_syncing">Syncing</string>
-    <string name="preferences_go_to_sync_settings">Go to sync settings</string>
-    <string name="preferences_currently_syncing_with">Currently syncing with %s</string>
-    <string name="preferences_currently_not_syncing">Currently not syncing</string>
-    <string name="preferences_cloud_service">Syncing service</string>
+    <!-- Legacy sync preference values; kept because old stored enum names must still decode. -->
     <string name="preferences_cloud_service_disabled">Disabled</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Keep in mind Nextcloud Notes does not support features such as tags, attachments, reminders and more. Nextcloud Notes need to be installed on the Nextcloud Server or the Login will fail with "Something went wrong"!</string>
-    <string name="preferences_nextcloud_account">Nextcloud account</string>
-    <string name="preferences_nextcloud_instance_url">Nextcloud instance URL</string>
-    <string name="preferences_nextcloud_set_your_credentials">Set your credentials</string>
-    <string name="preferences_nextcloud_set_server_url">Set the server\'s URL</string>
-    <string name="preferences_file_storage_info">Choose a vault folder (e.g. Syncthing). Markdown notes and attachment files live there; Room is only an index. Existing notes created before you select this folder are not copied into the vault automatically.</string>
-    <string name="preferences_vault_rebuild_index">Rebuild vault index from folder</string>
-    <string name="preferences_vault_rebuild_index_hint">Scan the vault and refresh the local index without deleting local-only notes.</string>
+
+    <!-- Preferences / Vault -->
+    <string name="preferences_header_vault">Vault</string>
+    <string name="preferences_vault_rebuild_index">Rescan vault now</string>
+    <string name="preferences_vault_rebuild_index_hint">Re-read the vault folder and update the note list.</string>
     <string name="preferences_vault_clear_recovery">Clear vault recovery state</string>
     <string name="preferences_vault_clear_recovery_hint">Deletes local staging/journal tickets for this vault (use if sync appears stuck).</string>
+    <string name="preferences_vault_rescanning">Rescanning vault…</string>
+    <string name="preferences_vault_no_recovery_items">No pending recovery items</string>
+    <string name="preferences_vault_clear_recovery_dialog_title">Clear vault recovery state?</string>
+    <string name="preferences_vault_clear_recovery_dialog_message">Discards pending vault writes that were not finished. Only use this if sync appears stuck.</string>
+    <string name="action_clear">Clear</string>
+    <string name="vault_choose_location_first">Choose a storage location first</string>
+    <string name="vault_rescan_failed">Rescan failed</string>
+    <string name="vault_rescan_failed_reason">Rescan failed: %s</string>
+    <string name="vault_nothing_to_clear">Nothing to clear</string>
+    <plurals name="vault_rescan_done">
+        <item quantity="one">Vault rescanned · %d note indexed</item>
+        <item quantity="other">Vault rescanned · %d notes indexed</item>
+    </plurals>
+    <plurals name="vault_recovery_cleared">
+        <item quantity="one">Cleared %d recovery item</item>
+        <item quantity="other">Cleared %d recovery items</item>
+    </plurals>
+    <plurals name="vault_recovery_pending">
+        <item quantity="one">%d pending item · clear if sync appears stuck</item>
+        <item quantity="other">%d pending items · clear if sync appears stuck</item>
+    </plurals>
     <string name="preferences_file_storage_location">Storage location</string>
+    <string name="storage_internal_label">Internal storage</string>
+    <string name="preferences_file_storage_choose_hint">Tap to choose a folder</string>
     <string name="preferences_file_storage_select">Select Storage location</string>
     <string name="vault_onboarding_title">Choose a notes folder</string>
     <string name="vault_onboarding_message">Quillpad keeps notes as Markdown files in a folder you choose. Notes stay on this device until you pick a folder; you can change or back up that folder anytime.</string>
     <string name="vault_onboarding_hint">No folder selected</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi or Data</string>
-    <string name="preferences_sync_when_on">Sync when on</string>
-    <string name="preferences_background_sync">Background syncing</string>
-    <string name="preferences_background_sync_enabled">Enabled</string>
-    <string name="preferences_background_sync_disabled">Disabled</string>
-    <string name="preferences_new_notes_synchronizable">New notes synchronizable</string>
-    <string name="preferences_trust_self_signed_certificate">Trust self-signed certificate</string>
 
     <!-- About -->
     <string name="about_version">Version</string>
@@ -154,7 +161,6 @@
     <string name="about_libraries">Libraries</string>
     <string name="about_libraries_subtext">View third-party libraries and licenses.</string>
 
-
     <!-- General -->
     <string name="default_string">Default</string>
     <string name="yes">Yes</string>
@@ -162,8 +168,6 @@
     <string name="ok">Okay</string>
     <string name="indicator_notes_empty">Your notes will appear here.</string>
     <string name="indicator_untitled">Untitled</string>
-    <string name="hint_username">Username</string>
-    <string name="hint_password">Password</string>
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_delete">Delete</string>
@@ -190,7 +194,6 @@
     <string name="action_full_preview">Full preview</string>
     <string name="action_screen_always_on">Screen always on</string>
 
-
     <!-- Attachments -->
     <string name="attachments_edit_description">Edit description</string>
     <string name="attachments_hint_description">Attachment description</string>
@@ -199,7 +202,6 @@
     <string name="action_attach_files">Attach files</string>
     <string name="action_take_photo">Take a photo</string>
     <string name="indicator_recorded_clip">Recorded Clip</string>
-
 
     <!-- Notebooks -->
     <string name="default_notebook">Other</string>
@@ -212,10 +214,8 @@
     <string name="action_new_notebook">New notebook</string>
     <string name="indicator_notebook_already_exists">Notebook with name %1$s already exists.</string>
 
-
     <!-- Archive -->
     <string name="indicator_archive_empty">Your archived notes will appear here.</string>
-
 
     <!-- Deleted -->
     <string name="action_empty_bin">Empty bin</string>
@@ -228,7 +228,6 @@
     <string name="indicator_deleted_notes_permanently">Deleted notes permanently.</string>
     <string name="indicator_deleted_note_permanently">Deleted note permanently.</string>
 
-
     <!-- Reminders -->
     <string name="reminders">Reminders</string>
     <string name="reminder">Reminder</string>
@@ -239,7 +238,6 @@
     <string name="notification_reminder_fired">You have a reminder.</string>
     <string name="indicator_cannot_set_past_reminder">Cannot set a reminder for a past date</string>
 
-
     <!-- Tags -->
     <string name="action_new_tag">New tag</string>
     <string name="tags_hint_name">Tag name</string>
@@ -247,13 +245,11 @@
     <string name="action_rename_tag">Rename tag</string>
     <string name="indicator_tag_already_exists">Tag with name %1$s already exists.</string>
 
-
     <!-- Search -->
     <string name="search_hint">Search…</string>
     <string name="action_search">Search</string>
     <string name="indicator_search_empty">Search results will be displayed here.</string>
     <string name="indicator_no_results_found">No results found.</string>
-
 
     <!-- Editor -->
     <string name="editor_hint_title">Title</string>
@@ -261,7 +257,6 @@
     <string name="action_add_task">Task</string>
     <string name="action_convert_to_note">Convert to note</string>
     <string name="action_convert_to_list">Convert to list</string>
-    <string name="action_do_not_sync">Do not sync</string>
     <string name="action_change_color">Change color</string>
     <string name="action_enable_markdown">Enable markdown</string>
     <string name="action_disable_markdown">Disable markdown</string>
@@ -305,31 +300,11 @@
     <string name="notification_restore_complete">Restore completed</string>
     <string name="notification_restore_failed">Restore failed</string>
 
-
     <!-- Notification channels -->
     <string name="notifications_channel_reminders">Reminders</string>
     <string name="notifications_channel_backups">Backups</string>
     <string name="notifications_channel_playback">Media playback</string>
 
-    <!-- Syncing -->
-    <string name="message_not_valid_https">This is not a valid HTTPS url.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">You are currently logged in as <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">You are currently not logged in.</string>
-    <string name="action_nextcloud_authenticate">Authenticate</string>
-    <string name="indicator_offline_account">Offline account</string>
-    <string name="indicator_connecting">Connecting…</string>
-    <string name="message_something_went_wrong">Something went wrong.</string>
-    <string name="message_server_connection_failed">Could not connect to the server. Please check the server address and your network connection.</string>
-    <string name="message_invalid_credentials">Could not authenticate with server due to invalid credentials.</string>
-    <string
-        name="message_certificates_invalid">Certificate error. Please enable \"Trust self-signed certificate\" to continue..
-    </string>
-    <string name="message_logged_in_successfully">Logged in successfully!</string>
-    <string name="message_notes_not_installed">Notes app is not installed in your Nextcloud.</string>
-    <string name="message_server_not_compatible">Server version is not compatible with this app.</string>
-    <string name="message_internet_not_available">Internet connection is not available.</string>
-    <string name="message_credentials_cannot_be_blank">Credentials cannot be blank.</string>
-    <string name="preference_nextcloud_clear_credentials">Clear credentials and server URL</string>
     <string name="notification_media_play_pause">Play / Pause</string>
     <string name="notification_media_stop">Stop</string>
 

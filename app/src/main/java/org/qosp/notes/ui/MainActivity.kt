@@ -24,25 +24,25 @@ import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
+import org.qosp.notes.BuildConfig
 import org.qosp.notes.R
 import org.qosp.notes.components.backup.BackupService
 import org.qosp.notes.data.model.Attachment
 import org.qosp.notes.data.model.Notebook
 import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.fs.StorageConfig
-import org.qosp.notes.data.sync.fs.toFriendlyString
+import org.qosp.notes.data.sync.fs.toVaultFolderName
 import org.qosp.notes.databinding.ActivityMainBinding
 import org.qosp.notes.preferences.PreferenceRepository
-import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.qosp.notes.preferences.SortNavdrawerNotebooksMethod
@@ -51,6 +51,8 @@ import org.qosp.notes.ui.utils.closeAndThen
 import org.qosp.notes.ui.utils.collect
 import org.qosp.notes.ui.utils.hideKeyboard
 import org.qosp.notes.ui.utils.navigateSafely
+import org.qosp.notes.ui.whatsnew.WhatsNewViewModel
+import org.qosp.notes.ui.whatsnew.showWhatsNewDialog
 import org.qosp.notes.ui.widget.WidgetUpdateHelper
 
 class MainActivity : BaseActivity() {
@@ -60,8 +62,8 @@ class MainActivity : BaseActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val activityModel: ActivityViewModel by viewModel()
+    private val whatsNewModel: WhatsNewViewModel by viewModel()
     private val backendProvider by inject<BackendProvider>()
-    private val noteRepository by inject<NoteRepository>()
     private var vaultFolderPromptShown = false
 
     private val topLevelMenu get() = binding.navigationView.menu
@@ -78,7 +80,6 @@ class MainActivity : BaseActivity() {
         R.id.fragment_editor,
         R.id.fragment_manage_notebooks,
         R.id.fragment_search,
-        R.id.fragment_sync_settings,
         R.id.fragment_settings,
         R.id.fragment_tags,
     )
@@ -107,7 +108,13 @@ class MainActivity : BaseActivity() {
         setupDrawerHeader()
 
         WidgetUpdateHelper.updateAllWidgets(this)
-        if (intent != null) handleIntent(intent)
+        // A theme change recreates this activity; re-handling a share/VIEW intent would import
+        // the same note again.
+        if (savedInstanceState == null && intent != null) handleIntent(intent)
+
+        // The ViewModel flag, not savedInstanceState, decides whether the dialog was already
+        // shown, so recreation while it is open does not bring it back.
+        showWhatsNewIfNeeded()
 
         onBackPressedDispatcher.addCallback(this) {
             if (binding.drawer.isDrawerOpen(GravityCompat.START)) {
@@ -122,6 +129,19 @@ class MainActivity : BaseActivity() {
 
     private val vaultForegroundRescan: VaultForegroundRescan by inject()
 
+    private fun showWhatsNewIfNeeded() {
+        // Firebase TestLab runs should not be interrupted by the "What's New" dialog
+        if (BuildConfig.TESTLAB_BUILD) return
+
+        lifecycleScope.launch {
+            val item = whatsNewModel.whatsNewToShow().first() ?: return@launch
+            if (!whatsNewModel.markDialogShown()) return@launch
+            showWhatsNewDialog(item)
+            // Marked on show, not on dismiss: rotation may destroy the dialog without a dismiss.
+            whatsNewModel.markLatestAsSeen()
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         lifecycleScope.launch {
@@ -130,7 +150,8 @@ class MainActivity : BaseActivity() {
                 .first()
             if (location.isNotBlank()) {
                 if (vaultForegroundRescan.shouldRunRescan()) {
-                    noteRepository.syncNotes()
+                    // Keeps vault-relative paths in ActivityViewModel in step with the refreshed index.
+                    activityModel.syncAsync().await()
                 }
             } else {
                 promptForVaultFolderIfNeeded()
@@ -150,7 +171,7 @@ class MainActivity : BaseActivity() {
             .setTitle(R.string.vault_onboarding_title)
             .setMessage(R.string.vault_onboarding_message)
             .setPositiveButton(R.string.preferences_file_storage_select) { _, _ ->
-                navController.navigateSafely(R.id.fragment_sync_settings)
+                navController.navigateSafely(R.id.fragment_settings)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -290,7 +311,7 @@ class MainActivity : BaseActivity() {
 
         syncSettingsButton.setOnClickListener {
             binding.drawer.closeAndThen {
-                navController.navigateSafely(R.id.fragment_sync_settings)
+                navController.navigateSafely(R.id.fragment_settings)
             }
         }
         lifecycleScope.launch {
@@ -299,7 +320,7 @@ class MainActivity : BaseActivity() {
                     val uri = StorageConfig.storageLocation(preferenceRepository)
                         .filterNotNull().firstOrNull()?.location
                     if (backend != null && uri != null && uri.toString().isNotEmpty()) {
-                        textViewUsername.text = uri.toFriendlyString(applicationContext)
+                        textViewUsername.text = uri.toVaultFolderName(applicationContext)
                         textViewProvider.text = getString(R.string.preferences_cloud_service_files)
                     } else {
                         textViewUsername.text = getString(R.string.vault_onboarding_title)
@@ -317,7 +338,6 @@ class MainActivity : BaseActivity() {
         val destinationId =
             when (val id = destinationId ?: navController.currentDestination?.id ?: return) {
                 // Assign destinations that do not have a drawer entry to an existing entry
-                R.id.fragment_sync_settings -> R.id.fragment_settings
                 R.id.fragment_search -> R.id.fragment_main
                 else -> id
             }
@@ -369,23 +389,14 @@ class MainActivity : BaseActivity() {
     }
 
     private fun setupNavigation() {
-        fun createNotebookMenuItems(notebooks: List<Notebook>) {
-
-            // Obtaining the current setting of notebook sorting order.
-            val sort = runBlocking {
-                return@runBlocking preferenceRepository
-                    .getAll()
-                    .map { it.sortNavdrawerNotebooksMethod }
-                    .first()
-                    .name
-            }
+        fun createNotebookMenuItems(notebooks: List<Notebook>, sort: SortNavdrawerNotebooksMethod) {
 
             // Sorting the notebooks.
             val sortedNotebooks: List<Notebook> = when (sort) {
-                SortNavdrawerNotebooksMethod.CREATION_ASC.name -> notebooks.sortedBy { it.id }
-                SortNavdrawerNotebooksMethod.CREATION_DESC.name -> notebooks.sortedByDescending { it.id }
-                SortNavdrawerNotebooksMethod.TITLE_ASC.name -> notebooks.sortedBy { it.name }
-                SortNavdrawerNotebooksMethod.TITLE_DESC.name -> notebooks.sortedByDescending { it.name }
+                SortNavdrawerNotebooksMethod.CREATION_ASC -> notebooks.sortedBy { it.id }
+                SortNavdrawerNotebooksMethod.CREATION_DESC -> notebooks.sortedByDescending { it.id }
+                SortNavdrawerNotebooksMethod.TITLE_ASC -> notebooks.sortedBy { it.name }
+                SortNavdrawerNotebooksMethod.TITLE_DESC -> notebooks.sortedByDescending { it.name }
                 else -> notebooks.sortedBy { it.name }
             }
 
@@ -440,30 +451,34 @@ class MainActivity : BaseActivity() {
             setDrawerEnabled(destination.id != R.id.fragment_editor)
         }
 
-        activityModel.notebooks.collect(this) { (showDefaultNotebook, notebooks) ->
-            val notebookIds = (notebooks.map { it.id.toInt() } + R.id.nav_default_notebook).toSet()
+        activityModel.notebooks
+            .combine(preferenceRepository.getAll().map { it.sortNavdrawerNotebooksMethod }) { (showDefaultNotebook, notebooks), sort ->
+                Triple(showDefaultNotebook, notebooks, sort)
+            }
+            .collect(this) { (showDefaultNotebook, notebooks, sort) ->
+                val notebookIds = (notebooks.map { it.id.toInt() } + R.id.nav_default_notebook).toSet()
 
-            // Remove deleted notebooks from the menu
-            (primaryDestinations + secondaryDestinations + notebookIds).let { dests ->
-                notebooksMenu?.let { nbMenu ->
-                    var index = 0
-                    while (index < nbMenu.size) {
-                        val item = nbMenu[index]
-                        if (item.itemId !in dests) nbMenu.removeItem(item.itemId) else index++
+                // Remove deleted notebooks from the menu
+                (primaryDestinations + secondaryDestinations + notebookIds).let { dests ->
+                    notebooksMenu?.let { nbMenu ->
+                        var index = 0
+                        while (index < nbMenu.size) {
+                            val item = nbMenu[index]
+                            if (item.itemId !in dests) nbMenu.removeItem(item.itemId) else index++
+                        }
                     }
                 }
-            }
 
-            createNotebookMenuItems(notebooks)
+                createNotebookMenuItems(notebooks, sort)
 
-            val defaultTitle = getString(R.string.default_notebook)
-            notebooksMenu?.findItem(R.id.nav_default_notebook)?.apply {
-                isVisible = showDefaultNotebook
-                title =
-                    defaultTitle + " (${getString(R.string.default_string)})".takeIf { notebooks.any { it.name == defaultTitle } }
-                        .orEmpty()
+                val defaultTitle = getString(R.string.default_notebook)
+                notebooksMenu?.findItem(R.id.nav_default_notebook)?.apply {
+                    isVisible = showDefaultNotebook
+                    title =
+                        defaultTitle + " (${getString(R.string.default_string)})".takeIf { notebooks.any { it.name == defaultTitle } }
+                            .orEmpty()
+                }
             }
-        }
     }
 
     private fun setDrawerEnabled(enabled: Boolean) {

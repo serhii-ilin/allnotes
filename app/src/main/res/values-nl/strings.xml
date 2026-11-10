@@ -80,25 +80,8 @@
     <string name="preferences_backup_strategy_keep_info">Maak alleen een back-up van de omschrijving en het lokale pad</string>
     <string name="preferences_backup_strategy_keep_nothing">Maak geen back-up van bijlagen</string>
     <!-- Preferences / Syncing -->
-    <string name="preferences_header_syncing">Synchroniseren</string>
-    <string name="preferences_go_to_sync_settings">Ga naar synchronisatie instellingen</string>
-    <string name="preferences_currently_syncing_with">Synchroniseert nu met %s</string>
-    <string name="preferences_currently_not_syncing">Niet aan het synchroniseren</string>
-    <string name="preferences_cloud_service">Synchronisatieservice</string>
     <string name="preferences_cloud_service_disabled">Uitgeschakeld</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Houd er rekening mee dat Nextcloud Notes geen ondersteuning biedt voor functies zoals o.a. labels, bijlagen en herinneringen.</string>
-    <string name="preferences_nextcloud_account">Nextcloud account</string>
-    <string name="preferences_nextcloud_instance_url">URL van Nextcloud server</string>
-    <string name="preferences_nextcloud_set_your_credentials">Stel je inloggegevens in</string>
-    <string name="preferences_nextcloud_set_server_url">Voer de URL van de server in</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi of mobiele data</string>
-    <string name="preferences_sync_when_on">Synchroniseren wanneer verbonden met</string>
-    <string name="preferences_background_sync">Synchronisatie op de achtergrond</string>
-    <string name="preferences_background_sync_enabled">Ingeschakeld</string>
-    <string name="preferences_background_sync_disabled">Uitgeschakeld</string>
-    <string name="preferences_new_notes_synchronizable">Nieuwe notities synchroniseerbaar</string>
     <!-- About -->
     <string name="about_version">Versie</string>
     <string name="about_website">Website</string>
@@ -115,8 +98,6 @@
     <string name="ok">Oké</string>
     <string name="indicator_notes_empty">Je notities verschijnen hier</string>
     <string name="indicator_untitled">Naamloos</string>
-    <string name="hint_username">Gebruikersnaam</string>
-    <string name="hint_password">Wachtwoord</string>
     <string name="action_save">Opslaan</string>
     <string name="action_cancel">Annuleren</string>
     <string name="action_delete">Verwijderen</string>
@@ -198,7 +179,6 @@
     <string name="action_add_task">Taak</string>
     <string name="action_convert_to_note">Converteer naar notitie</string>
     <string name="action_convert_to_list">Converteer naar lijst</string>
-    <string name="action_do_not_sync">Niet synchroniseren</string>
     <string name="action_change_color">Verander kleur</string>
     <string name="action_enable_markdown">Markdown inschakelen</string>
     <string name="action_disable_markdown">Markdown uitschakelen</string>
@@ -244,20 +224,6 @@
     <string name="notifications_channel_backups">Back-ups</string>
     <string name="notifications_channel_playback">Media afspelen</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Dit is geen geldige HTTPS url.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Je bent aangemeld als <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Je bent momenteel niet aangemeld.</string>
-    <string name="action_nextcloud_authenticate">Authenticatie</string>
-    <string name="indicator_offline_account">Offline account</string>
-    <string name="indicator_connecting">Verbinding maken…</string>
-    <string name="message_something_went_wrong">Er ging iets mis.</string>
-    <string name="message_server_connection_failed">Kan geen verbinding maken met de server. Controleer het serveradres en je netwerkverbinding.</string>
-    <string name="message_invalid_credentials">Authenticatie met de server mislukt vanwege ongeldige inloggegevens.</string>
-    <string name="message_logged_in_successfully">Aanmelden gelukt!</string>
-    <string name="message_server_not_compatible">De serverversie is niet compatibel met deze app.</string>
-    <string name="message_internet_not_available">Internetconnectie is niet beschikbaar.</string>
-    <string name="message_credentials_cannot_be_blank">Inloggegevens mogen niet leeg zijn.</string>
-    <string name="preference_nextcloud_clear_credentials">Wis de inloggegevens en de server-URL</string>
     <string name="notification_media_play_pause">Afspelen / Pauzeren</string>
     <string name="notification_media_stop">Stop</string>
     <!-- App shortcuts -->

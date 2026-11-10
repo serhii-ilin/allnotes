@@ -11,6 +11,12 @@ import org.qosp.notes.preferences.SortMethod
 interface NoteRepository {
     suspend fun insertNote(note: Note, sync: Boolean = true): Long
     suspend fun updateNotes(vararg notes: Note, sync: Boolean = true)
+
+    /**
+     * Pushes notes that are already in Room to the remote/vault backend. Implementations must not
+     * write Room again, so the editor can keep its Room and vault locks separate.
+     */
+    suspend fun pushNotesToVault(vararg notes: Note) = updateNotes(*notes, sync = true)
     suspend fun moveNotesToBin(vararg notes: Note, sync: Boolean = true)
     suspend fun restoreNotes(vararg notes: Note)
     suspend fun deleteNotes(vararg notes: Note, sync: Boolean = true)

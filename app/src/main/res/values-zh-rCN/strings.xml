@@ -73,25 +73,8 @@
     <string name="preferences_backup_strategy_include_files">备份所有内容</string>
     <string name="preferences_backup_strategy_keep_info">仅备份说明和本地路径</string>
     <string name="preferences_backup_strategy_keep_nothing">不备份附件</string>
-    <string name="preferences_header_syncing">同步</string>
-    <string name="preferences_go_to_sync_settings">转到同步设置</string>
-    <string name="preferences_currently_syncing_with">当前正在与 %s 同步</string>
-    <string name="preferences_currently_not_syncing">当前未同步</string>
-    <string name="preferences_cloud_service">同步服务</string>
     <string name="preferences_cloud_service_disabled">禁用</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud云服务</string>
-    <string name="preferences_nextcloud_limited_features">请记住，Nextcloud Notes 不支持标签、附件、提醒等功能。并且这个功能需要Nextcloud服务端装有Nextcloud Notes插件！</string>
-    <string name="preferences_nextcloud_account">Nextcloud 帐户</string>
-    <string name="preferences_nextcloud_instance_url">Nextcloud 实例网址</string>
-    <string name="preferences_nextcloud_set_your_credentials">设置您的证书</string>
-    <string name="preferences_nextcloud_set_server_url">设置服务器的网址</string>
-    <string name="preferences_sync_on_wifi">无线局域网</string>
-    <string name="preferences_sync_on_wifi_data">无线局域网与流量数据</string>
-    <string name="preferences_sync_when_on">启用时同步</string>
-    <string name="preferences_background_sync">后台同步</string>
-    <string name="preferences_background_sync_enabled">启用</string>
-    <string name="preferences_background_sync_disabled">禁用</string>
-    <string name="preferences_new_notes_synchronizable">可同步的新笔记</string>
     <!-- About -->
     <string name="about_version">版本</string>
     <string name="about_website">网址</string>
@@ -108,8 +91,6 @@
     <string name="ok">好的</string>
     <string name="indicator_notes_empty">您的笔记将显示在此处。</string>
     <string name="indicator_untitled">无标题</string>
-    <string name="hint_username">用户名</string>
-    <string name="hint_password">密码</string>
     <string name="action_save">保存</string>
     <string name="action_cancel">取消</string>
     <string name="action_delete">删除</string>
@@ -189,7 +170,6 @@
     <string name="action_add_task">任务</string>
     <string name="action_convert_to_note">转换为笔记</string>
     <string name="action_convert_to_list">转换为清单</string>
-    <string name="action_do_not_sync">不同步</string>
     <string name="action_change_color">更改颜色</string>
     <string name="action_enable_markdown">启用 Markdown</string>
     <string name="action_disable_markdown">禁用 Markdown</string>
@@ -233,20 +213,6 @@
     <string name="notifications_channel_backups">备份</string>
     <string name="notifications_channel_playback">媒体播放</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">这不是有效的 HTTPS 网址。</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">您当前以 <b>%s</b> 身份登录。</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">您当前尚未登录。</string>
-    <string name="action_nextcloud_authenticate">身份验证</string>
-    <string name="indicator_offline_account">离线帐户</string>
-    <string name="indicator_connecting">连接中…</string>
-    <string name="message_something_went_wrong">出了点问题。</string>
-    <string name="message_server_connection_failed">无法连接到服务器。请检查服务器地址和网络连接。</string>
-    <string name="message_invalid_credentials">由于证书无效，无法向服务器进行身份验证。</string>
-    <string name="message_logged_in_successfully">登录成功!</string>
-    <string name="message_server_not_compatible">服务器版本与此应用程序不兼容。</string>
-    <string name="message_internet_not_available">互联网连接不可用。</string>
-    <string name="message_credentials_cannot_be_blank">证书不能为空。</string>
-    <string name="preference_nextcloud_clear_credentials">清除证书和服务器的URL网址</string>
     <string name="notification_media_play_pause">播放 / 暂停</string>
     <string name="notification_media_stop">停止</string>
     <!-- App shortcuts -->
@@ -279,20 +245,16 @@
     <string name="preferences_move_checked_items">勾选项目时动态移动所在列表</string>
     <string name="action_change_mode">编辑/查看模式</string>
     <string name="preferences_cloud_service_files">本地存储</string>
-    <string name="preferences_file_storage_info">可以选择本地存储或者云存储的文件夹来同步笔记。所有笔记将以Markdown格式进行存储。</string>
     <string name="preferences_default_editor_mode">默认编辑器模式</string>
     <string name="preferences_default_editor_mode_view">查看模式</string>
     <string name="preferences_default_editor_mode_edit">编辑模式</string>
-    <string name="preferences_trust_self_signed_certificate">信任自签名证书</string>
     <string name="about_send_logs">发送错误日志</string>
     <string name="about_send_logs_subtext">发送应用程序日志给开发人员进行分析</string>
-    <string name="message_certificates_invalid">证书错误。请启用“信任自签名证书”后继续。</string>
     <string name="widget_description">在主页显示最近的笔记</string>
     <string name="action_new_note">新笔记</string>
     <string name="note_untitled">未命名</string>
     <string name="tasks">任务</string>
     <string name="widget_no_pinned_notes">还没有置顶的笔记。置顶一条笔记即可在这里查看。</string>
-    <string name="message_notes_not_installed">您的 Nextcloud 中未安装“笔记”应用。</string>
     <string name="preferences_color_scheme_teal">"蓝绿色 "</string>
     <string name="preferences_color_scheme_cyan">青色</string>
     <string name="preferences_color_scheme_brown">"棕色的 "</string>

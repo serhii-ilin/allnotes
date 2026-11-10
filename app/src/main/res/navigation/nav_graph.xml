@@ -125,9 +125,7 @@
     <fragment
             android:id="@+id/fragment_settings"
             android:name="org.qosp.notes.ui.settings.SettingsFragment"
-            android:layout="@layout/fragment_settings">
-        <action android:id="@+id/action_main_settings_to_sync" app:destination="@id/fragment_sync_settings"/>
-    </fragment>
+            android:layout="@layout/fragment_settings"/>
 
     <fragment
             android:id="@+id/fragment_search"
@@ -141,10 +139,5 @@
                 android:id="@+id/action_search_to_editor"
                 app:destination="@id/fragment_editor"/>
     </fragment>
-
-    <fragment
-        android:id="@+id/fragment_sync_settings"
-        android:name="org.qosp.notes.ui.sync.SyncSettingsFragment"
-        android:layout="@layout/fragment_sync_settings"/>
 
 </navigation>

@@ -153,26 +153,8 @@ enum class DefaultEditorMode(
 
 enum class CloudService(override val nameResource: Int) : HasNameResource, EnumPreference by key("cloud_service") {
     FILE_STORAGE(R.string.preferences_cloud_service_files) { override val isDefault = true },
-    /** Legacy preference value; migrated to [FILE_STORAGE]. */
+    /** Legacy preference value; kept so old stored enum names still decode. */
     DISABLED(R.string.preferences_cloud_service_disabled),
-    /** Removed product surface; migrated to [FILE_STORAGE]. */
+    /** Removed product surface; kept so legacy `cloud_ids.provider` rows still decode. */
     NEXTCLOUD(R.string.preferences_cloud_service_nextcloud),
-}
-
-enum class SyncMode(override val nameResource: Int) : HasNameResource, EnumPreference by key("sync_mode") {
-    WIFI(R.string.preferences_sync_on_wifi) { override val isDefault = true },
-    ALWAYS(R.string.preferences_sync_on_wifi_data),
-}
-
-enum class BackgroundSync(override val nameResource: Int) : HasNameResource, EnumPreference by key("background_sync") {
-    ENABLED(R.string.preferences_background_sync_enabled) { override val isDefault = true },
-    DISABLED(R.string.preferences_background_sync_disabled),
-}
-
-enum class TrustSelfSignedCertificate(override val nameResource: Int) : HasNameResource,
-    EnumPreference by key("trust_self_signed_certificate") {
-    NO(R.string.no) {
-        override val isDefault = true
-    },
-    YES(R.string.yes),
 }

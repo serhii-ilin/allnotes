@@ -64,6 +64,7 @@ class NoteRepositoryImpl(
     private val notebookDao: NotebookDao,
     private val vaultTreeAccess: VaultTreeAccess,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
+    private val editorSessionRegistry: EditorSessionRegistry,
 ) : NoteRepository {
 
     private val tag = NoteRepositoryImpl::class.java.simpleName
@@ -394,6 +395,14 @@ class NoteRepositoryImpl(
 
     override suspend fun updateNotes(vararg notes: Note, sync: Boolean) = notes.forEach { updateNote(it, sync) }
 
+    override suspend fun pushNotesToVault(vararg notes: Note) {
+        notes.filterNot { it.isLocalOnly }.forEach { note ->
+            if (backendProvider.isSyncing) {
+                processRemoteActions(note.id, Update(note, vaultFence = captureVaultFence()))
+            }
+        }
+    }
+
     private suspend fun updateNote(note: Note, sync: Boolean) {
         Log.d(tag, "updateNote: Updating note ID=${note.id}, title='${note.title}'")
         noteDao.update(note.toEntity())
@@ -534,7 +543,9 @@ class NoteRepositoryImpl(
     }
 
     override suspend fun discardEmptyNotes(): Boolean {
-        val notes = noteDao.getAllBlankTitleNotes().first().filter { it.isEmpty() }.toTypedArray()
+        val notes = noteDao.getAllBlankTitleNotes().first()
+            .filter { it.isEmpty() && !editorSessionRegistry.isPending(it.id) }
+            .toTypedArray()
         Log.d(tag, "discardEmptyNotes: Found ${notes.size} empty notes to discard")
         deleteNotes(*notes)
         return notes.isNotEmpty()

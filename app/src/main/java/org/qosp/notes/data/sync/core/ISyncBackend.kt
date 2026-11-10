@@ -4,6 +4,10 @@ import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.preferences.CloudService
 
+/**
+ * Sync backend contract. Kept as an interface (rather than inlining [org.qosp.notes.data.sync.fs.StorageBackend])
+ * because tests delegate to a [StorageBackend] through it to simulate push/scan failures.
+ */
 interface ISyncBackend {
     val type: CloudService
 

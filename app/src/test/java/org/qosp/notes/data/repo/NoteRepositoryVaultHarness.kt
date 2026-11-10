@@ -64,6 +64,7 @@ class NoteRepositoryVaultHarness(
     private val savedVaultDispatcher: CoroutineDispatcher = VaultIo.vaultDispatcher
 
     val context: Context = ApplicationProvider.getApplicationContext()
+    val editorSessionRegistry = EditorSessionRegistry()
     private val roomDispatcher = UnconfinedTestDispatcher(testScope.testScheduler)
     val db: AppDatabase = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
         .fallbackToDestructiveMigration()
@@ -132,6 +133,7 @@ class NoteRepositoryVaultHarness(
             notebookDao,
             vaultTreeAccess,
             vaultSyncCoordinator,
+            editorSessionRegistry,
         )
     }
 
