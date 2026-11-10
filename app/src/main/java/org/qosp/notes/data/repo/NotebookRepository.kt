@@ -19,11 +19,28 @@ class NotebookRepository(
             .map { noteRepository.getByNotebook(it.id).first() }
             .flatten()
 
+        // Room's SET_NULL would clear the column without a push; do it through the repository so each file
+        // moves to the root and stops naming the notebook, before the notebook row goes.
+        if (affectedNotes.isNotEmpty()) {
+            noteRepository.updateNotes(
+                *affectedNotes.map { it.copy(notebookId = null) }.toTypedArray(),
+                sync = true,
+            )
+        }
         notebookDao.delete(*notebooks)
     }
 
     suspend fun update(vararg notebooks: Notebook, shouldSync: Boolean = true) {
+        val renamed = notebooks.filter { updated ->
+            val before = notebookDao.getById(updated.id).first()
+            before != null && before.name != updated.name
+        }
         notebookDao.update(*notebooks)
+        // Each file lives in its notebook's folder: pushing the notes moves them to the renamed one.
+        val affectedNotes = renamed.flatMap { noteRepository.getByNotebook(it.id).first() }
+        if (affectedNotes.isNotEmpty()) {
+            noteRepository.updateNotes(*affectedNotes.toTypedArray(), sync = shouldSync)
+        }
     }
 
     fun getById(notebookId: Long): Flow<Notebook?> {

@@ -151,8 +151,12 @@ class StorageBackend(
 
     override suspend fun createNote(note: Note, linkExisting: Boolean): SyncNote = VaultIo.run {
         val fs = vaultFs()
-        val desired = VaultPaths.titleToNotePath(note.title, note.isMarkdownEnabled)
         val notebookName = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        val desired = VaultPaths.titleToNotePath(
+            note.title,
+            note.isMarkdownEnabled,
+            parentDir = VaultPaths.parentForNotebook(notebookName, currentParent = ""),
+        )
         if (linkExisting) {
             linkableExistingPath(fs, note, desired, notebookName)?.let { existing ->
                 return@run pathToSyncNote(fs, existing)
@@ -166,10 +170,13 @@ class StorageBackend(
         val fs = vaultFs()
         val currentPath = VaultPaths.vaultMappingPath(mapping.storageUri)
             ?: throw IllegalArgumentException("Vault path missing in mapping")
+        val currentParent = VaultPaths.parentPath(currentPath)
+        val notebookNameForCheck = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
+        // The file follows the note's notebook: a changed notebook moves it (and its assets) like a title rename.
         val desiredPath = VaultPaths.titleToNotePath(
             title = note.title,
             markdown = note.isMarkdownEnabled,
-            parentDir = VaultPaths.parentPath(currentPath),
+            parentDir = VaultPaths.parentForNotebook(notebookNameForCheck, currentParent),
         )
         val targetPath = when {
             desiredPath == currentPath -> currentPath
@@ -178,7 +185,6 @@ class StorageBackend(
         }
         var mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
         val oldRaw = fs.readText(currentPath)
-        val notebookNameForCheck = note.notebookId?.let { notebookDao.getById(it).firstOrNull()?.name }
         if (mappingState != null && !oldRaw.isNullOrBlank() &&
             mappingState.baselineHash.isNotEmpty()
         ) {
@@ -247,6 +253,7 @@ class StorageBackend(
                 fs.renameFile(currentPath, targetPath)
             } else {
                 fs.delete(currentPath)
+                if (currentParent != VaultPaths.parentPath(targetPath)) deleteFolderIfEmpty(fs, currentParent)
             }
         }
         val gen = vaultSyncCoordinator.currentGeneration()
@@ -506,6 +513,13 @@ class StorageBackend(
             )
         }
         return null
+    }
+
+    /** Removes a folder a note moved out of, only when nothing is left in it (a failed listing counts as not empty). */
+    private fun deleteFolderIfEmpty(fs: VaultFs, folder: String) {
+        if (folder.isEmpty() || VaultHousekeeping.shouldSkipDirectory(folder.substringAfterLast('/'))) return
+        val remaining = runCatching { fs.listChildren(folder) }.getOrNull() ?: return
+        if (remaining.isEmpty()) fs.delete(folder)
     }
 
     private fun deleteOwnedAssets(fs: VaultFs, noteRelativePath: String, ownedVaultRelPaths: Set<String>) {

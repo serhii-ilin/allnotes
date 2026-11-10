@@ -153,6 +153,21 @@ object VaultPaths {
         return normalize(if (parentDir.isEmpty()) file else "$parentDir/$file")
     }
 
+    /**
+     * Folder a note belongs in for its notebook: the root without one, else the sanitized notebook name. A
+     * [currentParent] whose last segment already names the notebook is kept, so nested folders are not flattened.
+     */
+    fun parentForNotebook(notebookName: String?, currentParent: String): String {
+        val name = notebookName?.trim().orEmpty()
+        if (name.isEmpty()) return ""
+        val sanitized = sanitizeFileName(name)
+        val lastSegment = currentParent.substringAfterLast('/')
+        if (lastSegment.equals(name, ignoreCase = true) || lastSegment.equals(sanitized, ignoreCase = true)) {
+            return currentParent
+        }
+        return sanitized
+    }
+
     fun conflictPath(originalPath: String, epochSeconds: Long): String {
         val parent = parentPath(originalPath)
         val base = noteBaseName(originalPath)
