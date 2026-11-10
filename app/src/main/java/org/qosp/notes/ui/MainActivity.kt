@@ -24,12 +24,12 @@ import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -388,23 +388,14 @@ class MainActivity : BaseActivity() {
     }
 
     private fun setupNavigation() {
-        fun createNotebookMenuItems(notebooks: List<Notebook>) {
-
-            // Obtaining the current setting of notebook sorting order.
-            val sort = runBlocking {
-                return@runBlocking preferenceRepository
-                    .getAll()
-                    .map { it.sortNavdrawerNotebooksMethod }
-                    .first()
-                    .name
-            }
+        fun createNotebookMenuItems(notebooks: List<Notebook>, sort: SortNavdrawerNotebooksMethod) {
 
             // Sorting the notebooks.
             val sortedNotebooks: List<Notebook> = when (sort) {
-                SortNavdrawerNotebooksMethod.CREATION_ASC.name -> notebooks.sortedBy { it.id }
-                SortNavdrawerNotebooksMethod.CREATION_DESC.name -> notebooks.sortedByDescending { it.id }
-                SortNavdrawerNotebooksMethod.TITLE_ASC.name -> notebooks.sortedBy { it.name }
-                SortNavdrawerNotebooksMethod.TITLE_DESC.name -> notebooks.sortedByDescending { it.name }
+                SortNavdrawerNotebooksMethod.CREATION_ASC -> notebooks.sortedBy { it.id }
+                SortNavdrawerNotebooksMethod.CREATION_DESC -> notebooks.sortedByDescending { it.id }
+                SortNavdrawerNotebooksMethod.TITLE_ASC -> notebooks.sortedBy { it.name }
+                SortNavdrawerNotebooksMethod.TITLE_DESC -> notebooks.sortedByDescending { it.name }
                 else -> notebooks.sortedBy { it.name }
             }
 
@@ -459,30 +450,34 @@ class MainActivity : BaseActivity() {
             setDrawerEnabled(destination.id != R.id.fragment_editor)
         }
 
-        activityModel.notebooks.collect(this) { (showDefaultNotebook, notebooks) ->
-            val notebookIds = (notebooks.map { it.id.toInt() } + R.id.nav_default_notebook).toSet()
+        activityModel.notebooks
+            .combine(preferenceRepository.getAll().map { it.sortNavdrawerNotebooksMethod }) { (showDefaultNotebook, notebooks), sort ->
+                Triple(showDefaultNotebook, notebooks, sort)
+            }
+            .collect(this) { (showDefaultNotebook, notebooks, sort) ->
+                val notebookIds = (notebooks.map { it.id.toInt() } + R.id.nav_default_notebook).toSet()
 
-            // Remove deleted notebooks from the menu
-            (primaryDestinations + secondaryDestinations + notebookIds).let { dests ->
-                notebooksMenu?.let { nbMenu ->
-                    var index = 0
-                    while (index < nbMenu.size) {
-                        val item = nbMenu[index]
-                        if (item.itemId !in dests) nbMenu.removeItem(item.itemId) else index++
+                // Remove deleted notebooks from the menu
+                (primaryDestinations + secondaryDestinations + notebookIds).let { dests ->
+                    notebooksMenu?.let { nbMenu ->
+                        var index = 0
+                        while (index < nbMenu.size) {
+                            val item = nbMenu[index]
+                            if (item.itemId !in dests) nbMenu.removeItem(item.itemId) else index++
+                        }
                     }
                 }
-            }
 
-            createNotebookMenuItems(notebooks)
+                createNotebookMenuItems(notebooks, sort)
 
-            val defaultTitle = getString(R.string.default_notebook)
-            notebooksMenu?.findItem(R.id.nav_default_notebook)?.apply {
-                isVisible = showDefaultNotebook
-                title =
-                    defaultTitle + " (${getString(R.string.default_string)})".takeIf { notebooks.any { it.name == defaultTitle } }
-                        .orEmpty()
+                val defaultTitle = getString(R.string.default_notebook)
+                notebooksMenu?.findItem(R.id.nav_default_notebook)?.apply {
+                    isVisible = showDefaultNotebook
+                    title =
+                        defaultTitle + " (${getString(R.string.default_string)})".takeIf { notebooks.any { it.name == defaultTitle } }
+                            .orEmpty()
+                }
             }
-        }
     }
 
     private fun setDrawerEnabled(enabled: Boolean) {
