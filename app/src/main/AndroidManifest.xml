@@ -17,13 +17,6 @@
             android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTask">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <meta-data
-                android:name="android.app.shortcuts"
-                android:resource="@xml/shortcuts" />
 
             <!-- Handle shared text -->
             <intent-filter android:label="@string/shortcut_take_note">
@@ -67,6 +60,20 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Old launcher entry point: pinned icons still point here, so forward them to MainActivity. -->
+        <activity-alias
+            android:name=".ui.launcher.LauncherActivity"
+            android:targetActivity=".ui.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity-alias>
 
         <activity android:name="org.qosp.notes.ui.media.MediaActivity" />
 

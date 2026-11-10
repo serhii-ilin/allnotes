@@ -37,7 +37,13 @@ class NotePreviewRenderer(
     }
 
     private fun render(note: Note, source: String, vaultRelativePath: String?): Spanned {
-        val key = PreviewKey(note.id, note.content.hashCode(), note.isMarkdownEnabled, vaultRelativePath)
+        val key = PreviewKey(
+            noteId = note.id,
+            contentHash = note.content.hashCode(),
+            contentLength = note.content.length,
+            isMarkdownEnabled = note.isMarkdownEnabled,
+            vaultRelativePath = vaultRelativePath,
+        )
         cache.get(key)?.let { return it }
 
         val rendered = if (note.isMarkdownEnabled && source.isNotBlank()) {
@@ -70,6 +76,7 @@ class NotePreviewRenderer(
     private data class PreviewKey(
         val noteId: Long,
         val contentHash: Int,
+        val contentLength: Int,
         val isMarkdownEnabled: Boolean,
         val vaultRelativePath: String?,
     )

@@ -23,5 +23,12 @@ fun previewSource(
     // Prefer cutting after a complete line instead of mid-word; fall back to a hard cut
     // when the first line is already longer than the limit.
     val lineBoundary = lines.lastIndexOf('\n', limit - 1)
-    return if (lineBoundary > 0) lines.substring(0, lineBoundary) else lines.substring(0, limit)
+    return if (lineBoundary > 0) lines.substring(0, lineBoundary) else hardCut(lines, limit)
+}
+
+/** Hard cut that never leaves half of a UTF-16 surrogate pair at the end of the preview. */
+private fun hardCut(text: String, limit: Int): String {
+    if (limit <= 0) return ""
+    val end = if (Character.isHighSurrogate(text[limit - 1])) limit - 1 else limit
+    return text.substring(0, end.coerceAtLeast(0))
 }

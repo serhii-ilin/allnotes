@@ -5,13 +5,16 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -22,6 +25,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -29,6 +33,7 @@ import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.model.NoteColor
 import org.qosp.notes.data.model.NoteTask
+import org.qosp.notes.data.repo.EditorSessionRegistry
 import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.repo.NotebookRepository
 import org.qosp.notes.data.sync.core.BaseResult
@@ -133,15 +138,19 @@ class EditorViewModelSaveTest {
 
         model.flush()
 
-        assertEquals(1, repository.updates.size)
-        val saved = repository.updates.single()
-        assertTrue(saved.sync)
-        assertEquals("pending", saved.note.content)
+        // Flush writes Room immediately, then pushes the vault, so both calls are recorded.
+        assertEquals(2, repository.updates.size)
+        val roomWrite = repository.updates[0]
+        assertFalse(roomWrite.sync)
+        assertEquals("pending", roomWrite.note.content)
+        val vaultWrite = repository.updates[1]
+        assertTrue(vaultWrite.sync)
+        assertEquals("pending", vaultWrite.note.content)
 
         // The debounce timers were cancelled by the flush, so nothing else may be written.
         advanceTimeBy(5_000)
         runCurrent()
-        assertEquals(1, repository.updates.size)
+        assertEquals(2, repository.updates.size)
     }
 
     @Test
@@ -194,8 +203,82 @@ class EditorViewModelSaveTest {
         assertEquals(1, repository.updates.count { it.sync })
     }
 
-    private fun TestScope.createViewModel(): Pair<EditorViewModel, FakeNoteRepository> {
+    @Test
+    fun flush_duringSlowVaultWrite_stillWritesRoomPromptly() = runTest(mainDispatcher) {
+        val (model, repository) = createViewModel()
+        val gate = CompletableDeferred<Unit>()
+        repository.vaultGate = gate
+
+        model.setNoteContent("typed")
+        runCurrent()
+        advanceTimeBy(1_500)
+        runCurrent()
+        assertTrue("the vault push should be in flight", repository.vaultStarted)
+
+        val roomWritesBeforeFlush = repository.updates.count { !it.sync }
+        val flushJob = launch { model.flush() }
+        runCurrent()
+
+        // The Room write happened even though the slow vault push still holds its lock.
+        assertEquals(roomWritesBeforeFlush + 1, repository.updates.count { !it.sync })
+        assertFalse(flushJob.isCompleted)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(flushJob.isCompleted)
+    }
+
+    @Test
+    fun initialize_waitsForPreviousSessionFlush() = runTest(mainDispatcher) {
         val repository = FakeNoteRepository(Note(id = NOTE_ID, title = "title", content = "start"))
+        val registry = EditorSessionRegistry()
+        registry.markPending(NOTE_ID)
+        val (model, _) = createViewModel(repository, registry, initialize = false)
+
+        backgroundScope.launch { model.data.collect {} }
+        model.initialize(
+            noteId = NOTE_ID,
+            newNoteTitle = "",
+            newNoteContent = "",
+            newNoteAttachments = emptyList(),
+            newNoteIsList = false,
+            newNoteNotebookId = null,
+        )
+        advanceTimeBy(1_000)
+
+        assertEquals("must not read Room while the old session is still flushing", 0, repository.reads)
+
+        registry.markIdle(NOTE_ID)
+        advanceUntilIdle()
+        assertTrue(repository.reads > 0)
+    }
+
+    @Test
+    fun initialize_stopsWaitingForAStuckPreviousSession() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository(Note(id = NOTE_ID, title = "title", content = "start"))
+        val registry = EditorSessionRegistry()
+        registry.markPending(NOTE_ID) // never cleared, e.g. the previous session's write failed
+        val (model, _) = createViewModel(repository, registry, initialize = false)
+
+        backgroundScope.launch { model.data.collect {} }
+        model.initialize(
+            noteId = NOTE_ID,
+            newNoteTitle = "",
+            newNoteContent = "",
+            newNoteAttachments = emptyList(),
+            newNoteIsList = false,
+            newNoteNotebookId = null,
+        )
+        advanceTimeBy(6_000)
+
+        assertTrue("the note must still open after the wait times out", repository.reads > 0)
+    }
+
+    private fun TestScope.createViewModel(
+        repository: FakeNoteRepository = FakeNoteRepository(Note(id = NOTE_ID, title = "title", content = "start")),
+        registry: EditorSessionRegistry = EditorSessionRegistry(),
+        initialize: Boolean = true,
+    ): Pair<EditorViewModel, FakeNoteRepository> {
         val ioDispatcher = StandardTestDispatcher(testScheduler)
         val preferences = mockk<PreferenceRepository>(relaxed = true) {
             every { getAll() } returns flowOf(AppPreferences())
@@ -208,18 +291,21 @@ class EditorViewModelSaveTest {
             notebookRepository = mockk<NotebookRepository>(relaxed = true),
             preferenceRepository = preferences,
             vaultTreeAccess = mockk<VaultTreeAccess>(relaxed = true),
+            editorSessionRegistry = registry,
             syncScope = SyncScope(CoroutineScope(ioDispatcher + SupervisorJob())),
             ioDispatcher = ioDispatcher,
         )
-        model.initialize(
-            noteId = NOTE_ID,
-            newNoteTitle = "",
-            newNoteContent = "",
-            newNoteAttachments = emptyList(),
-            newNoteIsList = false,
-            newNoteNotebookId = null,
-        )
-        advanceUntilIdle()
+        if (initialize) {
+            model.initialize(
+                noteId = NOTE_ID,
+                newNoteTitle = "",
+                newNoteContent = "",
+                newNoteAttachments = emptyList(),
+                newNoteIsList = false,
+                newNoteNotebookId = null,
+            )
+            advanceUntilIdle()
+        }
         return model to repository
     }
 
@@ -229,15 +315,27 @@ class EditorViewModelSaveTest {
 
         private val note = MutableStateFlow<Note?>(initial)
         val updates = mutableListOf<Update>()
+        var reads = 0
+            private set
+        var vaultGate: CompletableDeferred<Unit>? = null
+        var vaultStarted = false
+            private set
 
         override suspend fun updateNotes(vararg notes: Note, sync: Boolean) {
             notes.forEach { updated ->
                 updates += Update(updated, sync)
                 note.value = updated
             }
+            if (sync) {
+                vaultStarted = true
+                vaultGate?.await()
+            }
         }
 
-        override fun getById(noteId: Long): Flow<Note?> = note
+        override fun getById(noteId: Long): Flow<Note?> {
+            reads++
+            return note
+        }
 
         fun externalUpdate(transform: (Note) -> Note) {
             note.value = note.value?.let(transform)

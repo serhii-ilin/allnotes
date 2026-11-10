@@ -111,10 +111,13 @@ class MainActivity : BaseActivity() {
         setupDrawerHeader()
 
         WidgetUpdateHelper.updateAllWidgets(this)
-        if (intent != null) handleIntent(intent)
+        // A theme change recreates this activity; re-handling a share/VIEW intent would import
+        // the same note again.
+        if (savedInstanceState == null && intent != null) handleIntent(intent)
 
-        // Avoid re-showing the dialog when this activity is recreated (e.g. after a theme change)
-        if (savedInstanceState == null) showWhatsNewIfNeeded()
+        // The ViewModel flag, not savedInstanceState, decides whether the dialog was already
+        // shown, so recreation while it is open does not bring it back.
+        showWhatsNewIfNeeded()
 
         onBackPressedDispatcher.addCallback(this) {
             if (binding.drawer.isDrawerOpen(GravityCompat.START)) {
@@ -135,9 +138,10 @@ class MainActivity : BaseActivity() {
 
         lifecycleScope.launch {
             val item = whatsNewModel.whatsNewToShow().first() ?: return@launch
-            showWhatsNewDialog(item) {
-                lifecycleScope.launch { whatsNewModel.setLatestWhatsNewId() }
-            }
+            if (!whatsNewModel.markDialogShown()) return@launch
+            showWhatsNewDialog(item)
+            // Marked on show, not on dismiss: rotation may destroy the dialog without a dismiss.
+            whatsNewModel.markLatestAsSeen()
         }
     }
 

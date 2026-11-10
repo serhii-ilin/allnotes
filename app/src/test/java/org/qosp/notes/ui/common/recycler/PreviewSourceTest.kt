@@ -49,4 +49,19 @@ class PreviewSourceTest {
 
         assertEquals("x".repeat(10), result)
     }
+
+    @Test
+    fun `hard cut does not split a surrogate pair`() {
+        val content = "a😀" + "x".repeat(20)
+
+        // Cutting at two chars would leave the high surrogate of the emoji alone.
+        assertEquals("a", previewSource(content, maxChars = 2))
+    }
+
+    @Test
+    fun `hard cut keeps a complete surrogate pair`() {
+        val content = "a😀" + "x".repeat(20)
+
+        assertEquals("a😀", previewSource(content, maxChars = 3))
+    }
 }

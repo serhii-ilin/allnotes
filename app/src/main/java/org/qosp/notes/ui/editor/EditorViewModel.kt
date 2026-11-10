@@ -31,6 +31,7 @@ import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.model.NoteColor
 import org.qosp.notes.data.model.NoteTask
 import org.qosp.notes.data.model.Notebook
+import org.qosp.notes.data.repo.EditorSessionRegistry
 import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.repo.NotebookRepository
 import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
@@ -50,6 +51,7 @@ class EditorViewModel(
     private val notebookRepository: NotebookRepository,
     private val preferenceRepository: PreferenceRepository,
     private val vaultTreeAccess: VaultTreeAccess,
+    private val editorSessionRegistry: EditorSessionRegistry,
     private val syncScope: SyncScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -95,7 +97,11 @@ class EditorViewModel(
      * finish after the fragment (and eventually this ViewModel) is gone.
      */
     private val mutations = Channel<Mutation>(Channel.UNLIMITED)
-    private val persistMutex = Mutex()
+
+    // Room writes and vault pushes are serialized separately: a slow SAF push must never make the
+    // cheap Room write (and the note list observing it) wait.
+    private val roomMutex = Mutex()
+    private val vaultMutex = Mutex()
 
     // Only editor-owned fields are cached. The rest of the note is always re-read from Room so
     // changes made elsewhere (notebook, pin/archive, reminders, vault imports) are not reverted.
@@ -153,7 +159,14 @@ class EditorViewModel(
                 )
             }
 
+            // The previous editor for this note may still be flushing; reading Room before that
+            // write lands would load stale text into the one-shot EditText below.
+            if (id > 0L) editorSessionRegistry.awaitIdle(id)
+
             noteIdFlow.emit(id)
+            // Pending fields can arrive before this coroutine emits the id (e.g. a very fast
+            // close); make sure the registry knows about that session too.
+            if (hasPendingFields()) editorSessionRegistry.markPending(id)
             if (id > 0L) {
                 withContext(ioDispatcher) {
                     vaultTreeAccess.warmFrom(preferenceRepository)
@@ -166,9 +179,15 @@ class EditorViewModel(
         }
     }
 
-    fun setNoteTitle(title: String) = sendMutation(Mutation.Title(title))
+    fun setNoteTitle(title: String) {
+        markSessionPending()
+        sendMutation(Mutation.Title(title))
+    }
 
-    fun setNoteContent(content: String) = sendMutation(Mutation.Content(content))
+    fun setNoteContent(content: String) {
+        markSessionPending()
+        sendMutation(Mutation.Content(content))
+    }
 
     fun setColor(color: NoteColor) = update { note ->
         note.copy(
@@ -193,7 +212,10 @@ class EditorViewModel(
         )
     }
 
-    fun updateTaskList(list: List<NoteTask>) = sendMutation(Mutation.TaskList(list))
+    fun updateTaskList(list: List<NoteTask>) {
+        markSessionPending()
+        sendMutation(Mutation.TaskList(list))
+    }
 
     fun toList() = update { note ->
         note.copy(
@@ -230,7 +252,12 @@ class EditorViewModel(
     fun flushAsync(pendingTitle: String? = null) {
         // Enqueue the title synchronously so it cannot be dropped if the channel is closed in
         // onCleared before the background coroutine gets a chance to run.
-        pendingTitle?.let { mutations.trySend(Mutation.Title(it)) }
+        if (pendingTitle != null) {
+            // Mark before the background consumer runs: another editor opening this note right
+            // away must wait for the write, even if the mutation is still queued.
+            markSessionPending()
+            mutations.trySend(Mutation.Title(pendingTitle))
+        }
         syncScope.launch(ioDispatcher) { flush() }
     }
 
@@ -254,16 +281,19 @@ class EditorViewModel(
         when (mutation) {
             is Mutation.Content -> {
                 pendingContent = mutation.content
+                markSessionPending()
                 scheduleDebouncedWrites()
             }
 
             is Mutation.Title -> {
                 pendingTitle = mutation.title
+                markSessionPending()
                 scheduleDebouncedWrites()
             }
 
             is Mutation.TaskList -> {
                 pendingTaskList = mutation.taskList
+                markSessionPending()
                 scheduleDebouncedWrites()
             }
 
@@ -273,8 +303,10 @@ class EditorViewModel(
                 // typed so the transform (e.g. toList) sees the pending content/title/tasks.
                 val note = latestNote() ?: return
                 val transformed = mutation.transform(applyPendingFields(note))
+                markSessionPending()
                 persistNote(transformed, sync = true)
                 clearPendingFields()
+                markSessionIdleIfNothingPending()
             }
 
             is Mutation.Flush -> {
@@ -286,7 +318,9 @@ class EditorViewModel(
     }
 
     private suspend fun latestNote(): Note? {
-        val noteId = noteIdFlow.filterNotNull().first()
+        // Do not wait for initialize here: if it never emitted (cleared during insert, or it
+        // failed), Flush/Transform would hang forever inside the sync scope.
+        val noteId = noteIdFlow.value ?: return null
         return noteRepository.getById(noteId).first()
     }
 
@@ -310,14 +344,25 @@ class EditorViewModel(
         // longer because every push costs several SAF IPC calls.
         roomWriteJob?.cancel()
         roomWriteJob = syncScope.launch(ioDispatcher) {
-            delay(ROOM_DEBOUNCE_MS)
-            persistPending(sync = false, generation = generation)
+            runDebouncedWrite(ROOM_DEBOUNCE_MS) { persistPending(sync = false, generation = generation) }
         }
 
         vaultWriteJob?.cancel()
         vaultWriteJob = syncScope.launch(ioDispatcher) {
-            delay(VAULT_DEBOUNCE_MS)
-            persistPending(sync = true, generation = generation)
+            runDebouncedWrite(VAULT_DEBOUNCE_MS) { persistPending(sync = true, generation = generation) }
+        }
+    }
+
+    // These jobs live in SyncScope, which has no exception handler, so an SQLite failure here
+    // would otherwise take the whole process down.
+    private suspend fun runDebouncedWrite(delayMs: Long, write: suspend () -> Unit) {
+        try {
+            delay(delayMs)
+            write()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist note in background", e)
         }
     }
 
@@ -336,6 +381,14 @@ class EditorViewModel(
     private fun hasPendingFields(): Boolean =
         pendingContent != null || pendingTitle != null || pendingTaskList != null
 
+    private fun markSessionPending() {
+        noteIdFlow.value?.let(editorSessionRegistry::markPending)
+    }
+
+    private fun markSessionIdleIfNothingPending() {
+        if (!hasPendingFields()) noteIdFlow.value?.let(editorSessionRegistry::markIdle)
+    }
+
     private fun clearPendingFields() {
         pendingContent = null
         pendingTitle = null
@@ -345,18 +398,31 @@ class EditorViewModel(
     // Once a write starts it must not be cancelled by the next keystroke: aborting halfway through
     // a vault write is worse than letting it finish and writing again.
     private suspend fun persistPending(sync: Boolean, generation: Long? = null) = withContext(NonCancellable) {
-        persistMutex.withLock {
+        val noteId = noteIdFlow.value ?: return@withContext
+
+        // Room first, under its own lock: it must not wait for a slow vault push that is already
+        // in flight. Serializing here still preserves the order of Room writes.
+        roomMutex.withLock {
             // A newer mutation superseded the debounced writer while it was waiting.
             if (generation != null && generation != writeGeneration) return@withLock
+            val note = latestNote() ?: return@withLock
+            noteRepository.updateNotes(applyPendingFields(note), sync = false)
+        }
+
+        if (!sync) return@withContext
+
+        vaultMutex.withLock {
+            if (generation != null && generation != writeGeneration) return@withLock
+            // Re-read after waiting for the lock so the push carries fields typed in the meantime.
             val note = latestNote() ?: return@withLock
             val content = pendingContent
             val title = pendingTitle
             val taskList = pendingTaskList
-            noteRepository.updateNotes(applyPendingFields(note), sync = sync)
-            // Only the vault write completes the save; the Room write must leave the pending
-            // fields in place so the later vault push still carries them. Clear a field only if
-            // it still holds the value just written, so an edit made during the write survives.
-            if (sync) clearPendingFieldsIfUnchanged(content, title, taskList)
+            noteRepository.pushNotesToVault(applyPendingFields(note))
+            // Clear a field only if it still holds the value just pushed, so an edit made during
+            // the write survives. The registry is cleared only once no field is left.
+            clearPendingFieldsIfUnchanged(content, title, taskList)
+            if (!hasPendingFields()) editorSessionRegistry.markIdle(noteId)
         }
     }
 
@@ -367,7 +433,8 @@ class EditorViewModel(
     }
 
     private suspend fun persistNote(note: Note, sync: Boolean) = withContext(NonCancellable) {
-        persistMutex.withLock { noteRepository.updateNotes(note, sync = sync) }
+        roomMutex.withLock { noteRepository.updateNotes(note, sync = false) }
+        if (sync) vaultMutex.withLock { noteRepository.pushNotesToVault(note) }
     }
 
     private sealed interface Mutation {

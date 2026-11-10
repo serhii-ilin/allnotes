@@ -79,11 +79,19 @@ open class BaseActivity : AppCompatActivity() {
             // This observer is the only place that reacts to theme changes, so the cache is always
             // written before the activity is recreated with it.
             if (theme != appliedTheme) {
+                val previousTheme = appliedTheme
                 appliedTheme = theme
-                if (theme.themeMode != AppCompatDelegate.getDefaultNightMode()) {
-                    AppCompatDelegate.setDefaultNightMode(theme.themeMode)
+
+                // Remember the night state before AppCompat changes it: comparing it with the new
+                // mode tells us whether AppCompat will recreate the activity by itself.
+                val currentNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+                val systemNightMode = Resources.getSystem().configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+                val nightModeWasSet = theme.themeMode != AppCompatDelegate.getDefaultNightMode()
+                if (nightModeWasSet) AppCompatDelegate.setDefaultNightMode(theme.themeMode)
+
+                if (shouldRecreateForThemeChange(theme, previousTheme, nightModeWasSet, currentNightMode, systemNightMode)) {
+                    recreate()
                 }
-                recreate()
             }
         }
     }
@@ -109,4 +117,35 @@ open class BaseActivity : AppCompatActivity() {
 
         appliedTheme = snapshot
     }
+}
+
+/**
+ * Decides whether [BaseActivity] has to recreate itself after a theme change.
+ *
+ * [AppCompatDelegate.setDefaultNightMode] already recreates the activity when the effective night
+ * state changes, so doing it again would flash the UI twice. A manual recreate is still needed
+ * when no mode call was made, when the color scheme/dark style changed, or when the new mode
+ * resolves to the current night state (AppCompat then keeps the activity, but the dark style may
+ * still need applying).
+ */
+internal fun shouldRecreateForThemeChange(
+    newTheme: ThemeSnapshot,
+    previousTheme: ThemeSnapshot?,
+    nightModeWasSet: Boolean,
+    currentNightMode: Int,
+    systemNightMode: Int,
+): Boolean {
+    if (!nightModeWasSet) return true
+
+    val stylesChanged = previousTheme == null ||
+        previousTheme.colorSchemeStyle != newTheme.colorSchemeStyle ||
+        previousTheme.darkThemeStyle != newTheme.darkThemeStyle
+    if (stylesChanged) return true
+
+    val resolvedNightMode = when (newTheme.themeMode) {
+        AppCompatDelegate.MODE_NIGHT_YES -> Configuration.UI_MODE_NIGHT_YES
+        AppCompatDelegate.MODE_NIGHT_NO -> Configuration.UI_MODE_NIGHT_NO
+        else -> systemNightMode and Configuration.UI_MODE_NIGHT_MASK
+    }
+    return resolvedNightMode == (currentNightMode and Configuration.UI_MODE_NIGHT_MASK)
 }
