@@ -761,7 +761,12 @@ class NoteRepositoryImpl(
         remotes: List<SyncNote>,
     ): Set<Long> {
         if (legacyMappings.isEmpty()) return emptySet()
-        val claimedPaths = mutableSetOf<String>()
+        // Files already bound to another note are never candidates: a body-only match must not create a second
+        // mapping onto the same file.
+        val claimedPaths = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
+            .filterNot { it.isDeletedLocally }
+            .mapNotNull { VaultPaths.vaultMappingPath(it.storageUri)?.let(VaultPaths::normalizeNotePath) }
+            .toMutableSet()
         val unmatched = legacyMappings.toMutableList()
 
         class Candidate(val remote: SyncNote, val desired: String, val titleMatch: Boolean, val contentMatch: Boolean)

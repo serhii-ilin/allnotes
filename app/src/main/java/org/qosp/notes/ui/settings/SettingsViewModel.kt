@@ -140,6 +140,7 @@ class SettingsViewModel(
     fun applyVaultFolderChange(newLocation: String, previousLocation: String) {
         viewModelScope.launch(Dispatchers.IO) {
             if (configureVaultFolder(newLocation, previousLocation)) {
+                backendProvider.awaitBackendFor(newLocation)
                 noteRepository.syncNotes()
             }
         }
@@ -184,5 +185,6 @@ class SettingsViewModel(
     /** The user accepted the folder an upgraded install already had; the caller runs the sync. */
     suspend fun confirmExistingVaultFolder(location: String) {
         configureVaultFolder(location, location)
+        backendProvider.awaitBackendFor(location)
     }
 }

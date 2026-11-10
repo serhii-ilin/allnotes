@@ -46,7 +46,7 @@ import kotlin.time.measureTimedValue
 
 class StorageBackend(
     private val context: Context,
-    private val config: StorageConfig,
+    val config: StorageConfig,
     private val notebookDao: NotebookDao,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
     vaultFs: VaultFs? = null,

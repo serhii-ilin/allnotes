@@ -215,7 +215,13 @@ class ProcessRemoteActions(
                 Log.d(tag, "insertRemote skipped: note ${note.id} is binned")
                 return
             }
-            val created = syncProvider.createNote(note)
+            val created = syncProvider.createNote(note).let { linked ->
+                // Linking reuses an identical file, but never one that already belongs to another note: two notes
+                // on one file overwrite each other.
+                val taken = syncProvider.type == CloudService.FILE_STORAGE &&
+                    idMappingDao.countActiveMappingsAtPath(syncProvider.type, linked.idStr, note.id) > 0
+                if (taken) syncProvider.createNote(note, linkExisting = false) else linked
+            }
         val diskAfterCreate = VaultSyncImport.noteFromRemote(created, note)
         val base = created.getMapping(note.id, syncProvider.type)
         val toInsert = if (syncProvider.type == CloudService.FILE_STORAGE) {

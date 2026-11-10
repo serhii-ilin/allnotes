@@ -72,6 +72,23 @@ class VaultUpgradeSafetyTest {
     }
 
     @Test
+    fun legacyMapping_bodyMatchesFileOfAnotherNote_doesNotShareThatFile() = runTest {
+        val h = NoteRepositoryVaultHarness(this)
+        val owner = h.insertAndSync(Note(title = "Owner", content = "same body"))
+        val ownerPath = h.idMappingDao.getByLocalIdAndProvider(owner, CloudService.FILE_STORAGE)!!.storageUri
+        val legacy = h.insertLocal(Note(title = "Legacy", content = "same body"))
+        h.legacyMapping(legacy)
+
+        h.syncNotes()
+        h.syncNotes()
+
+        assertEquals(ownerPath, h.idMappingDao.getByLocalIdAndProvider(owner, CloudService.FILE_STORAGE)!!.storageUri)
+        val legacyPath = h.idMappingDao.getByLocalIdAndProvider(legacy, CloudService.FILE_STORAGE)?.storageUri
+        assertTrue("legacy note must get its own file, got $legacyPath", legacyPath != null && legacyPath != ownerPath)
+        assertEquals(2, h.localNoteCount())
+    }
+
+    @Test
     fun legacyMapping_unmatched_exportsOnlyOnNextSync() = runTest {
         val h = NoteRepositoryVaultHarness(this)
         h.vaultFs.writeText("Other.md", "---\ntitle: Other\n---\nother body")
