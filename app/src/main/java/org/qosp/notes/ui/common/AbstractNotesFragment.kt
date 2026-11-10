@@ -70,6 +70,7 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
     protected var mainMenu: Menu? = null
 
     protected var data = Data()
+    private var appliedLayoutMode: LayoutMode? = null
 
     private var snackbar: Snackbar? = null
     private var showHiddenNotes: Boolean
@@ -188,18 +189,9 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 activityModel.vaultRelativePaths.collect { paths ->
+                    // The adapter notifies only the cards whose path changed; doing it here as
+                    // well caused every card to rebind each time the screen was started again.
                     recyclerAdapter.vaultRelativePaths = paths
-                    if (recyclerAdapter.itemCount > 0) {
-                        recyclerAdapter.notifyItemRangeChanged(
-                            0,
-                            recyclerAdapter.itemCount,
-                            setOf(
-                                NoteRecyclerAdapter.Payload.VaultPathChanged,
-                                NoteRecyclerAdapter.Payload.ContentChanged,
-                                NoteRecyclerAdapter.Payload.TasksChanged,
-                            ),
-                        )
-                    }
                 }
             }
         }
@@ -303,12 +295,16 @@ abstract class AbstractNotesFragment(@LayoutRes resId: Int) : BaseFragment(resId
         // Submit the list to the adapter
         onNotesChanged(data.notes)
 
-        // Update recycler layout and note order
-        recyclerView.layoutManager = when (data.layoutMode) {
-            LayoutMode.LIST -> LinearLayoutManager(requireContext())
-            LayoutMode.GRID -> StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL)
+        // Update the layout manager only when the mode changes: replacing it on every data
+        // emission discards all attached views and resets the scroll position.
+        if (appliedLayoutMode != data.layoutMode || recyclerView.layoutManager == null) {
+            appliedLayoutMode = data.layoutMode
+            recyclerView.layoutManager = when (data.layoutMode) {
+                LayoutMode.LIST -> LinearLayoutManager(requireContext())
+                LayoutMode.GRID -> StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL)
+            }
+            onLayoutModeChanged()
         }
-        onLayoutModeChanged()
         onSortMethodChanged()
     }
 
