@@ -21,7 +21,15 @@ import org.qosp.notes.ui.tags.dialog.TagDialogViewModel
 
 object UIModule {
     val uiModule = module {
-        viewModelOf(::EditorViewModel)
+        viewModel {
+            EditorViewModel(
+                noteRepository = get(),
+                notebookRepository = get(),
+                preferenceRepository = get(),
+                vaultTreeAccess = get(),
+                syncScope = get(),
+            )
+        }
         viewModelOf(::ActivityViewModel)
         viewModelOf(::ArchiveViewModel)
         viewModelOf(::TagsViewModel)
