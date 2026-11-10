@@ -1,13 +1,17 @@
 package org.qosp.notes.ui.whatsnew
 
+import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.qosp.notes.data.WhatsNew
 import org.qosp.notes.data.WhatsNewItem
+import org.qosp.notes.preferences.PreferenceRepository
 
 class WhatsNewViewModelTest {
 
@@ -58,5 +62,13 @@ class WhatsNewViewModelTest {
 
         lastShownId.value = "7"
         assertNull(updates.first())
+    }
+
+    @Test
+    fun `dialog can only be marked shown once across activity recreations`() {
+        val model = WhatsNewViewModel(mockk(relaxed = true), mockk<PreferenceRepository>(relaxed = true))
+
+        assertTrue(model.markDialogShown())
+        assertFalse(model.markDialogShown())
     }
 }

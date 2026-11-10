@@ -9,9 +9,9 @@ import org.qosp.notes.databinding.ItemWhatsNewBinding
 
 /**
  * Shows the same content the old Compose welcome screen did, without leaving the main activity.
- * [onDismiss] is called no matter how the dialog is closed, so the caller can mark the update as seen.
+ * The caller marks the update as seen when this is shown, not when it is dismissed.
  */
-fun Activity.showWhatsNewDialog(item: WhatsNewItem, onDismiss: () -> Unit) {
+fun Activity.showWhatsNewDialog(item: WhatsNewItem) {
     val binding = DialogWhatsNewBinding.inflate(layoutInflater)
 
     item.items.forEach { body ->
@@ -24,6 +24,5 @@ fun Activity.showWhatsNewDialog(item: WhatsNewItem, onDismiss: () -> Unit) {
         .setTitle(item.title)
         .setView(binding.root)
         .setPositiveButton(R.string.continue_next, null)
-        .setOnDismissListener { onDismiss() }
         .show()
 }
