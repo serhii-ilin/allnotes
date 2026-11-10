@@ -91,11 +91,11 @@ class StorageBackend(
 
     private val bypassScanCache = AtomicBoolean(false)
 
-    /** Manual "rescan vault now" must see fresh bytes even when mtime/size did not change. */
+    /**
+     * Manual "rescan vault now" must see fresh bytes even when mtime/size did not change. Only flags
+     * the next scan: it clears the cache itself under the vault lock, off the caller's (main) thread.
+     */
     fun clearScanCache() {
-        scanCache.clear()
-        // Also make the next authoritative scan bypass a cache another in-flight sync may rebuild
-        // between this call and the manual sync.
         bypassScanCache.set(true)
     }
 
