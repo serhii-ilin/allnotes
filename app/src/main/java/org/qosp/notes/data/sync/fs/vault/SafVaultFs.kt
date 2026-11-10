@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
+import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -85,12 +86,37 @@ class SafVaultFs(
         writeBytes(relativePath, content.encodeToByteArray(), mimeType)
     }
 
-    override fun openWrite(relativePath: String, mimeType: String): OutputStream? {
+    /**
+     * Marks [onWrite] before and after [block]: the observer fires once the change lands, so a slow
+     * write must not outlast the self-write window that was opened when it started.
+     */
+    private inline fun <T> mutating(block: () -> T): T {
         onWrite()
+        try {
+            return block()
+        } finally {
+            onWrite()
+        }
+    }
+
+    /** The bytes land when the caller closes the stream, so mark the write again then. */
+    private fun OutputStream.markingOnClose(): OutputStream = object : FilterOutputStream(this) {
+        override fun write(b: ByteArray, off: Int, len: Int) = out.write(b, off, len)
+
+        override fun close() {
+            try {
+                super.close()
+            } finally {
+                onWrite()
+            }
+        }
+    }
+
+    override fun openWrite(relativePath: String, mimeType: String): OutputStream? = mutating {
         val path = VaultPaths.normalize(relativePath)
         val existing = findByRelativePath(path)
         if (existing != null && existing.isFile) {
-            return context.contentResolver.openOutputStream(existing.uri, "wt")
+            return@mutating context.contentResolver.openOutputStream(existing.uri, "wt")?.markingOnClose()
         }
         val parentPath = VaultPaths.parentPath(path)
         val parent = if (parentPath.isEmpty()) root else VaultDocumentTree.ensureDirectory(root, parentPath)
@@ -99,17 +125,16 @@ class SafVaultFs(
             ?: throw IOException("cannot create $fileName")
         if (created.name != fileName) created.renameTo(fileName)
         val target = findFileCaseInsensitive(parent, fileName) ?: created
-        return context.contentResolver.openOutputStream(target.uri, "wt")
+        context.contentResolver.openOutputStream(target.uri, "wt")?.markingOnClose()
     }
 
-    override fun writeBytes(relativePath: String, bytes: ByteArray, mimeType: String) {
-        onWrite()
+    override fun writeBytes(relativePath: String, bytes: ByteArray, mimeType: String): Unit = mutating {
         val path = VaultPaths.normalize(relativePath)
         val existing = findByRelativePath(path)
         if (existing != null && existing.isFile) {
             context.contentResolver.openOutputStream(existing.uri, "wt")?.use { it.write(bytes) }
                 ?: throw IOException("cannot write $path")
-            return
+            return@mutating
         }
         val parentPath = VaultPaths.parentPath(path)
         val parent = if (parentPath.isEmpty()) root else VaultDocumentTree.ensureDirectory(root, parentPath)
@@ -124,17 +149,15 @@ class SafVaultFs(
             ?: throw IOException("cannot write new $path")
     }
 
-    override fun ensureDirectory(relativeDir: String) {
-        onWrite()
+    override fun ensureDirectory(relativeDir: String): Unit = mutating {
         if (relativeDir.isNotEmpty()) VaultDocumentTree.ensureDirectory(root, relativeDir)
     }
 
-    override fun delete(relativePath: String): Boolean {
-        onWrite()
+    override fun delete(relativePath: String): Boolean = mutating {
         val file = findByRelativePath(relativePath)
             ?: resolveDir(relativePath)
-            ?: return false
-        return file.delete()
+            ?: return@mutating false
+        file.delete()
     }
 
     override fun lastModifiedEpochSec(relativePath: String): Long {
@@ -144,8 +167,7 @@ class SafVaultFs(
         return file.lastModified() / 1000
     }
 
-    override fun copyFile(fromRelative: String, toRelative: String, deleteSource: Boolean) {
-        onWrite()
+    override fun copyFile(fromRelative: String, toRelative: String, deleteSource: Boolean): Unit = mutating {
         val from = VaultPaths.normalize(fromRelative)
         val to = VaultPaths.normalize(toRelative)
         val src = findByRelativePath(from)
@@ -157,28 +179,26 @@ class SafVaultFs(
         if (deleteSource) src.delete()
     }
 
-    override fun renameFile(fromRelative: String, toRelative: String) {
-        onWrite()
+    override fun renameFile(fromRelative: String, toRelative: String): Unit = mutating {
         val from = VaultPaths.normalize(fromRelative)
         val to = VaultPaths.normalize(toRelative)
         if (from.equals(to, ignoreCase = true) && from != to) {
             val temp = VaultPaths.normalize("$from.__case_rename__")
             copyFile(from, temp, deleteSource = true)
             copyFile(temp, to, deleteSource = true)
-            return
+            return@mutating
         }
         copyFile(fromRelative, toRelative, deleteSource = true)
     }
 
-    override fun renameDirectory(fromRelative: String, toRelative: String) {
-        onWrite()
+    override fun renameDirectory(fromRelative: String, toRelative: String): Unit = mutating {
         val from = VaultPaths.normalize(fromRelative)
         val to = VaultPaths.normalize(toRelative)
-        if (from == to) return
+        if (from == to) return@mutating
         if (!VaultPaths.parentPath(from).equals(VaultPaths.parentPath(to), ignoreCase = true)) {
             throw IOException("Cannot move folder $from to $to")
         }
-        val source = resolveDir(from) ?: return
+        val source = resolveDir(from) ?: return@mutating
         val fromName = VaultPaths.fileName(from)
         val toName = VaultPaths.fileName(to)
         // Case-insensitive providers report the target name as existing, so go through a temporary name.
