@@ -8,6 +8,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -341,19 +342,31 @@ class EditorViewModel(
         pendingTaskList = null
     }
 
-    private suspend fun persistPending(sync: Boolean, generation: Long? = null) {
+    // Once a write starts it must not be cancelled by the next keystroke: aborting halfway through
+    // a vault write is worse than letting it finish and writing again.
+    private suspend fun persistPending(sync: Boolean, generation: Long? = null) = withContext(NonCancellable) {
         persistMutex.withLock {
             // A newer mutation superseded the debounced writer while it was waiting.
-            if (generation != null && generation != writeGeneration) return
-            val note = latestNote() ?: return
+            if (generation != null && generation != writeGeneration) return@withLock
+            val note = latestNote() ?: return@withLock
+            val content = pendingContent
+            val title = pendingTitle
+            val taskList = pendingTaskList
             noteRepository.updateNotes(applyPendingFields(note), sync = sync)
             // Only the vault write completes the save; the Room write must leave the pending
-            // fields in place so the later vault push still carries them.
-            if (sync && (generation == null || generation == writeGeneration)) clearPendingFields()
+            // fields in place so the later vault push still carries them. Clear a field only if
+            // it still holds the value just written, so an edit made during the write survives.
+            if (sync) clearPendingFieldsIfUnchanged(content, title, taskList)
         }
     }
 
-    private suspend fun persistNote(note: Note, sync: Boolean) {
+    private fun clearPendingFieldsIfUnchanged(content: String?, title: String?, taskList: List<NoteTask>?) {
+        if (pendingContent === content) pendingContent = null
+        if (pendingTitle === title) pendingTitle = null
+        if (pendingTaskList === taskList) pendingTaskList = null
+    }
+
+    private suspend fun persistNote(note: Note, sync: Boolean) = withContext(NonCancellable) {
         persistMutex.withLock { noteRepository.updateNotes(note, sync = sync) }
     }
 
