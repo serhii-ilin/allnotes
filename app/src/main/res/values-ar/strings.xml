@@ -86,25 +86,10 @@
     <string name="preferences_backup_strategy_keep_info">نسخ احتياطي للوصف والمسار المحلي فقط</string>
     <string name="preferences_backup_strategy_keep_nothing">عدم نسخ احتياطي للمرفقات</string>
     <!-- Preferences / Syncing -->
-    <string name="preferences_header_syncing">المزامنة</string>
-    <string name="preferences_go_to_sync_settings">الانتقال إلى إعدادات المزامنة</string>
-    <string name="preferences_currently_syncing_with">المزامنة حالياً مع %s</string>
-    <string name="preferences_currently_not_syncing">لا يتم المزامنة حالياً</string>
-    <string name="preferences_cloud_service">خدمة المزامنة</string>
     <string name="preferences_cloud_service_disabled">معطلة</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">تذكر أن Nextcloud Notes لا يدعم ميزات مثل العلامات والمرفقات والتذكيرات وأكثر. يجب تثبيت Nextcloud Notes على خادم Nextcloud وإلا فإن تسجيل الدخول سيفشل مع "حدث خطأ ما"!</string>
-    <string name="preferences_nextcloud_account">حساب Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">رابط مثيل Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">تعيين بياناتك الشخصية</string>
-    <string name="preferences_nextcloud_set_server_url">تعيين رابط الخادم</string>
-    <string name="preferences_file_storage_info">اختر مجلد من التخزين المحلي أو من مزود سحابي. سيتم حفظ جميع الملاحظات كملفات Markdown.</string>
     <string name="preferences_file_storage_location">موقع التخزين</string>
     <string name="preferences_file_storage_select">اختيار موقع التخزين</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi أو البيانات</string>
-    <string name="preferences_sync_when_on">المزامنة عند</string>
-    <string name="preferences_new_notes_synchronizable">الملاحظات الجديدة قابلة للمزامنة</string>
     <!-- About -->
     <string name="about_version">الإصدار</string>
     <string name="about_website">الموقع الإلكتروني</string>
@@ -121,8 +106,6 @@
     <string name="ok">موافق</string>
     <string name="indicator_notes_empty">ستظهر ملاحظاتك هنا.</string>
     <string name="indicator_untitled">بدون عنوان</string>
-    <string name="hint_username">اسم المستخدم</string>
-    <string name="hint_password">كلمة المرور</string>
     <string name="action_save">حفظ</string>
     <string name="action_cancel">إلغاء</string>
     <string name="action_delete">حذف</string>
@@ -204,7 +187,6 @@
     <string name="action_add_task">مهمة</string>
     <string name="action_convert_to_note">تحويل إلى ملاحظة</string>
     <string name="action_convert_to_list">تحويل إلى قائمة</string>
-    <string name="action_do_not_sync">عدم المزامنة</string>
     <string name="action_change_color">تغيير اللون</string>
     <string name="action_enable_markdown">تفعيل markdown</string>
     <string name="action_disable_markdown">تعطيل markdown</string>
@@ -251,19 +233,6 @@
     <string name="notifications_channel_backups">النسخ الاحتياطية</string>
     <string name="notifications_channel_playback">تشغيل الوسائط</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">هذا ليس رابط HTTPS صالح.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">أنت مسجل حالياً باسم <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">أنت غير مسجل حالياً.</string>
-    <string name="action_nextcloud_authenticate">المصادقة</string>
-    <string name="indicator_offline_account">حساب غير متصل</string>
-    <string name="indicator_connecting">جاري الاتصال…</string>
-    <string name="message_something_went_wrong">حدث خطأ ما.</string>
-    <string name="message_invalid_credentials">تعذر المصادقة مع الخادم بسبب بيانات اعتماد غير صالحة.</string>
-    <string name="message_logged_in_successfully">تم تسجيل الدخول بنجاح!</string>
-    <string name="message_server_not_compatible">إصدار الخادم غير متوافق مع هذا التطبيق.</string>
-    <string name="message_internet_not_available">اتصال الإنترنت غير متوفر.</string>
-    <string name="message_credentials_cannot_be_blank">لا يمكن أن تكون بيانات الاعتماد فارغة.</string>
-    <string name="preference_nextcloud_clear_credentials">مسح بيانات الاعتماد ورابط الخادم</string>
     <string name="notification_media_play_pause">تشغيل / إيقاف مؤقت</string>
     <string name="notification_media_stop">إيقاف</string>
     <!-- App shortcuts -->

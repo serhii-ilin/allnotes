@@ -65,22 +65,8 @@
     <string name="preferences_backup_strategy_include_files">Fes còpia de seguretat de tot</string>
     <string name="preferences_backup_strategy_keep_info">Només fes còpia de la descripció i el camí local</string>
     <string name="preferences_backup_strategy_keep_nothing">No facis còpia dels adjunts</string>
-    <string name="preferences_header_syncing">Sincronització</string>
-    <string name="preferences_go_to_sync_settings">Vés a la configuració de sincronització</string>
-    <string name="preferences_currently_syncing_with">S\'està sincronitzant amb %s</string>
-    <string name="preferences_currently_not_syncing">Actualment no es sincronitza</string>
-    <string name="preferences_cloud_service">Servei de sincronització</string>
     <string name="preferences_cloud_service_disabled">Desactivat</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Tingueu en compte que Notes del Nextcloud no admet funcions com etiquetes, adjunts, recordatoris, etc.</string>
-    <string name="preferences_nextcloud_account">Compte de Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">URL de la instància Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">Establiu les credencials</string>
-    <string name="preferences_nextcloud_set_server_url">Establiu l\'URL del servidor</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi o dades</string>
-    <string name="preferences_sync_when_on">Activa la sincronització quan estigui actiu</string>
-    <string name="preferences_new_notes_synchronizable">Noves notes sincronitzables</string>
     <!-- About -->
     <string name="about_version">Versió</string>
     <string name="about_website">Lloc web</string>
@@ -97,8 +83,6 @@
     <string name="ok">D\'acord</string>
     <string name="indicator_notes_empty">Les notes apareixeran aquí.</string>
     <string name="indicator_untitled">Sense títol</string>
-    <string name="hint_username">Nom d\'usuari</string>
-    <string name="hint_password">Contrasenya</string>
     <string name="action_save">Desa</string>
     <string name="action_cancel">Cancel·la</string>
     <string name="action_delete">Elimina</string>
@@ -179,7 +163,6 @@
     <string name="action_add_task">Tasca</string>
     <string name="action_convert_to_note">Converteix en nota</string>
     <string name="action_convert_to_list">Converteix en llista</string>
-    <string name="action_do_not_sync">No sincronitzis</string>
     <string name="action_change_color">Canvia el color</string>
     <string name="action_enable_markdown">Activa Markdown</string>
     <string name="action_disable_markdown">Desactiva Markdown</string>
@@ -223,20 +206,6 @@
     <string name="notifications_channel_backups">Còpies de seguretat</string>
     <string name="notifications_channel_playback">Reproducció multimèdia</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Això no és una adreça URL HTTPS vàlida.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Heu iniciat sessió com a <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">No heu iniciat sessió.</string>
-    <string name="action_nextcloud_authenticate">Autentica</string>
-    <string name="indicator_offline_account">Compte fora de línia</string>
-    <string name="indicator_connecting">Connectant…</string>
-    <string name="message_something_went_wrong">Alguna cosa ha anat malament.</string>
-    <string name="message_server_connection_failed">No s\'ha pogut connectar amb el servidor. Comproveu l\'adreça del servidor i la connexió de xarxa.</string>
-    <string name="message_invalid_credentials">No s\'ha pogut autenticar amb el servidor a causa de credencials no vàlides.</string>
-    <string name="message_logged_in_successfully">Sessió iniciada correctament.</string>
-    <string name="message_server_not_compatible">La versió del servidor no és compatible amb aquesta aplicació.</string>
-    <string name="message_internet_not_available">No hi ha connexió a internet.</string>
-    <string name="message_credentials_cannot_be_blank">Les credencials no poden estar buides.</string>
-    <string name="preference_nextcloud_clear_credentials">Esborra les credencials i l\'URL del servidor</string>
     <string name="notification_media_play_pause">Reprodueix/Pausa</string>
     <string name="notification_media_stop">Atura</string>
     <!-- App shortcuts -->

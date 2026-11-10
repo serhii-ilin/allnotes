@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import me.msoul.datastore.EnumPreference
 import org.qosp.notes.R
 import org.qosp.notes.data.repo.NoteRepository
+import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.core.Success
 import org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
@@ -31,6 +32,7 @@ class SettingsViewModel(
     private val context: Context,
     private val preferenceRepository: PreferenceRepository,
     private val noteRepository: NoteRepository,
+    private val backendProvider: BackendProvider,
     private val vaultTreeAccess: VaultTreeAccess,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
 ) : ViewModel() {
@@ -90,6 +92,8 @@ class SettingsViewModel(
                     _vaultMessages.emit(context.getString(R.string.vault_choose_location_first))
                     return@launch
                 }
+                // A manual rescan must not trust the (mtime, size) scan cache.
+                backendProvider.clearVaultScanCache()
                 val result = noteRepository.syncNotes()
                 val count = noteRepository.getNotesByCloudService(CloudService.FILE_STORAGE).size
                 val message = if (result is Success) {

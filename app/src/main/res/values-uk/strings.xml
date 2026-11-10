@@ -60,22 +60,8 @@
     <string name="preferences_backup_strategy_include_files">Резервувати усе</string>
     <string name="preferences_backup_strategy_keep_info">Резервувати тільки опис та локальне посилання на вкладення</string>
     <string name="preferences_backup_strategy_keep_nothing">Не резервувати вкладення</string>
-    <string name="preferences_header_syncing">Синхронізація</string>
-    <string name="preferences_go_to_sync_settings">Перейти до налаштування синхронізації</string>
-    <string name="preferences_currently_syncing_with">Синхронізація з %s</string>
-    <string name="preferences_currently_not_syncing">Поки що не синхронізовуємося</string>
-    <string name="preferences_cloud_service">Сервіс синхронізації</string>
     <string name="preferences_cloud_service_disabled">Вимкнений</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">Майте на увазі — Nextcloud Notes не підтримує помітки, вкладення, нагадування, списки завдань та деякі інші функції.</string>
-    <string name="preferences_nextcloud_account">Обліковка Nextcloud</string>
-    <string name="preferences_nextcloud_instance_url">Посилання на Nextcloud</string>
-    <string name="preferences_nextcloud_set_your_credentials">Укажіть ваші данні входу</string>
-    <string name="preferences_nextcloud_set_server_url">Вказати адресу сервера</string>
-    <string name="preferences_sync_on_wifi">Wi-Fi</string>
-    <string name="preferences_sync_on_wifi_data">Wi-Fi чи мобільна мережа</string>
-    <string name="preferences_sync_when_on">Синхронізувати коли під\'єднані до</string>
-    <string name="preferences_new_notes_synchronizable">Доступні нові нотатки для синхронізації</string>
     <!-- About -->
     <string name="about_version">Версія</string>
     <string name="about_website">Сайт</string>
@@ -92,8 +78,6 @@
     <string name="ok">Добре</string>
     <string name="indicator_notes_empty">Ваші нотатки з\'являться ось тут.</string>
     <string name="indicator_untitled">Без назви</string>
-    <string name="hint_username">Ім\'я користувача</string>
-    <string name="hint_password">Пароль</string>
     <string name="action_save">Зберегти</string>
     <string name="action_cancel">Відмінити</string>
     <string name="action_delete">Видалити</string>
@@ -173,7 +157,6 @@
     <string name="action_add_task">Завдання</string>
     <string name="action_convert_to_note">Перетворити на нотаток</string>
     <string name="action_convert_to_list">Перетворити на список</string>
-    <string name="action_do_not_sync">Не синхронізовувати</string>
     <string name="action_change_color">Змінити колір</string>
     <string name="action_enable_markdown">Увімкнути оформлення тексту</string>
     <string name="action_disable_markdown">Вимкнути оформлення тексту</string>
@@ -217,20 +200,6 @@
     <string name="notifications_channel_backups">Резервування</string>
     <string name="notifications_channel_playback">Відтворення медіа</string>
     <!-- Syncing -->
-    <string name="message_not_valid_https">Це хибна HTTPS адреса.</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">Наразі, ви зайшли у Nextcloud з обліковкою <b>%s</b>.</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">Наразі, входу у Nextcloud не виконано.</string>
-    <string name="action_nextcloud_authenticate">Авторизація</string>
-    <string name="indicator_offline_account">Локальна обліковка</string>
-    <string name="indicator_connecting">З\'єднання…</string>
-    <string name="message_something_went_wrong">Щось пішло не за планом.</string>
-    <string name="message_server_connection_failed">Не вдалося підключитися до сервера. Перевірте адресу сервера та підключення до мережі.</string>
-    <string name="message_invalid_credentials">Неможливо авторизуватися на сервері, так як ім\'я користувача та пароль не збігаються.</string>
-    <string name="message_logged_in_successfully">Успішно увійшли в обліковку!</string>
-    <string name="message_server_not_compatible">Версія сервера не підтримується цим додатком.</string>
-    <string name="message_internet_not_available">Бракує доступу до мережі інтернет.</string>
-    <string name="message_credentials_cannot_be_blank">Вхідні дані не можуть бути пустими.</string>
-    <string name="preference_nextcloud_clear_credentials">Очистити вхідні дані та посилання на сервер</string>
     <string name="notification_media_play_pause">Грати / Павза</string>
     <string name="notification_media_stop">Зупинити</string>
     <!-- App shortcuts -->
@@ -262,9 +231,6 @@
         <item quantity="other"/>
     </plurals>
     <string name="preferences_cloud_service_files">Зберігання файлів</string>
-    <string name="preferences_file_storage_info">Виберіть папку з локального сховища або з хмарного постачальника. Усі
-     нотатки зберігатимуться як файли Markdown.
-   </string>
     <string name="preferences_file_storage_location">Місце зберігання</string>
     <string name="preferences_file_storage_select">Виберіть місце зберігання</string>
     <string name="preferences_color_scheme_gray">Сірий</string>

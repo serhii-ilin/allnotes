@@ -43,7 +43,6 @@ import org.qosp.notes.data.sync.fs.StorageConfig
 import org.qosp.notes.data.sync.fs.toVaultFolderName
 import org.qosp.notes.databinding.ActivityMainBinding
 import org.qosp.notes.preferences.PreferenceRepository
-import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.sync.fs.vault.VaultForegroundRescan
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.qosp.notes.preferences.SortNavdrawerNotebooksMethod
@@ -65,7 +64,6 @@ class MainActivity : BaseActivity() {
     private val activityModel: ActivityViewModel by viewModel()
     private val whatsNewModel: WhatsNewViewModel by viewModel()
     private val backendProvider by inject<BackendProvider>()
-    private val noteRepository by inject<NoteRepository>()
     private var vaultFolderPromptShown = false
 
     private val topLevelMenu get() = binding.navigationView.menu
@@ -82,7 +80,6 @@ class MainActivity : BaseActivity() {
         R.id.fragment_editor,
         R.id.fragment_manage_notebooks,
         R.id.fragment_search,
-        R.id.fragment_sync_settings,
         R.id.fragment_settings,
         R.id.fragment_tags,
     )
@@ -153,7 +150,8 @@ class MainActivity : BaseActivity() {
                 .first()
             if (location.isNotBlank()) {
                 if (vaultForegroundRescan.shouldRunRescan()) {
-                    noteRepository.syncNotes()
+                    // Keeps vault-relative paths in ActivityViewModel in step with the refreshed index.
+                    activityModel.syncAsync().await()
                 }
             } else {
                 promptForVaultFolderIfNeeded()
@@ -173,7 +171,7 @@ class MainActivity : BaseActivity() {
             .setTitle(R.string.vault_onboarding_title)
             .setMessage(R.string.vault_onboarding_message)
             .setPositiveButton(R.string.preferences_file_storage_select) { _, _ ->
-                navController.navigateSafely(R.id.fragment_sync_settings)
+                navController.navigateSafely(R.id.fragment_settings)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -313,7 +311,7 @@ class MainActivity : BaseActivity() {
 
         syncSettingsButton.setOnClickListener {
             binding.drawer.closeAndThen {
-                navController.navigateSafely(R.id.fragment_sync_settings)
+                navController.navigateSafely(R.id.fragment_settings)
             }
         }
         lifecycleScope.launch {
@@ -340,7 +338,6 @@ class MainActivity : BaseActivity() {
         val destinationId =
             when (val id = destinationId ?: navController.currentDestination?.id ?: return) {
                 // Assign destinations that do not have a drawer entry to an existing entry
-                R.id.fragment_sync_settings -> R.id.fragment_settings
                 R.id.fragment_search -> R.id.fragment_main
                 else -> id
             }

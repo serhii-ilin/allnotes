@@ -77,22 +77,8 @@
     <string name="preferences_backup_strategy_keep_info">僅備份說明和本地路徑</string>
     <string name="preferences_backup_strategy_keep_nothing">不備份附件</string>
     <!-- Preferences / Syncing 偏好 / 同步-->
-    <string name="preferences_header_syncing">同步</string>
-    <string name="preferences_go_to_sync_settings">移到同步設置</string>
-    <string name="preferences_currently_syncing_with">目前正在與 %s 同步</string>
-    <string name="preferences_currently_not_syncing">目前未同步</string>
-    <string name="preferences_cloud_service">同步服務</string>
     <string name="preferences_cloud_service_disabled">停用</string>
     <string name="preferences_cloud_service_nextcloud">Nextcloud</string>
-    <string name="preferences_nextcloud_limited_features">請留意Nextcloud Notes 不支援標籤、附件、提醒等功能。</string>
-    <string name="preferences_nextcloud_account">Nextcloud 帳戶</string>
-    <string name="preferences_nextcloud_instance_url">Nextcloud 實例網址</string>
-    <string name="preferences_nextcloud_set_your_credentials">設置您的認證</string>
-    <string name="preferences_nextcloud_set_server_url">設置伺服器的網址</string>
-    <string name="preferences_sync_on_wifi">無線網路</string>
-    <string name="preferences_sync_on_wifi_data">無線網路或數據網路</string>
-    <string name="preferences_sync_when_on">使用何種網路時同步</string>
-    <string name="preferences_new_notes_synchronizable">可同步的新筆記</string>
     <!-- About 關於-->
     <string name="about_version">版本</string>
     <string name="about_website">網址</string>
@@ -109,8 +95,6 @@
     <string name="ok">好的</string>
     <string name="indicator_notes_empty">你的筆記將顯示在此處。</string>
     <string name="indicator_untitled">無標題</string>
-    <string name="hint_username">使用者</string>
-    <string name="hint_password">密碼</string>
     <string name="action_save">儲存</string>
     <string name="action_cancel">取消</string>
     <string name="action_delete">刪除</string>
@@ -191,7 +175,6 @@
     <string name="action_add_task">任務</string>
     <string name="action_convert_to_note">轉換為筆記</string>
     <string name="action_convert_to_list">轉換為清單</string>
-    <string name="action_do_not_sync">不同步</string>
     <string name="action_change_color">更改顏色</string>
     <string name="action_enable_markdown">啟用Markdown</string>
     <string name="action_disable_markdown">停用Markdown</string>
@@ -235,20 +218,6 @@
     <string name="notifications_channel_backups">備份</string>
     <string name="notifications_channel_playback">媒體播放</string>
     <!-- Syncing同步 -->
-    <string name="message_not_valid_https">這不是有效的 HTTPS 網址。</string>
-    <string name="indicator_nextcloud_currently_logged_in_as">您目前以 <b>%s</b> 身份登錄。</string>
-    <string name="indicator_nextcloud_currently_not_logged_in">您目前尚未登錄。</string>
-    <string name="action_nextcloud_authenticate">身份驗證</string>
-    <string name="indicator_offline_account">離線帳戶</string>
-    <string name="indicator_connecting">連接中…</string>
-    <string name="message_something_went_wrong">出了點問題。</string>
-    <string name="message_server_connection_failed">無法連線到伺服器。請檢查伺服器位址和網路連線。</string>
-    <string name="message_invalid_credentials">由於認證無效，無法在服務器進行身份驗證。</string>
-    <string name="message_logged_in_successfully">登錄成功!</string>
-    <string name="message_server_not_compatible">伺服器版本與此應用程式不相容。</string>
-    <string name="message_internet_not_available">無網際網路連線</string>
-    <string name="message_credentials_cannot_be_blank">認證不能為空</string>
-    <string name="preference_nextcloud_clear_credentials">清除認證和伺服器的網址</string>
     <string name="notification_media_play_pause">播放 / 暫停</string>
     <string name="notification_media_stop">停止</string>
     <!-- App shortcuts App捷徑-->
