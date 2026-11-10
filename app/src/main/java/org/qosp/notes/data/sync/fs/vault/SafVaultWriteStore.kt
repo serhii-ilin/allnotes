@@ -1,7 +1,9 @@
 package org.qosp.notes.data.sync.fs.vault
 
 import android.content.Context
+import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import org.qosp.notes.data.sync.fs.vaultTreeIdentity
 import java.io.File
 import java.io.IOException
 
@@ -14,6 +16,10 @@ class SafVaultWriteStore(
     private val vaultFs: SafVaultFs? = null,
     private val scopeId: String = vaultScopeFromRoot(root),
 ) : VaultWriteStore {
+
+    init {
+        if (scopeId == vaultScopeFromRoot(root)) migrateLegacyScope(context, root, scopeId)
+    }
 
     private val recoveryRoot: File
         get() = File(context.filesDir, "vault-recovery/$scopeId").apply { mkdirs() }
@@ -139,7 +145,25 @@ class SafVaultWriteStore(
     }
 
     companion object {
-        fun vaultScopeFromRoot(root: DocumentFile): String =
-            VaultContentHash.ofText(root.uri.toString())
+        /** Keyed by tree identity, so one tree picked under differently encoded URIs keeps one scope. */
+        fun vaultScopeFromUri(uri: Uri): String =
+            VaultContentHash.ofText(vaultTreeIdentity(uri) ?: uri.toString())
+
+        fun vaultScopeFromRoot(root: DocumentFile): String = vaultScopeFromUri(root.uri)
+
+        /** Scopes used to be the hash of the raw URI string; carry such a recovery dir over to [scopeId]. */
+        private fun migrateLegacyScope(context: Context, root: DocumentFile, scopeId: String) {
+            val legacyScope = VaultContentHash.ofText(root.uri.toString())
+            if (legacyScope == scopeId) return
+            val base = File(context.filesDir, "vault-recovery")
+            val target = File(base, scopeId)
+            val legacy = File(base, legacyScope)
+            if (target.exists() || !legacy.isDirectory) return
+            if (!legacy.renameTo(target)) return
+            val journalFile = File(target, "journal.json")
+            if (!journalFile.exists()) return
+            val journal = VaultRecoveryJournalCodec.decode(journalFile.readText()) ?: return
+            journalFile.writeText(VaultRecoveryJournalCodec.encode(journal.copy(vaultScopeId = scopeId)))
+        }
     }
 }

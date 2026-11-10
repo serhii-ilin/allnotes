@@ -47,9 +47,14 @@ fun Uri.toFriendlyString(context: Context): String {
  */
 fun isSameVaultTree(a: Uri, b: Uri): Boolean {
     if (a == b) return true
-    val idA = runCatching { DocumentsContract.getTreeDocumentId(a) }.getOrNull() ?: return false
-    val idB = runCatching { DocumentsContract.getTreeDocumentId(b) }.getOrNull() ?: return false
-    return a.authority == b.authority && idA == idB
+    val idA = vaultTreeIdentity(a) ?: return false
+    return idA == vaultTreeIdentity(b)
+}
+
+/** Stable identity of a SAF tree (authority plus decoded tree document id), or null when [uri] isn't parseable. */
+fun vaultTreeIdentity(uri: Uri): String? {
+    val id = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull() ?: return null
+    return "${uri.authority}|$id"
 }
 
 private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
