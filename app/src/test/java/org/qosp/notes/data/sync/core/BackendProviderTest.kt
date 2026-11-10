@@ -33,6 +33,7 @@ class BackendProviderTest {
             prefs,
             SyncScope(scope),
             mockk(relaxed = true),
+            mockk(relaxed = true),
             VaultSyncCoordinator(prefs),
             VaultWriteClock(),
         )

@@ -13,6 +13,7 @@ import org.qosp.notes.data.model.Attachment
 import org.qosp.notes.data.model.IdMapping
 import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.model.Reminder
+import org.qosp.notes.data.model.NoteTagJoin
 import org.qosp.notes.data.model.Tag
 import org.qosp.notes.data.repo.NoteRepositoryVaultHarness
 import org.qosp.notes.data.sync.core.GenericError
@@ -357,7 +358,10 @@ class VaultFolderBlockerScenariosTest {
         h.syncNotes()
         val live = h.getNote(id)!!
         assertTrue(live.tags.any { it.name == "a" })
-        h.updateAndSync(live.copy(tags = live.tags + Tag(name = "b"), modifiedDate = live.modifiedDate + 10))
+        // The app stores tags in their own tables; the push reads the note back from Room, so persist them there.
+        val tagId = h.db.tagDao.insert(Tag(name = "b"))
+        h.db.noteTagDao.insert(NoteTagJoin(tagId = tagId, noteId = id))
+        h.updateAndSync(h.getNote(id)!!.copy(modifiedDate = live.modifiedDate + 10))
         val raw = tree.vaultFs.readText(path).orEmpty()
         assertFalse("orphan list item left in front matter:\n$raw", raw.lines().any { it.startsWith("  - ") })
         assertEquals(listOf("a", "b"), VaultNoteDocument.parse(raw).frontMatter.tags)

@@ -93,6 +93,7 @@ class VaultScanReadCountTest {
             context,
             StorageConfig(Uri.parse("content://test/vault")),
             notebookDao,
+            mockk(relaxed = true),
             coordinator,
             vaultFs = fs,
         )

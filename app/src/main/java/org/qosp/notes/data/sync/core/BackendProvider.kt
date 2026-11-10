@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withTimeoutOrNull
+import org.qosp.notes.data.dao.IdMappingDao
 import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.sync.fs.StorageBackend
 import org.qosp.notes.data.sync.fs.StorageConfig
@@ -23,6 +24,7 @@ class BackendProvider(
     preferenceRepository: PreferenceRepository,
     syncingScope: SyncScope,
     private val notebookDao: NotebookDao,
+    private val idMappingDao: IdMappingDao,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
     private val vaultWriteClock: VaultWriteClock,
 ) {
@@ -38,7 +40,7 @@ class BackendProvider(
         .distinctUntilChanged()
         .map { location ->
             location?.let { StorageConfig(it.toUri()) }?.let {
-                StorageBackend(context, it, notebookDao, vaultSyncCoordinator, vaultWriteClock = vaultWriteClock)
+                StorageBackend(context, it, notebookDao, idMappingDao, vaultSyncCoordinator, vaultWriteClock = vaultWriteClock)
             }
         }
         .stateIn(syncingScope, SharingStarted.Eagerly, null)

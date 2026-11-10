@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import me.msoul.datastore.defaultOf
 import org.qosp.notes.R
 import org.qosp.notes.data.dao.IdMappingDao
+import org.qosp.notes.data.dao.countActiveMappingsAtPath
 import org.qosp.notes.data.dao.NoteDao
 import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.dao.ReminderDao
@@ -130,6 +131,9 @@ class NoteRepositoryImpl(
     }
 
     /** Mapped files absent from a complete scan; many at once point at a bad listing, so they are kept. */
+    private fun vaultPathKey(path: String, provider: ISyncBackend): String =
+        VaultPaths.normalizeNotePath(path).let { if (provider.caseInsensitivePaths) it.lowercase() else it }
+
     private fun missingMappedCount(mappedPaths: Set<String>, scan: List<SyncNote>): Int {
         val scanned = scan.map { VaultPaths.normalizeNotePath(it.idStr) }.toSet()
         return mappedPaths.count { VaultPaths.normalizeNotePath(it) !in scanned }
@@ -216,8 +220,19 @@ class NoteRepositoryImpl(
                 } else {
                     emptyList()
                 }
-                val mappedPaths = activeMappings.mapNotNull { VaultPaths.vaultMappingPath(it.storageUri) }.toSet()
-                val scanResult = syncProvider.getAll(mappedPaths)
+                val allMappedPaths = activeMappings.mapNotNull { VaultPaths.vaultMappingPath(it.storageUri) }.toSet()
+                val scanResult = syncProvider.getAll(allMappedPaths)
+                // The scan skipped quarantined paths and Room keeps its copy: such a path is neither
+                // missing nor importable, so its note stays out of this pass entirely.
+                val quarantined = syncProvider.quarantinedPaths.map { vaultPathKey(it, syncProvider) }.toSet()
+                val mappedPaths = allMappedPaths.filterNot { vaultPathKey(it, syncProvider) in quarantined }.toSet()
+                val quarantinedLocalIds = activeMappings
+                    .filter { m ->
+                        VaultPaths.vaultMappingPath(m.storageUri)?.let { vaultPathKey(it, syncProvider) in quarantined } == true
+                    }
+                    .map { it.localNoteId }
+                    .toSet()
+                val syncedLocalNotes = localNotes.filterNot { it.id in quarantinedLocalIds }
                 // An empty listing while notes are mapped is far more likely a provider glitch or an
                 // emptied folder than every note being deleted. Fail the scan so no note is binned.
                 val emptyScanWhileMapped = syncProvider.type == CloudService.FILE_STORAGE &&
@@ -263,7 +278,7 @@ class NoteRepositoryImpl(
                 // Use SynchronizeNotes to determine what updates are needed
                 val syncResult =
                     synchronizeNotes(
-                        localNotes,
+                        syncedLocalNotes,
                         allRemoteNotes,
                         service = syncProvider.type,
                         syncMethod,
@@ -503,6 +518,7 @@ class NoteRepositoryImpl(
                                 CloudService.FILE_STORAGE,
                                 norm,
                                 n.id,
+                                backendProvider.syncProvider.value?.caseInsensitivePaths == true,
                             ) > 0
                             if (pathTaken) {
                                 restoreToFreshVaultFile(mapping, restored)
@@ -605,6 +621,7 @@ class NoteRepositoryImpl(
                     syncProvider.type,
                     path,
                     note.id,
+                    syncProvider.caseInsensitivePaths,
                 )
                 if (others == 0) {
                     syncProvider.deleteNote(mapping.copy(storageUri = path), removeAssets = true)

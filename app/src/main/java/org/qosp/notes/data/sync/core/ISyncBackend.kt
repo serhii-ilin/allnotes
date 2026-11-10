@@ -11,6 +11,15 @@ import org.qosp.notes.preferences.CloudService
 interface ISyncBackend {
     val type: CloudService
 
+    /** True when the backend's paths compare case-insensitively (vault on a case-insensitive volume). */
+    val caseInsensitivePaths: Boolean get() = false
+
+    /**
+     * Paths that recovery could not settle. The latest scan skipped them, so callers must treat them as neither
+     * present nor missing.
+     */
+    val quarantinedPaths: Set<String> get() = emptySet()
+
     /**
      * Check if the sync backend is available for operations.
      * Called before every sync to ensure the backend can be reached.

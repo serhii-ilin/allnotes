@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class InMemoryVaultFs(
     override val scopeId: String = "mem-vault",
-    private val caseInsensitive: Boolean = false,
+    override val caseInsensitive: Boolean = false,
 ) : VaultFs {
 
     /** Tests: simulate missing storage permissions or offline vault. */

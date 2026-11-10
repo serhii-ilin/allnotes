@@ -33,9 +33,19 @@ object VaultRecoveryService {
         }
 
         if (journal.vaultGeneration != vaultGeneration) {
-            Log.w(TAG, "Stale recovery journal gen=${journal.vaultGeneration} active=$vaultGeneration; clearing")
-            store.writeJournal(null)
-            return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
+            // Re-picking the same folder bumps the generation, but a write killed mid-publish may have left
+            // the note truncated, with the only good copy in the backup. Keep what can still be recovered
+            // (same scope, so same folder) and fence its paths until a later run settles them.
+            val recoverable = journal.entries.filter { store.hasRecoveryFiles(it) }
+            if (recoverable.isEmpty()) {
+                Log.w(TAG, "Stale recovery journal gen=${journal.vaultGeneration} active=$vaultGeneration; nothing recoverable, clearing")
+                store.writeJournal(null)
+                return Outcome(emptySet(), emptySet(), writesBlocked = false, scanBlocked = false)
+            }
+            val paths = recoverable.map { it.notePath }
+            Log.w(TAG, "Stale recovery journal gen=${journal.vaultGeneration} active=$vaultGeneration; quarantining $paths")
+            store.writeJournal(journal.copy(entries = recoverable))
+            return Outcome(paths.toSet(), emptySet(), writesBlocked = false, scanBlocked = false)
         }
 
         val writer = VaultRecoverableWrite(store)
@@ -86,6 +96,10 @@ object VaultRecoveryService {
             scanBlocked = false,
         )
     }
+
+    private fun VaultWriteStore.hasRecoveryFiles(entry: VaultRecoveryJournalEntry): Boolean =
+        readStaging(entry.toStagingTicket()) != null ||
+            (entry.backupToken != null && readBackup(entry.toBackupTicket()) != null)
 
     private fun finalizeEntry(store: VaultWriteStore, entry: VaultRecoveryJournalEntry) {
         store.clearRecovery(entry.toStagingTicket())

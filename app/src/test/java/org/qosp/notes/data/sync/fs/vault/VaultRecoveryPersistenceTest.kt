@@ -77,7 +77,7 @@ class VaultRecoveryPersistenceTest {
     }
 
     @Test
-    fun partialPublish_quarantinesAndBlocksAuthoritativeRead() {
+    fun partialPublish_quarantinesPathAndLeavesScanToSkipIt() {
         val store = MemoryVaultWriteStore()
         val path = "Work/Note.md"
         store.seedVerified(path, "partial")
@@ -100,7 +100,10 @@ class VaultRecoveryPersistenceTest {
         store.failPublish = true
         val outcome = VaultRecoveryService.recoverPending(store, 1L)
         assertTrue(path in outcome.quarantinedPaths)
+        // The scan is not blocked as a whole: StorageBackend.getAll skips the quarantined path instead
+        // (see VaultQuarantineScenariosTest), so the other notes keep syncing.
         assertFalse(outcome.scanBlocked)
+        assertTrue(store.readJournal()?.entries?.any { it.notePath == path } == true)
     }
 
     private fun assertNotNullJournal(store: FileVaultWriteStore) {

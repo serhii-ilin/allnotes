@@ -76,6 +76,58 @@ class VaultRecoveryServiceTest {
     }
 
     @Test
+    fun staleGeneration_withRecoverableBackup_keepsJournalAndQuarantines() {
+        val store = MemoryVaultWriteStore()
+        val path = "Work/Note.md"
+        store.seedVerified(path, "TRUNCATED")
+        val backup = store.saveBackup(path, "GOOD")
+        store.writeJournal(
+            VaultRecoveryJournal(
+                vaultScopeId = store.vaultScopeId(),
+                vaultGeneration = 1L,
+                entries = listOf(
+                    VaultRecoveryJournalEntry(
+                        notePath = path,
+                        stagingToken = "st-gone",
+                        backupToken = backup.token,
+                        expectedContentHash = VaultContentHash.ofText("NEW"),
+                        phase = VaultRecoveryJournalEntry.PHASE_PUBLISHING,
+                    ),
+                ),
+            ),
+        )
+        val outcome = VaultRecoveryService.recoverPending(store, vaultGeneration = 2L)
+        assertTrue(path in outcome.quarantinedPaths)
+        assertEquals(listOf(path), store.readJournal()?.entries?.map { it.notePath })
+        assertEquals("GOOD", store.readBackup(backup))
+    }
+
+    @Test
+    fun staleGeneration_onlyUnrecoverableEntriesAreDropped() {
+        val store = MemoryVaultWriteStore()
+        store.seedVerified("A.md", "TRUNCATED")
+        store.seedVerified("B.md", "PARTIAL")
+        val backup = store.saveBackup("A.md", "GOOD")
+        fun entry(path: String, backupToken: String?) = VaultRecoveryJournalEntry(
+            notePath = path,
+            stagingToken = "st-gone",
+            backupToken = backupToken,
+            expectedContentHash = VaultContentHash.ofText("NEW"),
+            phase = VaultRecoveryJournalEntry.PHASE_PUBLISHING,
+        )
+        store.writeJournal(
+            VaultRecoveryJournal(
+                vaultScopeId = store.vaultScopeId(),
+                vaultGeneration = 1L,
+                entries = listOf(entry("A.md", backup.token), entry("B.md", null)),
+            ),
+        )
+        val outcome = VaultRecoveryService.recoverPending(store, vaultGeneration = 2L)
+        assertEquals(setOf("A.md"), outcome.quarantinedPaths)
+        assertEquals(listOf("A.md"), store.readJournal()?.entries?.map { it.notePath })
+    }
+
+    @Test
     fun foreignScopeJournal_blocksScan_leavesDiskUntouched() {
         val store = MemoryVaultWriteStore()
         store.seedVerified("Work/Note.md", "PARTIAL")

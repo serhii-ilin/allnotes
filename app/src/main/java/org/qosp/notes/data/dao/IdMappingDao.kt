@@ -55,4 +55,27 @@ interface IdMappingDao {
         path: String,
         excludeLocalId: Long,
     ): Int
+
+    @Query(
+        """
+        SELECT storageUri FROM cloud_ids
+        WHERE provider = :provider AND isDeletedLocally = 0
+        AND storageUri IS NOT NULL AND localNoteId != :excludeLocalId
+        """,
+    )
+    suspend fun getActiveStorageUris(provider: CloudService, excludeLocalId: Long): List<String>
+}
+
+/**
+ * Like [IdMappingDao.countActiveMappingsAtPath], folding case when the volume does: `Note.md` and `note.md`
+ * are one file there. Folds in Kotlin like the vault lookups do, since SQLite's `lower()` is ASCII-only.
+ */
+suspend fun IdMappingDao.countActiveMappingsAtPath(
+    provider: CloudService,
+    path: String,
+    excludeLocalId: Long,
+    ignoreCase: Boolean,
+): Int {
+    if (!ignoreCase) return countActiveMappingsAtPath(provider, path, excludeLocalId)
+    return getActiveStorageUris(provider, excludeLocalId).count { it.equals(path, ignoreCase = true) }
 }

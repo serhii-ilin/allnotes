@@ -136,6 +136,7 @@ class SafVaultFsListingFailureTest {
             context,
             StorageConfig(location = Uri.parse("content://test/vault")),
             notebookDao,
+            mockk(relaxed = true),
             coordinator,
             vaultFs = fs,
         )
@@ -153,6 +154,7 @@ class SafVaultFsListingFailureTest {
             context,
             StorageConfig(location = Uri.parse("content://test/vault")),
             notebookDao,
+            mockk(relaxed = true),
             mockk<VaultSyncCoordinator>(relaxed = true),
             vaultFs = fs,
         )

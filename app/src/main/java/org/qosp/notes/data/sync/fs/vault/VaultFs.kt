@@ -10,6 +10,9 @@ import java.io.OutputStream
 interface VaultFs {
     val scopeId: String
 
+    /** True when the volume treats `Note.md` and `note.md` as one file, so path comparisons must fold case. */
+    val caseInsensitive: Boolean get() = false
+
     fun canRead(): Boolean = true
     fun canWrite(): Boolean = true
 

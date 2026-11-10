@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.flow.firstOrNull
+import org.qosp.notes.data.dao.IdMappingDao
 import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.model.Attachment
 import org.qosp.notes.data.model.IdMapping
@@ -48,6 +49,7 @@ class StorageBackend(
     private val context: Context,
     val config: StorageConfig,
     private val notebookDao: NotebookDao,
+    private val idMappingDao: IdMappingDao,
     private val vaultSyncCoordinator: VaultSyncCoordinator,
     vaultFs: VaultFs? = null,
     private val vaultWriteClock: VaultWriteClock = VaultWriteClock(),
@@ -73,6 +75,16 @@ class StorageBackend(
     }
 
     override val type: CloudService = CloudService.FILE_STORAGE
+
+    // An unreachable SAF root counts as case-insensitive: folding more paths only avoids more collisions.
+    override val caseInsensitivePaths: Boolean
+        get() = runCatching { vaultFs().caseInsensitive }.getOrDefault(true)
+
+    override val quarantinedPaths: Set<String>
+        get() = quarantinedNotePaths.toSet()
+
+    private fun pathKey(path: String): String =
+        VaultPaths.normalizeNotePath(path).let { if (caseInsensitivePaths) it.lowercase() else it }
 
     companion object {
         private const val TAG = "StorageBackend"
@@ -146,7 +158,7 @@ class StorageBackend(
                 return@run pathToSyncNote(fs, existing)
             }
         }
-        val relativePath = uniqueNotePath(fs, desired)
+        val relativePath = uniqueNotePath(fs, desired, forNoteId = note.id)
         return@run writeNoteAt(relativePath, note, mapping = null)
     }
 
@@ -162,7 +174,7 @@ class StorageBackend(
         val targetPath = when {
             desiredPath == currentPath -> currentPath
             desiredPath.equals(currentPath, ignoreCase = true) -> desiredPath
-            else -> uniqueNotePath(fs, desiredPath, exclude = currentPath)
+            else -> uniqueNotePath(fs, desiredPath, exclude = currentPath, forNoteId = note.id)
         }
         var mappingState = mapping.extras?.let { VaultMappingState.resolve(it) }
         val oldRaw = fs.readText(currentPath)
@@ -265,6 +277,8 @@ class StorageBackend(
     override suspend fun getNote(mapping: IdMapping): SyncNote? = VaultIo.run {
         val fs = vaultFs()
         val path = VaultPaths.vaultMappingPath(mapping.storageUri) ?: return@run null
+        // A quarantined file may be half written: callers must see it as unreadable, never as the note's content.
+        if (pathKey(path) in quarantinedNotePaths.map { pathKey(it) }) return@run null
         if (!fs.isFile(path)) return@run null
         return@run pathToSyncNote(fs, path)
     }
@@ -280,13 +294,17 @@ class StorageBackend(
             if (bypassScanCache.getAndSet(false)) scanCache.clear()
             invalidateVaultIndex()
             (fs as? SafVaultFs)?.beginDirectoryCache()
+            // Quarantined files may be half written: never read them, so Room keeps its copy.
+            val quarantineKeys = quarantinedNotePaths.map { pathKey(it) }.toSet()
             val candidates = VaultDocumentTree.listNoteCandidates(fs)
+                .filterNot { pathKey(it.relativePath) in quarantineKeys }
             val read = readNoteTextsWithCache(fs, candidates)
             val indexed = VaultDocumentTree.filterIndexed(candidates, read.rawTexts)
             // End the snapshot first: probing a file the listing omitted through the same snapshot would
             // miss it too, so the completeness check must look the file up live.
             (fs as? SafVaultFs)?.endDirectoryCache()
-            if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexed, knownMappedPaths)) {
+            val mappedToCheck = knownMappedPaths.filterNot { pathKey(it) in quarantineKeys }.toSet()
+            if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexed, mappedToCheck)) {
                 Log.w(TAG, "getAll: mapped note visible but missing from index; failing scan")
                 return@run null
             }
@@ -503,10 +521,21 @@ class StorageBackend(
         }
     }
 
-    private fun uniqueNotePath(fs: VaultFs, desired: String, exclude: String? = null): String {
+    private suspend fun uniqueNotePath(
+        fs: VaultFs,
+        desired: String,
+        exclude: String? = null,
+        forNoteId: Long = -1L,
+    ): String {
+        // A path another note is mapped to is taken even when its file is not visible right now (momentarily
+        // missing, or only a case variant): reusing it would put two notes on one file.
+        val reserved = idMappingDao.getActiveStorageUris(CloudService.FILE_STORAGE, forNoteId)
+            .mapNotNull { VaultPaths.vaultMappingPath(it) }
+            .map { pathKey(it) }
+            .toSet()
         var candidate = VaultPaths.normalizeNotePath(desired)
         var i = 2
-        while (fs.isFile(candidate) && !candidate.equals(exclude, ignoreCase = true)) {
+        while ((fs.isFile(candidate) || pathKey(candidate) in reserved) && !candidate.equals(exclude, ignoreCase = true)) {
             val base = VaultPaths.noteBaseName(desired)
             val parent = VaultPaths.parentPath(desired)
             val ext = if (desired.endsWith(".txt", ignoreCase = true)) ".txt" else ".md"

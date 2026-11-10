@@ -19,6 +19,8 @@ class SafVaultFs(
     private val onWrite: () -> Unit = {},
 ) : VaultFs {
 
+    override val caseInsensitive: Boolean get() = caseInsensitiveLookup
+
     /** Children of one folder: the raw list plus first-wins maps by exact and lowercase name. */
     private class DirectoryIndex(
         val entries: List<SafDirectoryListing.Entry>,

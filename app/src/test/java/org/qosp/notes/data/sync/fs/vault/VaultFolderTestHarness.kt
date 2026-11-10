@@ -7,6 +7,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
+import org.qosp.notes.data.dao.IdMappingDao
 import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.model.Attachment
 import org.qosp.notes.data.model.IdMapping
@@ -30,6 +31,7 @@ class VaultFolderTestHarness(
         context,
         config,
         notebookDao,
+        mockk<IdMappingDao>(relaxed = true),
         vaultSyncCoordinator,
         vaultFs = vaultFs,
     )
