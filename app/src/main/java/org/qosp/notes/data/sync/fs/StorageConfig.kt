@@ -54,6 +54,15 @@ fun isSameVaultTree(a: Uri, b: Uri): Boolean {
 
 private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
+/**
+ * Whether to warn that [tree] is provided by another app (a cloud drive, say). Once per tree: [warnedTree] is the
+ * tree the user was already told about (blank when none), and device storage never warns.
+ */
+fun shouldWarnAboutCloudFolder(tree: Uri, warnedTree: String): Boolean {
+    if (tree.authority == EXTERNAL_STORAGE_AUTHORITY) return false
+    return warnedTree.isBlank() || !isSameVaultTree(tree, Uri.parse(warnedTree))
+}
+
 /** Human-readable path for a SAF tree document id, or null when the provider layout isn't understood. */
 fun formatVaultTreePath(authority: String?, treeDocumentId: String?, internalStorageLabel: String): String? {
     if (treeDocumentId == null) return null

@@ -67,6 +67,8 @@ class PreferenceRepository(
         const val STORAGE_LOCATION = "STORAGE_LOCATION"
         /** Epoch seconds when the vault folder was last selected (fresh vault boundary). */
         const val VAULT_CONFIGURED_AT = "VAULT_CONFIGURED_AT"
+        /** The last tree the cloud-folder warning was shown for, so it appears once per picked folder. */
+        const val VAULT_CLOUD_WARNED_TREE = "VAULT_CLOUD_WARNED_TREE"
         /** Monotonic fence: bumped on vault folder change; mappings capture generation at last sync. */
         const val VAULT_GENERATION = "VAULT_GENERATION"
     }

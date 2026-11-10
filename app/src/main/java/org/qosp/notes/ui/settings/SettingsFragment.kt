@@ -84,7 +84,22 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
             .show()
     }
 
+    private var cloudWarningDialog: AlertDialog? = null
+
+    private fun showCloudFolderWarning() {
+        val context = context ?: return
+        if (cloudWarningDialog?.isShowing == true) return
+        cloudWarningDialog = MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.vault_cloud_folder_title)
+            .setMessage(R.string.vault_cloud_folder_message)
+            .setPositiveButton(android.R.string.ok) { _, _ -> model.cloudFolderWarningShown() }
+            .setOnCancelListener { model.cloudFolderWarningShown() }
+            .show()
+    }
+
     override fun onDestroyView() {
+        cloudWarningDialog?.dismiss()
+        cloudWarningDialog = null
         // Dismissing (unlike cancelling) leaves the pick pending, so the recreated view shows the dialog again.
         folderSwapDialog?.dismiss()
         folderSwapDialog = null
@@ -234,6 +249,7 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
         }
 
         model.folderSwapPrompts.collect(viewLifecycleOwner) { prompt -> showFolderSwapDialog(prompt) }
+        model.cloudFolderWarnings.collect(viewLifecycleOwner) { showCloudFolderWarning() }
     }
 
     private fun showConflictsDialog() {

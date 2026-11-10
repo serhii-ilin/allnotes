@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.getAndUpdate
@@ -25,6 +26,8 @@ import org.qosp.notes.data.repo.NoteRepository
 import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.core.Success
 import org.qosp.notes.data.sync.fs.isSameVaultTree
+import org.qosp.notes.data.sync.fs.shouldWarnAboutCloudFolder
+import org.qosp.notes.data.sync.fs.shouldWarnAboutCloudFolder
 import org.qosp.notes.data.sync.fs.vault.SafVaultWriteStore
 import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
 import org.qosp.notes.data.sync.fs.vault.VaultPaths
@@ -203,8 +206,24 @@ class SettingsViewModel(
         }
     }
 
+    // State rather than an event, like the swap prompt: a recreated view shows it until it is acknowledged.
+    private val pendingCloudWarning = MutableStateFlow(false)
+    val cloudFolderWarnings: Flow<Boolean> = pendingCloudWarning.filter { it }
+
+    fun cloudFolderWarningShown() {
+        pendingCloudWarning.value = false
+    }
+
+    private suspend fun warnIfCloudFolder(location: String) {
+        val warned = preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CLOUD_WARNED_TREE).first()
+        if (!shouldWarnAboutCloudFolder(Uri.parse(location), warned)) return
+        preferenceRepository.putEncryptedStrings(PreferenceRepository.VAULT_CLOUD_WARNED_TREE to location)
+        pendingCloudWarning.value = true
+    }
+
     private suspend fun applyAndSync(newLocation: String, previousLocation: String, openAsIs: Boolean) {
         if (configureVaultFolder(newLocation, previousLocation, openAsIs)) {
+            warnIfCloudFolder(newLocation)
             backendProvider.awaitBackendFor(newLocation)
             noteRepository.syncNotes()
             reminderManager.rescheduleAll()
