@@ -76,8 +76,13 @@ open class BaseActivity : AppCompatActivity() {
             val theme = preferences.toThemeSnapshot()
             themeCache.write(theme)
 
+            // This observer is the only place that reacts to theme changes, so the cache is always
+            // written before the activity is recreated with it.
             if (theme != appliedTheme) {
                 appliedTheme = theme
+                if (theme.themeMode != AppCompatDelegate.getDefaultNightMode()) {
+                    AppCompatDelegate.setDefaultNightMode(theme.themeMode)
+                }
                 recreate()
             }
         }

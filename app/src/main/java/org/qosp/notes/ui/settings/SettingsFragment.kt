@@ -2,20 +2,15 @@ package org.qosp.notes.ui.settings
 
 import android.os.Bundle
 import android.view.View
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
-import kotlinx.coroutines.launch
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import org.qosp.notes.R
 import org.qosp.notes.databinding.FragmentSettingsBinding
 import org.qosp.notes.preferences.AppPreferences
 import org.qosp.notes.preferences.CloudService
-import org.qosp.notes.preferences.DarkThemeMode
 import org.qosp.notes.preferences.DateFormat
 import org.qosp.notes.preferences.LayoutMode
-import org.qosp.notes.preferences.ThemeMode
 import org.qosp.notes.preferences.TimeFormat
 import org.qosp.notes.ui.MainActivity
 import org.qosp.notes.ui.common.BaseFragment
@@ -132,34 +127,20 @@ class SettingsFragment : BaseFragment(resId = R.layout.fragment_settings) {
 
     private fun setupColorSchemeListener() = binding.settingColorScheme.setOnClickListener {
         showPreferenceDialog(R.string.preferences_color_scheme, appPreferences.colorScheme) { selected ->
-            lifecycleScope.launch {
-                model.setPreferenceSuspending(selected)
-                activity?.recreate()
-            }
+            // BaseActivity observes theme preferences, updates its theme cache and recreates itself.
+            model.setPreference(selected)
         }
     }
 
     private fun setupThemeModeListener() = binding.settingThemeMode.setOnClickListener {
         showPreferenceDialog(R.string.preferences_theme_mode, appPreferences.themeMode) { selected ->
-            lifecycleScope.launch {
-                model.setPreferenceSuspending(selected)
-                if (selected.mode != AppCompatDelegate.getDefaultNightMode()) {
-                    AppCompatDelegate.setDefaultNightMode(selected.mode)
-
-                    if (selected != ThemeMode.LIGHT && appPreferences.darkThemeMode == DarkThemeMode.BLACK) {
-                        activity?.recreate()
-                    }
-                }
-            }
+            model.setPreference(selected)
         }
     }
 
     private fun setupDarkThemeModeListener() = binding.settingDarkThemeMode.setOnClickListener {
         showPreferenceDialog(R.string.preferences_dark_theme_mode, appPreferences.darkThemeMode) { selected ->
-            lifecycleScope.launch {
-                model.setPreferenceSuspending(selected)
-                activity?.recreate()
-            }
+            model.setPreference(selected)
         }
     }
 
