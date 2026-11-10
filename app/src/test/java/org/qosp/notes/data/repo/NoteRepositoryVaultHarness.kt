@@ -85,6 +85,7 @@ class NoteRepositoryVaultHarness(
         context,
         StorageConfig(Uri.parse("content://test/vault")),
         notebookDao,
+        idMappingDao,
         vaultSyncCoordinator,
         vaultFs = vaultFs,
     )
@@ -215,13 +216,18 @@ class NoteRepositoryVaultHarness(
         prefsRef.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first(),
     )
 
-    suspend fun pushRemote(noteId: Long, op: RemoteOperation) {
+    /** Queues [op] as the repository does, without waiting for the debounce to elapse. */
+    suspend fun queueRemote(noteId: Long, op: RemoteOperation) {
         val fenced = when (op) {
             is RemoteOperation.Create -> op.copy(vaultFence = vaultFence())
             is RemoteOperation.Update -> op.copy(vaultFence = vaultFence())
             is RemoteOperation.Delete -> op.copy(vaultFence = vaultFence())
         }
         processRemoteActions(noteId, fenced)
+    }
+
+    suspend fun pushRemote(noteId: Long, op: RemoteOperation) {
+        queueRemote(noteId, op)
         flushRemoteActions()
     }
 

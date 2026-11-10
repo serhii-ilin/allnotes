@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import org.qosp.notes.Config
 import kotlinx.coroutines.flow.firstOrNull
 import org.qosp.notes.data.dao.IdMappingDao
+import org.qosp.notes.data.dao.countActiveMappingsAtPath
 import org.qosp.notes.data.dao.NoteDao
 import org.qosp.notes.data.dao.NotebookDao
 import org.qosp.notes.data.model.Note
@@ -137,6 +138,7 @@ class ProcessRemoteActions(
                         syncProvider.type,
                         binnedPath,
                         note.id,
+                        syncProvider.caseInsensitivePaths,
                     ) == 0
                 }
             val priorState = VaultMappingState.resolve(mapping.extras)
@@ -208,18 +210,25 @@ class ProcessRemoteActions(
         return !fence.isStale(currentGen, currentUri)
     }
 
-    private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) {
+    private suspend fun insertRemote(syncProvider: ISyncBackend, queued: Note) {
         try {
-            val liveBefore = noteDao.getById(note.id).first()
-            if (liveBefore?.isDeleted == true) {
-                Log.d(tag, "insertRemote skipped: note ${note.id} is binned")
+            val liveBefore = noteDao.getById(queued.id).first()
+            if (liveBefore == null || liveBefore.isDeleted) {
+                Log.d(tag, "insertRemote skipped: note ${queued.id} is binned or gone")
                 return
             }
+            // The queued snapshot can be older than a save made since: push what Room holds now.
+            val note = liveBefore
             val created = syncProvider.createNote(note).let { linked ->
                 // Linking reuses an identical file, but never one that already belongs to another note: two notes
                 // on one file overwrite each other.
                 val taken = syncProvider.type == CloudService.FILE_STORAGE &&
-                    idMappingDao.countActiveMappingsAtPath(syncProvider.type, linked.idStr, note.id) > 0
+                    idMappingDao.countActiveMappingsAtPath(
+                        syncProvider.type,
+                        linked.idStr,
+                        note.id,
+                        syncProvider.caseInsensitivePaths,
+                    ) > 0
                 if (taken) syncProvider.createNote(note, linkExisting = false) else linked
             }
         val diskAfterCreate = VaultSyncImport.noteFromRemote(created, note)
@@ -259,7 +268,7 @@ class ProcessRemoteActions(
         persistBaselineAfterPush(note.id, syncProvider)
         noteDao.updateLastModified(note.id, created.lastModified)
         } catch (e: Exception) {
-            Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
+            Log.e(tag, "processRemoteOperation: Failed to create note ID=${queued.id}: ${e.message}", e)
             toaster.showShort(e.message ?: "Failed to create note")
         }
     }
@@ -284,17 +293,23 @@ class ProcessRemoteActions(
         idMappingDao.update(mapping.copy(extras = VaultMappingState.encode(state)))
     }
 
-    private suspend fun updateRemote(note: Note, syncProvider: ISyncBackend) = try {
-        idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)?.let { mapping ->
-            val path = VaultPaths.vaultMappingPath(mapping.storageUri).orEmpty()
-            val mappingState = VaultMappingState.resolve(mapping.extras)
+    private suspend fun updateRemote(queued: Note, syncProvider: ISyncBackend) {
+        try {
+            // Only the latest operation per note is kept, so a sync update carrying an older snapshot can have
+            // replaced a newer editor save: push what Room holds now, and nothing for a note binned or gone.
+            val note = noteDao.getById(queued.id).first()?.takeUnless { it.isDeleted }
+            if (note == null) {
+                Log.d(tag, "updateRemote skipped: note ${queued.id} is binned or gone")
+                return
+            }
+            val mapping = idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type) ?: return
             val updatedMapping = syncProvider.updateNote(note, mapping)
             idMappingDao.update(updatedMapping)
             upgradeAttachmentPathsAfterPush(note.id, syncProvider)
             persistBaselineAfterPush(note.id, syncProvider)
+        } catch (e: Exception) {
+            Log.e(tag, "processRemoteOperation: Failed to update note ID=${queued.id}: ${e.message}", e)
         }
-    } catch (e: Exception) {
-        Log.e(tag, "processRemoteOperation: Failed to update note ID=${note.id}: ${e.message}", e)
     }
 
 }
