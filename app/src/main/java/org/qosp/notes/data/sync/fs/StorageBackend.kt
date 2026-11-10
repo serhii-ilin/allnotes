@@ -283,6 +283,9 @@ class StorageBackend(
             val candidates = VaultDocumentTree.listNoteCandidates(fs)
             val read = readNoteTextsWithCache(fs, candidates)
             val indexed = VaultDocumentTree.filterIndexed(candidates, read.rawTexts)
+            // End the snapshot first: probing a file the listing omitted through the same snapshot would
+            // miss it too, so the completeness check must look the file up live.
+            (fs as? SafVaultFs)?.endDirectoryCache()
             if (!VaultDocumentTree.isIndexCompleteForMappedPaths(fs, indexed, knownMappedPaths)) {
                 Log.w(TAG, "getAll: mapped note visible but missing from index; failing scan")
                 return@run null

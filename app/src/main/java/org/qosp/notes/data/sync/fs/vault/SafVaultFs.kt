@@ -45,7 +45,7 @@ class SafVaultFs(
 
     override fun listChildren(relativeDir: String): List<VaultFs.VaultFsEntry> {
         // A folder that does not exist yet is empty (e.g. a note's asset folder before its first attachment).
-        val dir = findDirEntry(relativeDir) ?: return emptyList()
+        val dir = findDirEntry(relativeDir, strict = true) ?: return emptyList()
         // A null listing of an existing folder is a provider failure; it must not look like an empty folder.
         val children = listDirectory(dir) ?: throw IOException("Cannot list vault directory: $relativeDir")
         return children.map { entry ->
@@ -226,7 +226,8 @@ class SafVaultFs(
     private fun buildDirectoryCache(startDocId: String): Map<String, DirectoryIndex> {
         val out = mutableMapOf<String, DirectoryIndex>()
         fun walk(docId: String) {
-            val entries = queryDirectory(docId) ?: return
+            // A failed query must fail the snapshot: skipping it would make the folder look empty.
+            val entries = queryDirectory(docId) ?: throw IOException("Cannot list vault directory: $docId")
             val byExactName = mutableMapOf<String, SafDirectoryListing.Entry>()
             val byLowerName = mutableMapOf<String, SafDirectoryListing.Entry>()
             // First wins for both maps, so listing and lookup agree on duplicate names.
@@ -276,7 +277,8 @@ class SafVaultFs(
         return current
     }
 
-    private fun findDirEntry(relativeDir: String): SafDirectoryListing.Entry? {
+    /** With [strict], a provider failure while listing a parent throws instead of reading as "no such folder". */
+    private fun findDirEntry(relativeDir: String, strict: Boolean = false): SafDirectoryListing.Entry? {
         val norm = VaultPaths.normalize(relativeDir)
         if (norm.isEmpty()) {
             return SafDirectoryListing.Entry(rootDocumentId(), "", root.uri, isDirectory = true, 0L, -1L)
@@ -284,7 +286,7 @@ class SafVaultFs(
         var current: SafDirectoryListing.Entry? = null
         var parentDocId = rootDocumentId()
         for (segment in norm.split('/').filter { it.isNotEmpty() }) {
-            val child = lookupEntry(parentDocId, segment) ?: return null
+            val child = lookupEntry(parentDocId, segment, strict) ?: return null
             if (!child.isDirectory) return null
             current = child
             parentDocId = child.docId
@@ -292,12 +294,13 @@ class SafVaultFs(
         return current
     }
 
-    private fun lookupEntry(parentDocId: String, name: String): SafDirectoryListing.Entry? {
+    private fun lookupEntry(parentDocId: String, name: String, strict: Boolean = false): SafDirectoryListing.Entry? {
         directoryCache?.get(parentDocId)?.let { index ->
             index.byExactName[name]?.let { return it }
             return if (caseInsensitiveLookup) index.byLowerName[name.lowercase()] else null
         }
-        val entries = queryDirectory(parentDocId) ?: return null
+        val entries = queryDirectory(parentDocId)
+            ?: if (strict) throw IOException("Cannot list vault directory: $parentDocId") else return null
         entries.firstOrNull { it.name == name }?.let { return it }
         return if (caseInsensitiveLookup) entries.firstOrNull { it.name.equals(name, ignoreCase = true) } else null
     }
