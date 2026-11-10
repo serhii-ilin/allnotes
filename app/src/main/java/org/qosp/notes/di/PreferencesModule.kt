@@ -12,6 +12,7 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 import org.qosp.notes.preferences.PreferenceRepository
+import org.qosp.notes.preferences.ThemeCache
 import java.io.File
 import java.security.KeyStore
 
@@ -23,6 +24,7 @@ object PreferencesModule {
         single { androidContext().dataStore }
         single { encryptedSharedPreferences(androidContext()) }
         singleOf(::PreferenceRepository)
+        single { ThemeCache(androidContext()) }
     }
 
     fun encryptedSharedPreferences(context: Context): FlowSharedPreferences {
