@@ -1,0 +1,45 @@
+{
+  "about": "Single-line edits — vault-format.md §5.",
+  "setId": [
+    {
+      "name": "no front matter",
+      "input": "Body\n",
+      "id": "X",
+      "expected": "---\nallnotes-id: \"X\"\n---\nBody\n"
+    },
+    {
+      "name": "empty block",
+      "input": "---\n---\nBody\n",
+      "id": "X",
+      "expected": "---\nallnotes-id: \"X\"\n---\nBody\n"
+    },
+    {
+      "name": "CRLF file keeps CRLF",
+      "input": "---\r\ntitle: T\r\n---\r\nBody\r\n",
+      "id": "X",
+      "expected": "---\r\nallnotes-id: \"X\"\r\ntitle: T\r\n---\r\nBody\r\n"
+    },
+    {
+      "name": "existing id replaced, foreign id and body untouched",
+      "input": "---\ntitle: T\nallnotes-id: old\nid: 7\n---\nallnotes-id: in body\n",
+      "id": "X",
+      "expected": "---\ntitle: T\nallnotes-id: \"X\"\nid: 7\n---\nallnotes-id: in body\n"
+    }
+  ],
+  "addMissingDates": [
+    {
+      "name": "no front matter",
+      "input": "Body\n",
+      "created": 100,
+      "modified": 200,
+      "expected": "---\ncreated: 100\nmodified: 200\n---\nBody\n"
+    },
+    {
+      "name": "an unreadable created counts as present",
+      "input": "---\ntitle: T\ncreated: yesterday\n---\nB\n",
+      "created": 100,
+      "modified": 200,
+      "expected": "---\ntitle: T\ncreated: yesterday\nmodified: 200\n---\nB\n"
+    }
+  ]
+}

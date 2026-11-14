@@ -1,0 +1,39 @@
+@startuml editor-mode
+' Editor modes (EDT-02, EDT-06, EDT-07, EDT-10). See docs/ui/screens/editor.md (SCR-06).
+title Editor mode
+[*] --> Edit : new note, or empty body / empty checklist
+[*] --> Preview : existing note and default mode = View
+[*] --> Edit : existing note and default mode = Edit
+[*] --> ReadOnly : note is in the bin
+Preview --> Edit : mode switch (FAB or top bar)
+Edit --> Preview : mode switch\n(not offered while the note is empty)
+state Edit {
+  [*] --> Text
+  Text --> Checklist : Convert to list
+  Checklist --> Text : Convert to note\n(check marks are lost: 2026-11-12 finding)
+}
+ReadOnly --> [*] : Restore / Delete permanently (editor closes)
+Edit --> [*] : back; an empty new note is discarded
+Preview --> [*] : back / Archive / Delete (editor closes)
+@enduml
+
+@startuml folder-lifecycle
+' The notes-folder lifecycle (FLD-01…FLD-10, UC-01, UC-02, UC-12). See docs/ui/screens/settings.md.
+title Notes folder lifecycle
+[*] --> NoFolder : fresh install
+[*] --> PendingConfirm : upgrade with a folder from the old version
+NoFolder : notes live only in the app\nonboarding dialog (DLG-01), drawer prompt
+PendingConfirm : nothing read or written (FLD-04)\nDLG-02 asks
+PendingConfirm --> Confirmed : Use this folder\n(relink by content, FLD-05)
+PendingConfirm --> NoFolder : Not now
+PendingConfirm --> Choosing : Choose another folder
+NoFolder --> Choosing : Select Storage location
+Choosing : system folder picker\nDLG-04 once per cloud-provider folder
+Choosing --> Confirmed : first folder: export every note once,\nlink files that already match (FLD-03)
+Confirmed : sync runs (BGD)\nhistory recorded (HST)
+Confirmed --> Switching : pick a different folder
+Switching : DLG-03
+Switching --> Confirmed : Move my notes here\n(copy; old files stay, FLD-08)
+Switching --> Confirmed : Open this folder as-is\n(FLD-09)
+Switching --> Confirmed : Cancel (old folder kept)
+@enduml

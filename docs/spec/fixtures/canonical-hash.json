@@ -1,0 +1,17 @@
+{
+  "about": "canonicalOfFile — algorithms.md §1.2. Every variant of one note must give the same hash.",
+  "groups": [
+    {
+      "name": "id line, blank lines before the body, trailing whitespace and bare scalars do not count",
+      "path": "Shopping.md",
+      "variants": [
+        "---\nallnotes-id: \"11111111-2222-3333-4444-555555555555\"\npinned: true\narchived: false\nhidden: false\nisList: false\nmarkdown: true\ncolor: \"Blue\"\nnotebook: \"\"\ntags: [\"Errands\", \"home\"]\ncreated: 1700000000\nmodified: 1700000500\n---\nMilk\nEggs\n",
+        "---\npinned: true\narchived: false\nhidden: false\nisList: false\nmarkdown: true\ncolor: \"Blue\"\nnotebook: \"\"\ntags: [\"Errands\", \"home\"]\ncreated: 1700000000\nmodified: 1700000500\n---\nMilk\nEggs\n",
+        "---\nallnotes-id: \"11111111-2222-3333-4444-555555555555\"\npinned: true\narchived: false\nhidden: false\nisList: false\nmarkdown: true\ncolor: \"Blue\"\nnotebook: \"\"\ntags: [\"Errands\", \"home\"]\ncreated: 1700000000\nmodified: 1700000500\n---\n\n\nMilk\nEggs   \n\n",
+        "---\nallnotes-id: \"11111111-2222-3333-4444-555555555555\"\npinned: true\narchived: false\nhidden: false\nisList: false\nmarkdown: true\ncolor: Blue\nnotebook: \"\"\ntags: [\"Errands\", \"home\"]\ncreated: 1700000000\nmodified: 1700000500\n---\nMilk\nEggs\n",
+        "---\nmodified: 1700000500\ncreated: 1700000000\ntags: [Errands, home]\ncolor: Blue\npinned: true\n---\nMilk\nEggs"
+      ],
+      "expected": "816908abcb2cbad8f8ab3544b69fcc0be2a5017c29c033b9396c7718954e129e"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+package org.qosp.notes.ui.attachments
+
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
+import org.koin.java.KoinJavaComponent.getKoin
+import org.qosp.notes.App
+import org.qosp.notes.BuildConfig
+import org.qosp.notes.data.model.Attachment
+import org.qosp.notes.data.sync.fs.vault.VaultPaths
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
+import org.qosp.notes.data.sync.fs.vault.resolveVaultStoredPath
+import java.io.File
+
+fun getAttachmentFilename(context: Context, uri: Uri): String? {
+    return try {
+        context.contentResolver
+            .query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                cursor.moveToFirst()
+                cursor.getString(nameIndex)
+            }
+    } catch (e: Throwable) { null }
+}
+
+fun Attachment.uri(context: Context) = getAttachmentUri(context, path)
+
+fun Attachment.Companion.fromUri(context: Context, uri: Uri): Attachment {
+    val mimeType = context.contentResolver.getType(uri)
+    val description = getAttachmentFilename(context, uri) ?: ""
+    val type = if (mimeType == null) Attachment.Type.GENERIC else when {
+        mimeType.startsWith("image") -> Attachment.Type.IMAGE
+        mimeType.startsWith("video") -> Attachment.Type.VIDEO
+        mimeType.startsWith("audio") -> Attachment.Type.AUDIO
+        else -> Attachment.Type.GENERIC
+    }
+    return Attachment(type, uri.toString(), description)
+}
+
+fun getAttachmentUri(context: Context, path: String, mediaFolder: String = App.MEDIA_FOLDER): Uri? {
+    return runCatching {
+        when {
+            VaultPaths.isVaultRelativeAttachment(path) -> {
+                val tree = runCatching { getKoin().get<VaultTreeAccess>() }.getOrNull() ?: return null
+                resolveVaultStoredPath(tree, path)
+            }
+            path.startsWith("content://") || path.startsWith("file://") -> Uri.parse(path)
+            else -> {
+                val dir = File(context.filesDir, mediaFolder).also { it.mkdir() }
+                val file = File(dir, path)
+                if (!file.isFile) return null
+                FileProvider.getUriForFile(
+                    context,
+                    "${BuildConfig.APPLICATION_ID}.provider",
+                    file,
+                )
+            }
+        }
+    }.getOrNull()
+}

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AllNotes icon: a fountain-pen nib pointing up that doubles as the letter "A".
+  The breather hole is the counter of the A, the slit runs from the tip to the hole,
+  and the pointed notch cut from the base separates the two legs.
+  Brand colors (see README.md): #1a1a1a background, #a4c639 green.
+  Single even-odd path, no masks, so it converts cleanly to an Android vector drawable.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>AllNotes</title>
+  <rect width="512" height="512" fill="#1a1a1a"/>
+  <path
+    fill="#a4c639"
+    fill-rule="evenodd"
+    d="M256 92
+       C268 92 278 106 286 124
+       C322 204 352 296 366 392
+       Q369 412 350 412
+       H316
+       C308 370 284 332 256 316
+       C228 332 204 370 196 412
+       H162
+       Q143 412 146 392
+       C160 296 190 204 226 124
+       C234 106 244 92 256 92 Z
+       M251 132
+       A5 5 0 0 1 261 132
+       V238.47
+       A24 24 0 1 1 251 238.47 Z"/>
+</svg>

@@ -1,0 +1,30 @@
+{
+  "about": "derivedId(path, created) — algorithms.md §1.3. created null means the file has no readable created.",
+  "cases": [
+    {
+      "path": "Note.md",
+      "created": null,
+      "expected": "f7773653-611c-3afd-88fa-7ad55161a4a8"
+    },
+    {
+      "path": "Work/Meeting.md",
+      "created": 1700000000,
+      "expected": "9f30b33c-9062-3a2b-b8e6-523874c77f4f"
+    },
+    {
+      "path": "Ideas.txt",
+      "created": null,
+      "expected": "5ff5e30f-ab88-3530-9853-34d7987f10eb"
+    },
+    {
+      "path": "Notizen/Überblick.md",
+      "created": 1731500000,
+      "expected": "2360de4f-c7a0-3af6-9584-1aaa9a94ed1f"
+    },
+    {
+      "path": "Shopping (conflict 1731500000).md",
+      "created": 1700000000,
+      "expected": "c2ff68d9-6fa9-3bc4-b7e5-ff15b9c77e2d"
+    }
+  ]
+}

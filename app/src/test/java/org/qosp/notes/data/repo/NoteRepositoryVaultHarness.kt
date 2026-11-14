@@ -1,0 +1,337 @@
+package org.qosp.notes.data.repo
+
+import android.content.Context
+import android.net.Uri
+import android.util.Log
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import org.qosp.notes.Config
+import org.qosp.notes.BuildConfig
+import org.qosp.notes.data.AppDatabase
+import org.qosp.notes.data.dao.IdMappingDao
+import org.qosp.notes.data.dao.NoteDao
+import org.qosp.notes.data.dao.NotebookDao
+import org.qosp.notes.data.dao.ReminderDao
+import org.qosp.notes.data.model.IdMapping
+import org.qosp.notes.data.model.Note
+import org.qosp.notes.data.sync.core.BackendProvider
+import org.qosp.notes.data.sync.core.ISyncBackend
+import org.qosp.notes.data.sync.core.ProcessRemoteActions
+import org.qosp.notes.data.sync.core.RemoteOperation
+import org.qosp.notes.data.sync.core.SyncNote
+import org.qosp.notes.data.sync.fs.vault.VaultFileOpFence
+import org.qosp.notes.data.sync.fs.vault.VaultFs
+import kotlinx.coroutines.flow.first
+import org.qosp.notes.preferences.SortMethod
+import org.qosp.notes.data.repo.IdMappingRepository
+import org.qosp.notes.data.sync.core.SynchronizeNotes
+import org.qosp.notes.data.sync.fs.StorageBackend
+import org.qosp.notes.data.sync.fs.StorageConfig
+import org.qosp.notes.data.sync.fs.vault.InMemoryVaultFs
+import org.qosp.notes.data.sync.fs.vault.VaultIo
+import org.qosp.notes.data.sync.fs.vault.VaultMappingState
+import org.qosp.notes.data.sync.fs.vault.VaultSyncImport
+import org.qosp.notes.data.sync.getMapping
+import org.qosp.notes.data.sync.fs.vault.VaultFolderTestHarness
+import org.qosp.notes.data.sync.fs.vault.VaultPortableMetadata
+import org.qosp.notes.data.sync.fs.vault.VaultSyncCoordinator
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
+import org.qosp.notes.data.sync.fs.vault.history.DeviceIdentity
+import org.qosp.notes.data.sync.fs.vault.history.FolderHistory
+import org.qosp.notes.data.sync.fs.vault.history.FolderHistoryService
+import org.qosp.notes.data.sync.fs.vault.history.HistoryApplier
+import org.qosp.notes.data.sync.fs.vault.history.HistoryApplyCoordinator
+import org.qosp.notes.data.sync.fs.vault.history.HistoryApplySettings
+import org.qosp.notes.data.sync.fs.vault.history.HistoryMismatchStore
+import org.qosp.notes.data.sync.fs.vault.history.HistoryOutbox
+import org.qosp.notes.data.sync.fs.vault.history.VaultFolderHistory
+import org.qosp.notes.di.SyncScope
+import org.qosp.notes.preferences.CloudService
+import org.qosp.notes.preferences.PreferenceRepository
+import org.qosp.notes.ui.utils.Toaster
+import java.io.File
+import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * Production [NoteRepositoryImpl] + real sync/debounce paths over [InMemoryVaultFs].
+ */
+class NoteRepositoryVaultHarness(
+    private val testScope: TestScope,
+    val vaultFs: InMemoryVaultFs = InMemoryVaultFs(caseInsensitive = true),
+    /** Wrapper over [vaultFs] for tests that count or fake filesystem reads. */
+    backendVaultFs: VaultFs = vaultFs,
+    /** History device id, seq and other encrypted keys; defaults to this harness's own in-memory store. */
+    historyStore: MutableMap<String, String> = mutableMapOf(),
+    /** App-private outbox directory; unique by default so two harnesses never share one outbox. */
+    historyDir: File? = null,
+    /** Release B appliers wired into the repository's sync, as `SyncModule` does in production. */
+    historyAppliers: List<HistoryApplier> = emptyList(),
+) {
+    private val savedVaultDispatcher: CoroutineDispatcher = VaultIo.vaultDispatcher
+
+    val context: Context = ApplicationProvider.getApplicationContext()
+    val editorSessionRegistry = EditorSessionRegistry()
+    private val roomDispatcher = UnconfinedTestDispatcher(testScope.testScheduler)
+    val db: AppDatabase = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+        .fallbackToDestructiveMigration()
+        .setQueryExecutor(roomDispatcher.asExecutor())
+        .setTransactionExecutor(roomDispatcher.asExecutor())
+        .build()
+
+    val noteDao: NoteDao = db.noteDao
+    val idMappingDao: IdMappingDao = db.idMappingDao
+    private val reminderDao: ReminderDao = db.reminderDao
+    val notebookDao: NotebookDao = db.notebookDao
+    private val prefs = mockk<PreferenceRepository>(relaxed = true)
+    private val historyValues = historyStore
+    private val vaultSyncCoordinator = VaultSyncCoordinator(prefs)
+    private val vaultTreeAccess = mockk<VaultTreeAccess>(relaxed = true)
+    val backendProvider = mockk<BackendProvider>(relaxed = true)
+    private val scope = SyncScope(CoroutineScope(UnconfinedTestDispatcher(testScope.testScheduler)))
+
+    val backend: StorageBackend = StorageBackend(
+        context,
+        StorageConfig(Uri.parse("content://test/vault")),
+        notebookDao,
+        idMappingDao,
+        vaultSyncCoordinator,
+        vaultFs = backendVaultFs,
+    )
+
+    private val providerFlow = MutableStateFlow<ISyncBackend?>(backend)
+
+    /** Blank means the vault folder has not been confirmed yet (an install upgraded from the old app). */
+    var vaultConfiguredAt: String = "1"
+
+    val historyIdentity = DeviceIdentity(prefs, model = "Pixel 9")
+    val historyOutbox = HistoryOutbox(
+        File(historyDir ?: File(context.filesDir, "vault-history-${UUID.randomUUID()}"), HistoryOutbox.FILE_NAME),
+    )
+    val folderHistoryService = FolderHistoryService(
+        historyIdentity,
+        historyOutbox,
+        BuildConfig.VERSION_NAME,
+        backendProvider,
+    )
+    val historyMismatches = HistoryMismatchStore(
+        File(File(context.filesDir, "vault-history-mismatches-${UUID.randomUUID()}"), HistoryMismatchStore.FILE_NAME),
+    )
+    val historyApplySettings = HistoryApplySettings(prefs)
+    val historyApply = HistoryApplyCoordinator(historyIdentity, historyApplySettings, historyMismatches, historyAppliers)
+    val folderHistory: FolderHistory = VaultFolderHistory(backendProvider, idMappingDao, noteDao, historyMismatches)
+
+    val repository: NoteRepositoryImpl
+    val notebookRepository: NotebookRepository
+    val tagRepository: TagRepository
+    private val processRemoteActions: ProcessRemoteActions
+    private val prefsRef: PreferenceRepository
+
+    init {
+        prefsRef = prefs
+        VaultIo.vaultDispatcher = UnconfinedTestDispatcher(testScope.testScheduler)
+        mockkStatic(Log::class)
+        every { Log.d(any<String>(), any<String>()) } returns 0
+        every { Log.w(any<String>(), any<String>()) } returns 0
+        every { Log.e(any<String>(), any<String>()) } returns 0
+        every { Log.i(any<String>(), any<String>()) } returns 0
+        coEvery { prefs.getEncryptedString(PreferenceRepository.STORAGE_LOCATION) } returns flowOf("content://vault")
+        coEvery { prefs.getEncryptedString(any()) } answers {
+            when (val key = firstArg<String>()) {
+                PreferenceRepository.HISTORY_DEVICE_ID,
+                PreferenceRepository.HISTORY_LAST_SEQ -> flowOf(historyValues[key] ?: "")
+                else -> if (isHistoryKey(key)) flowOf(historyValues[key] ?: "") else flowOf("1")
+            }
+        }
+        coEvery { prefs.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT) } answers { flowOf(vaultConfiguredAt) }
+        coEvery { prefs.putEncryptedStrings(*anyVararg()) } answers {
+            args.forEach { arg ->
+                when (arg) {
+                    is Pair<*, *> -> storeHistoryKey(arg.first, arg.second)
+                    is Array<*> -> arg.forEach { item ->
+                        if (item is Pair<*, *>) storeHistoryKey(item.first, item.second)
+                    }
+                }
+            }
+        }
+        every { backendProvider.isSyncing } returns true
+        every { backendProvider.syncProvider } returns providerFlow
+        processRemoteActions = ProcessRemoteActions(
+            scope,
+            backendProvider,
+            idMappingDao,
+            noteDao,
+            mockk<Toaster>(relaxed = true),
+            vaultSyncCoordinator,
+            notebookDao,
+            prefs,
+            folderHistoryService,
+        )
+        repository = NoteRepositoryImpl(
+            noteDao,
+            idMappingDao,
+            reminderDao,
+            backendProvider,
+            SynchronizeNotes(IdMappingRepository(idMappingDao), notebookDao),
+            processRemoteActions,
+            scope,
+            mockk<Toaster>(relaxed = true),
+            prefs,
+            VaultPortableMetadata(noteDao, notebookDao, db.tagDao, db.noteTagDao, reminderDao),
+            notebookDao,
+            vaultTreeAccess,
+            vaultSyncCoordinator,
+            editorSessionRegistry,
+            // Robolectric has no app resources here; the repository only uses the context for toast text.
+            mockk<Context>(relaxed = true),
+            folderHistoryService,
+            historyApply,
+        )
+        notebookRepository = NotebookRepository(notebookDao, repository, folderHistoryService)
+        tagRepository = TagRepository(db.tagDao, db.noteTagDao, repository, scope, folderHistoryService)
+    }
+
+    fun tree(): VaultFolderTestHarness = VaultFolderTestHarness(vaultFs)
+
+    private fun isHistoryKey(key: String): Boolean =
+        key == PreferenceRepository.HISTORY_DEVICE_ID ||
+            key == PreferenceRepository.HISTORY_LAST_SEQ ||
+            key == PreferenceRepository.HISTORY_LAST_PRUNE_DAY ||
+            key.startsWith("${PreferenceRepository.HISTORY_DEVICE_ID}@") ||
+            key.startsWith("${PreferenceRepository.HISTORY_LAST_SEQ}@") ||
+            key.startsWith("${PreferenceRepository.HISTORY_LAST_PRUNE_DAY}@") ||
+            key == PreferenceRepository.HISTORY_APPLY
+
+    private fun storeHistoryKey(rawKey: Any?, value: Any?) {
+        val key = rawKey as? String ?: return
+        if (isHistoryKey(key)) {
+            historyValues[key] = value as? String ?: ""
+        }
+    }
+
+    suspend fun deviceId(): String = historyIdentity.deviceId(backend.historyScope)
+
+    suspend fun flushRemoteActions() {
+        testScope.advanceTimeBy(Config.RemoteUpdateDebounceTime + 100.milliseconds)
+        testScope.advanceUntilIdle()
+    }
+
+    suspend fun insertAndSync(note: Note): Long {
+        val id = repository.insertNote(note, sync = true)
+        flushRemoteActions()
+        val mapping = idMappingDao.getByLocalIdAndProvider(id, CloudService.FILE_STORAGE)
+        assert(mapping != null && !mapping.storageUri.isNullOrBlank() && !mapping.isDeletedLocally) {
+            "insertAndSync: expected vault mapping for note $id"
+        }
+        return id
+    }
+
+    suspend fun updateAndSync(note: Note) {
+        repository.updateNotes(note, sync = true)
+        flushRemoteActions()
+    }
+
+    suspend fun syncNotes() {
+        repository.syncNotes()
+        flushRemoteActions()
+    }
+
+    suspend fun getNote(id: Long): Note? = noteDao.getById(id).first()
+
+    /**
+     * Test seam: [hook] runs inside the create, after the vault file is written and before the repository records
+     * the mapping. That is the window where a bin can arrive while a create is in flight.
+     */
+    fun onBackendCreated(hook: suspend (Note) -> Unit) {
+        providerFlow.value = object : ISyncBackend by backend {
+            override suspend fun createNote(note: Note, linkExisting: Boolean): SyncNote {
+                val created = backend.createNote(note, linkExisting)
+                hook(note)
+                return created
+            }
+        }
+    }
+
+    /** Replaces the provider the repository sees, keeping the real backend behind the wrapper. */
+    fun wrapBackend(wrap: (ISyncBackend) -> ISyncBackend) {
+        providerFlow.value = wrap(backend)
+    }
+
+    fun conflictFiles(): List<String> = vaultFs.snapshotPaths().filter { "(conflict" in it }
+
+    fun duplicateSuffixFiles(): List<String> =
+        vaultFs.snapshotPaths().filter { Regex("""-\d+\.md$""").containsMatchIn(it) }
+
+    fun contentUriFolders(): List<String> =
+        vaultFs.snapshotPaths().filter { it.contains("content:/") || it.contains("com.android") }
+
+    suspend fun insertLocal(note: Note): Long = noteDao.insert(note.toEntity())
+
+    suspend fun upsertMapping(mapping: IdMapping) {
+        val provider = mapping.provider ?: return
+        val existing = idMappingDao.getByLocalIdAndProvider(mapping.localNoteId, provider)
+        if (existing != null) {
+            idMappingDao.update(mapping.copy(mappingId = existing.mappingId))
+        } else {
+            idMappingDao.insert(mapping)
+        }
+    }
+
+    suspend fun mappingCountFor(noteId: Long): Int =
+        if (idMappingDao.getByLocalIdAndProvider(noteId, CloudService.FILE_STORAGE) != null) 1 else 0
+
+    suspend fun localNoteCount(): Int = noteDao.getAll(SortMethod.TITLE_ASC).first().size
+
+    private suspend fun vaultFence(): VaultFileOpFence = VaultFileOpFence(
+        vaultSyncCoordinator.currentGeneration(),
+        prefsRef.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first(),
+    )
+
+    /** Queues [op] as the repository does, without waiting for the debounce to elapse. */
+    suspend fun queueRemote(noteId: Long, op: RemoteOperation) {
+        val fenced = when (op) {
+            is RemoteOperation.Create -> op.copy(vaultFence = vaultFence())
+            is RemoteOperation.Update -> op.copy(vaultFence = vaultFence())
+            is RemoteOperation.Delete -> op.copy(vaultFence = vaultFence())
+        }
+        processRemoteActions(noteId, fenced)
+    }
+
+    suspend fun pushRemote(noteId: Long, op: RemoteOperation) {
+        queueRemote(noteId, op)
+        flushRemoteActions()
+    }
+
+    suspend fun binAndSync(vararg notes: Note) {
+        repository.moveNotesToBin(*notes, sync = true)
+        flushRemoteActions()
+    }
+
+    suspend fun restoreAndSync(vararg notes: Note) {
+        repository.restoreNotes(*notes)
+        flushRemoteActions()
+    }
+
+    suspend fun deleteAndSync(vararg notes: Note) {
+        repository.deleteNotes(*notes, sync = true)
+        flushRemoteActions()
+    }
+
+    fun close() {
+        VaultIo.vaultDispatcher = savedVaultDispatcher
+    }
+}

@@ -1,0 +1,279 @@
+package org.qosp.notes.ui
+
+import android.net.Uri
+import org.qosp.notes.data.model.Attachment
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import me.msoul.datastore.defaultOf
+import org.qosp.notes.components.MediaStorageManager
+import org.qosp.notes.data.model.Note
+import org.qosp.notes.data.model.Notebook
+import org.qosp.notes.data.repo.NoteRepository
+import org.qosp.notes.data.repo.NotebookRepository
+import org.qosp.notes.data.repo.ReminderRepository
+import org.qosp.notes.data.repo.TagRepository
+import org.qosp.notes.data.sync.fs.vault.VaultTreeAccess
+import org.qosp.notes.data.sync.core.BaseResult
+import org.qosp.notes.di.SyncScope
+import org.qosp.notes.preferences.GroupNotesWithoutNotebook
+import org.qosp.notes.preferences.LayoutMode
+import org.qosp.notes.preferences.NoteDeletionTime
+import org.qosp.notes.preferences.PreferenceRepository
+import org.qosp.notes.preferences.CloudService
+import org.qosp.notes.preferences.SortMethod
+import org.qosp.notes.preferences.SortNavdrawerNotebooksMethod
+import org.qosp.notes.preferences.SortTagsMethod
+import org.qosp.notes.ui.reminders.ReminderManager
+import org.qosp.notes.ui.utils.Toaster
+import java.time.Instant
+
+class ActivityViewModel(
+    private val noteRepository: NoteRepository,
+    private val notebookRepository: NotebookRepository,
+    private val preferenceRepository: PreferenceRepository,
+    private val reminderRepository: ReminderRepository,
+    private val reminderManager: ReminderManager,
+    private val tagRepository: TagRepository,
+    private val mediaStorageManager: MediaStorageManager,
+    private val syncScope: SyncScope,
+    private val toaster: Toaster,
+    private val vaultTreeAccess: VaultTreeAccess,
+) : ViewModel() {
+
+    val notebooks: StateFlow<Pair<Boolean, List<Notebook>>> =
+        preferenceRepository.get<GroupNotesWithoutNotebook>().flatMapLatest { groupNotesWithoutNotebook ->
+            notebookRepository.getAll().map { notebooks ->
+                (groupNotesWithoutNotebook == GroupNotesWithoutNotebook.YES) to notebooks
+            }
+        }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = (defaultOf<GroupNotesWithoutNotebook>() == GroupNotesWithoutNotebook.YES) to listOf(),
+            )
+
+    var showHiddenNotes: Boolean = false
+    var notesToBackup: Set<Note>? = null
+    var tempPhotoUri: Uri? = null
+
+    private val _vaultRelativePaths = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val vaultRelativePaths: StateFlow<Map<Long, String>> = _vaultRelativePaths.asStateFlow()
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            vaultTreeAccess.warmFrom(preferenceRepository)
+            refreshVaultRelativePaths()
+        }
+    }
+
+    private var vaultUpgradePromptChecked = false
+
+    private val _vaultUpgradePrompt = MutableStateFlow<VaultUpgradePrompt?>(null)
+
+    /**
+     * The one-time "use this folder?" prompt, kept until the user answers so a rotation that destroys the dialog
+     * shows it again. Cleared only by [resolveVaultUpgradePrompt].
+     */
+    val vaultUpgradePrompt: StateFlow<VaultUpgradePrompt?> = _vaultUpgradePrompt.asStateFlow()
+
+    /**
+     * Publishes [vaultUpgradePrompt] when an upgraded install has a storage folder but never confirmed it, at most
+     * once per process. Returns whether a prompt is pending.
+     */
+    suspend fun checkVaultUpgradePrompt(): Boolean {
+        if (vaultUpgradePromptChecked) return _vaultUpgradePrompt.value != null
+        val location = preferenceRepository.getEncryptedString(PreferenceRepository.STORAGE_LOCATION).first()
+        val configuredAt = preferenceRepository.getEncryptedString(PreferenceRepository.VAULT_CONFIGURED_AT).first()
+        if (!needsVaultUpgradeConfirmation(location, configuredAt)) return false
+        vaultUpgradePromptChecked = true
+        val hadNextcloud = noteRepository.countIdMappings(CloudService.NEXTCLOUD) > 0 ||
+            preferenceRepository.get<CloudService>().first() == CloudService.NEXTCLOUD
+        _vaultUpgradePrompt.value = VaultUpgradePrompt(location, hadNextcloud)
+        return true
+    }
+
+    fun resolveVaultUpgradePrompt() {
+        _vaultUpgradePrompt.value = null
+    }
+
+    data class VaultUpgradePrompt(val location: String, val hadNextcloud: Boolean)
+
+    suspend fun refreshVaultRelativePaths() {
+        _vaultRelativePaths.value = noteRepository.getNotesByCloudService(CloudService.FILE_STORAGE)
+            .mapNotNull { (mapping, _) ->
+                mapping.storageUri?.let { mapping.localNoteId to it }
+            }
+            .toMap()
+    }
+
+    fun syncAsync(): Deferred<BaseResult> = syncScope.async {
+        val result = noteRepository.syncNotes()
+        reminderManager.rescheduleAll()
+        refreshVaultRelativePaths()
+        result
+    }
+
+    fun discardEmptyNotesAsync() = viewModelScope.async(Dispatchers.IO) { noteRepository.discardEmptyNotes() }
+
+    fun deleteNotesPermanently(vararg notes: Note) = viewModelScope.launch(Dispatchers.IO) {
+        notes.forEach { reminderManager.cancelAllRemindersForNote(it.id) }
+        noteRepository.deleteNotes(*notes)
+    }
+
+    fun deleteNotes(vararg notes: Note) {
+        viewModelScope.launch(Dispatchers.IO) {
+            notes.forEach { reminderManager.cancelAllRemindersForNote(it.id) }
+
+            when (preferenceRepository.get<NoteDeletionTime>().first()) {
+                NoteDeletionTime.INSTANTLY -> {
+                    noteRepository.deleteNotes(*notes)
+                    mediaStorageManager.cleanUpStorage()
+                }
+
+                else -> {
+                    noteRepository.moveNotesToBin(*notes)
+                }
+            }
+        }
+    }
+
+    fun restoreNotes(vararg notes: Note) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching { noteRepository.restoreNotes(*notes) }
+            if (result.isFailure) {
+                toaster.showLong(result.exceptionOrNull()?.message ?: "Error restoring notes")
+            }
+        }
+    }
+
+    fun archiveNotes(vararg notes: Note) =
+        update(*notes) { it.copy(isArchived = true, modifiedDate = Instant.now().epochSecond) }
+
+    fun unarchiveNotes(vararg notes: Note) =
+        update(*notes) { it.copy(isArchived = false, modifiedDate = Instant.now().epochSecond) }
+
+    fun showNotes(vararg notes: Note) =
+        update(*notes) { it.copy(isHidden = false, modifiedDate = Instant.now().epochSecond) }
+
+    fun hideNotes(vararg notes: Note) =
+        update(*notes) { it.copy(isHidden = true, modifiedDate = Instant.now().epochSecond) }
+
+    fun pinNotes(vararg notes: Note) =
+        update(*notes) { it.copy(isPinned = !it.isPinned, modifiedDate = Instant.now().epochSecond) }
+
+    fun compactPreviewNotes(vararg notes: Note) = update(*notes) { it.copy(isCompactPreview = true) }
+
+    fun fullPreviewNotes(vararg notes: Note) = update(*notes) { it.copy(isCompactPreview = false) }
+
+    fun moveNotes(notebookId: Long?, vararg notes: Note) =
+        update(*notes) { it.copy(notebookId = notebookId, modifiedDate = Instant.now().epochSecond) }
+
+    fun makeNotesFullPreview(vararg notes: Note) = update(*notes) { it.copy(isCompactPreview = false) }
+
+    fun makeNotesCompactPreview(vararg notes: Note) = update(*notes) { it.copy(isCompactPreview = true) }
+
+    fun disableScreenAlwaysOn(vararg notes: Note) = update(*notes) { it.copy(screenAlwaysOn = false) }
+
+    fun enableScreenAlwaysOn(vararg notes: Note) = update(*notes) { it.copy(screenAlwaysOn = true) }
+
+    fun disableMarkdown(vararg notes: Note) =
+        update(*notes) { it.copy(isMarkdownEnabled = false, modifiedDate = Instant.now().epochSecond) }
+
+    fun enableMarkdown(vararg notes: Note) =
+        update(*notes) { it.copy(isMarkdownEnabled = true, modifiedDate = Instant.now().epochSecond) }
+
+    fun duplicateNotes(vararg notes: Note) = notes.forEachAsync { note ->
+        val oldId = note.id
+        val cloned = note.copy(
+            id = 0L,
+            creationDate = Instant.now().epochSecond,
+            modifiedDate = Instant.now().epochSecond,
+            deletionDate = if (note.isDeleted) Instant.now().epochSecond else null
+        )
+
+        val newId = noteRepository.insertNote(cloned)
+        tagRepository.copyTags(oldId, newId)
+        reminderRepository.copyReminders(oldId, newId)
+
+        reminderRepository
+            .getByNoteId(newId)
+            .first()
+            .forEach {
+                reminderManager.schedule(it.id, it.date, it.noteId)
+            }
+    }
+
+    fun setLayoutMode(layoutMode: LayoutMode) {
+        viewModelScope.launch(Dispatchers.IO) { preferenceRepository.set(layoutMode) }
+    }
+
+    fun setSortMethod(method: SortMethod) {
+        viewModelScope.launch(Dispatchers.IO) { preferenceRepository.set(method) }
+    }
+
+    fun setSortTagsMethod(method: SortTagsMethod) {
+        viewModelScope.launch(Dispatchers.IO) { preferenceRepository.set(method) }
+    }
+
+    fun setSortNavdrawerNotebooksMethod(method: SortNavdrawerNotebooksMethod) {
+        viewModelScope.launch(Dispatchers.IO) { preferenceRepository.set(method) }
+    }
+
+    suspend fun createImageFile(): Uri? {
+        val (uri, _) = mediaStorageManager.createMediaFile(type = MediaStorageManager.MediaType.IMAGE) ?: return null
+        tempPhotoUri = uri
+        return uri
+    }
+
+    /**
+     * Creates a file for the shared media in app's private storage
+     * @param uri The source URI of the media file
+     * @param mimeType The MIME type of the media
+     * @return The new URI in app's private storage, or null if creation failed
+     */
+    suspend fun copyMediaToPrivateStorage(uri: Uri, mimeType: String): Uri? =
+        mediaStorageManager.persistFromUri(uri)
+
+    suspend fun persistAttachmentFromUri(uri: Uri): Attachment? {
+        val attachment = mediaStorageManager.persistAttachmentFromUri(uri)
+        if (attachment == null) {
+            toaster.showLong(
+                mediaStorageManager.lastPersistError ?: "Failed to save attachment",
+            )
+        }
+        return attachment
+    }
+
+    private inline fun update(
+        vararg notes: Note,
+        crossinline transform: suspend (Note) -> Note,
+    ) = viewModelScope.launch(Dispatchers.IO) {
+        val notes = notes
+            .map { transform(it) }
+            .toTypedArray()
+
+        noteRepository.updateNotes(*notes)
+    }
+
+    private inline fun Array<out Note>.forEachAsync(crossinline block: suspend CoroutineScope.(Note) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) { forEach { block(it) } }
+    }
+}
+
+/** True for an install upgraded from the old app: a folder is set but the user never confirmed it. */
+fun needsVaultUpgradeConfirmation(location: String, configuredAt: String): Boolean =
+    location.isNotBlank() && configuredAt.isBlank()

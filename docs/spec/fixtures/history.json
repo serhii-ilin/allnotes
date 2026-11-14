@@ -1,0 +1,44 @@
+{
+  "about": "Folder history — vault-format.md §8. 'files' is the content of .allnotes/; 'order' is the merged eid order.",
+  "encode": [
+    {
+      "event": {
+        "eid": "dev-a:1",
+        "dev": "dev-a",
+        "seq": 1,
+        "lc": 5,
+        "t": 1731500000000,
+        "op": "note.bin",
+        "id": "X",
+        "path": "Work/A.md",
+        "to": ".trash/Work/A.md"
+      },
+      "expectedLine": "{\"v\":1,\"eid\":\"dev-a:1\",\"dev\":\"dev-a\",\"seq\":1,\"lc\":5,\"t\":1731500000000,\"op\":\"note.bin\",\"id\":\"X\",\"path\":\"Work/A.md\",\"to\":\".trash/Work/A.md\"}",
+      "expectedMonthFile": "events-2024-11.jsonl"
+    }
+  ],
+  "read": [
+    {
+      "name": "merged order is (lc, dev, seq); duplicates collapse; bad lines are counted; no manifest = display only",
+      "files": {
+        ".allnotes/devices/dev-a/device.json": "{\"format\":1,\"deviceId\":\"dev-a\",\"name\":\"A\",\"appVersion\":\"1\",\"writes\":[],\"partialApplyOk\":false}\n",
+        ".allnotes/devices/dev-a/events-2024-11.jsonl": "{\"v\":1,\"eid\":\"dev-a:1\",\"dev\":\"dev-a\",\"seq\":1,\"lc\":2,\"t\":1,\"op\":\"tag.create\",\"name\":\"x\"}\nnot json\n{\"v\":2,\"eid\":\"dev-a:2\",\"dev\":\"dev-a\",\"seq\":2,\"lc\":4,\"t\":2,\"op\":\"tag.delete\",\"name\":\"x\",\"future\":1}\n",
+        ".allnotes/devices/dev-a/events-2024-11.sync-conflict-20241113-ABC.jsonl": "{\"v\":1,\"eid\":\"dev-a:1\",\"dev\":\"dev-a\",\"seq\":1,\"lc\":2,\"t\":1,\"op\":\"tag.create\",\"name\":\"x\"}\n",
+        ".allnotes/devices/dev-b/events-2024-11.jsonl": "{\"v\":1,\"eid\":\"dev-b:1\",\"dev\":\"dev-b\",\"seq\":1,\"lc\":2,\"t\":9,\"op\":\"note.purge\",\"id\":\"N\",\"path\":\"N.md\"}\n{\"v\":1,\"eid\":\"dev-b:2\",\"dev\":\"dev-b\",\"seq\":2,\"lc\":3,\"t\":3,\"op\":\"shape.morph\"}\n"
+      },
+      "expectedOrder": [
+        "dev-a:1",
+        "dev-b:1",
+        "dev-b:2",
+        "dev-a:2"
+      ],
+      "expectedApplicable": {
+        "dev-a:1": true,
+        "dev-b:1": false,
+        "dev-b:2": false,
+        "dev-a:2": false
+      },
+      "expectedSkippedLines": 1
+    }
+  ]
+}

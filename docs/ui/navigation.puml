@@ -1,0 +1,67 @@
+@startuml navigation
+' How AllNotes screens connect. IDs match docs/ui/README.md.
+title AllNotes navigation
+left to right direction
+skinparam shadowing false
+skinparam rectangle {
+  BackgroundColor<<system>> #EEEEEE
+}
+
+rectangle "Share sheet / launcher shortcut /\nwidget row / reminder notification\n(SCR-16, SCR-14, SCR-15)" as SYS <<system>>
+rectangle "Navigation drawer\nSCR-13" as DRAWER
+rectangle "All Notes\nSCR-01" as MAIN
+rectangle "Notebook\nSCR-02" as NOTEBOOK
+rectangle "Archive\nSCR-03" as ARCHIVE
+rectangle "Bin (Deleted)\nSCR-04" as BIN
+rectangle "Search\nSCR-05" as SEARCH
+rectangle "Editor\nSCR-06" as EDITOR
+rectangle "Manage notebooks\nSCR-07" as NOTEBOOKS
+rectangle "Tags\nSCR-08" as TAGS
+rectangle "Settings\nSCR-09" as SETTINGS
+rectangle "Folder history\nSCR-10" as HISTORY
+rectangle "About\nSCR-11" as ABOUT
+rectangle "Media viewer\nSCR-12" as MEDIA
+rectangle "Choose a notes folder\nDLG-01" as ONBOARD
+rectangle "Use this notes folder?\nDLG-02" as UPGRADE
+rectangle "System folder picker" as PICKER <<system>>
+
+MAIN --> DRAWER : ☰
+DRAWER --> MAIN : All Notes
+DRAWER --> ARCHIVE : Archive
+DRAWER --> BIN : Deleted
+DRAWER --> NOTEBOOKS : Your Notebooks
+DRAWER --> NOTEBOOK : a notebook / Other
+DRAWER --> TAGS : Tags
+DRAWER --> SETTINGS : Settings / folder header
+DRAWER --> ABOUT : About
+
+MAIN --> SEARCH : 🔍
+NOTEBOOK --> SEARCH : 🔍
+ARCHIVE --> SEARCH : 🔍
+BIN --> SEARCH : 🔍
+TAGS --> SEARCH : tap a tag
+
+MAIN --> EDITOR : tap card / FAB / bottom bar
+NOTEBOOK --> EDITOR : tap card / FAB
+ARCHIVE --> EDITOR : tap card
+BIN --> EDITOR : tap card (read-only)
+SEARCH --> EDITOR : tap result
+NOTEBOOKS --> NOTEBOOK : tap row
+SETTINGS --> EDITOR : Sync conflicts (DLG-16)
+
+EDITOR --> TAGS : Tags (select mode)
+EDITOR --> MEDIA : tap attachment (internal player)
+EDITOR --> NOTEBOOKS : Move to… → Your Notebooks
+
+SETTINGS --> HISTORY : Folder history
+SETTINGS --> PICKER : Storage location
+PICKER --> SETTINGS : DLG-03 / DLG-04
+
+MAIN ..> ONBOARD : no folder yet (once per start)
+ONBOARD --> SETTINGS : Select Storage location
+MAIN ..> UPGRADE : folder from the old version
+UPGRADE --> PICKER : Choose another folder
+
+SYS --> EDITOR : new note / that note
+SYS --> MAIN : launcher, widget empty state
+@enduml

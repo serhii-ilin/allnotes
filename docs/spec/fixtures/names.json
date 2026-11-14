@@ -1,0 +1,91 @@
+{
+  "about": "sanitize(name) — vault-format.md §2.2; conflictPath — §2.5; validateSegment — §2.4.",
+  "sanitize": [
+    {
+      "input": "Shopping list.md",
+      "expected": "Shopping list.md"
+    },
+    {
+      "input": "a/b:c*d?.md",
+      "expected": "a_b_c_d_.md"
+    },
+    {
+      "input": "<Report>|2026.md",
+      "expected": "_Report__2026.md"
+    },
+    {
+      "input": "  .hidden.md  ",
+      "expected": "_hidden.md"
+    },
+    {
+      "input": "a\u0001b.md",
+      "expected": "a_b.md"
+    },
+    {
+      "input": "con.md",
+      "expected": "con_.md"
+    },
+    {
+      "input": "COM1",
+      "expected": "COM1_"
+    },
+    {
+      "input": "name. ",
+      "expected": "name"
+    },
+    {
+      "input": "   ",
+      "expected": "file"
+    },
+    {
+      "input": "Café.md",
+      "expected": "Café.md"
+    },
+    {
+      "input": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé.md",
+      "expected": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé.md"
+    }
+  ],
+  "conflictPath": [
+    {
+      "path": "Work/Meeting.md",
+      "epochSeconds": 1731500000,
+      "expected": "Work/Meeting (conflict 1731500000).md"
+    },
+    {
+      "path": "Ideas.txt",
+      "epochSeconds": 5,
+      "expected": "Ideas (conflict 5).txt"
+    }
+  ],
+  "validateSegment": [
+    {
+      "input": "Work",
+      "expected": null
+    },
+    {
+      "input": " ",
+      "expected": "Blank"
+    },
+    {
+      "input": "a:b",
+      "expected": "IllegalChar"
+    },
+    {
+      "input": ".git",
+      "expected": "LeadingDot"
+    },
+    {
+      "input": "Work.",
+      "expected": "TrailingDotOrSpace"
+    },
+    {
+      "input": "nul",
+      "expected": "ReservedName"
+    },
+    {
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expected": "TooLong"
+    }
+  ]
+}

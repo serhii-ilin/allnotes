@@ -1,0 +1,72 @@
+{
+  "about": "Writing a note file — vault-format.md §4.7. 'previous' is the file's text before the save (null for a new file).",
+  "cases": [
+    {
+      "name": "new text note at the root",
+      "path": "Shopping.md",
+      "id": "11111111-2222-3333-4444-555555555555",
+      "notebook": null,
+      "previous": null,
+      "note": {
+        "title": "Shopping",
+        "content": "Milk\nEggs",
+        "isPinned": true,
+        "color": "Blue",
+        "tags": [
+          "home",
+          "Errands"
+        ],
+        "creationDate": 1700000000,
+        "modifiedDate": 1700000500
+      },
+      "expected": "---\nallnotes-id: \"11111111-2222-3333-4444-555555555555\"\npinned: true\narchived: false\nhidden: false\nisList: false\nmarkdown: true\ncolor: \"Blue\"\nnotebook: \"\"\ntags: [\"Errands\", \"home\"]\ncreated: 1700000000\nmodified: 1700000500\n---\nMilk\nEggs\n"
+    },
+    {
+      "name": "checklist in a notebook, title differs from the file name, a reminder",
+      "path": "Work/Q3_ plan.md",
+      "id": "11111111-2222-3333-4444-555555555555",
+      "notebook": "Work",
+      "previous": null,
+      "note": {
+        "title": "Q3: plan",
+        "isList": true,
+        "tasks": [
+          {
+            "content": "Draft",
+            "isDone": true
+          },
+          {
+            "content": "Review",
+            "isDone": false
+          }
+        ],
+        "reminders": [
+          {
+            "name": "Say \"hi\"",
+            "date": 4102444800
+          }
+        ],
+        "creationDate": 1700000000,
+        "modifiedDate": 1700000000
+      },
+      "expected": "---\nallnotes-id: \"11111111-2222-3333-4444-555555555555\"\ntitle: \"Q3: plan\"\npinned: false\narchived: false\nhidden: false\nisList: true\nmarkdown: true\ncolor: \"Default\"\nnotebook: \"Work\"\ntags: []\nreminders:\n  - name: \"Say \\\"hi\\\"\"\n    at: 2100-01-01T00:00:00Z\ncreated: 1700000000\nmodified: 1700000000\n---\n- [x] Draft\n- [ ] Review\n"
+    },
+    {
+      "name": "an Obsidian file keeps its scalar tags, ISO date and foreign keys",
+      "path": "Shopping.md",
+      "id": "aaaaaaaa-aaaa-3aaa-8aaa-aaaaaaaaaaaa",
+      "notebook": null,
+      "previous": "---\naliases: [Groceries]\ntags: home\ncreated: 2024-06-15\ntitle: Shopping\n---\nMilk\n",
+      "note": {
+        "title": "Shopping",
+        "content": "Milk\nEggs",
+        "tags": [
+          "home"
+        ],
+        "creationDate": 1718409600,
+        "modifiedDate": 1718500000
+      },
+      "expected": "---\ntags: home\ncreated: 2024-06-15\nallnotes-id: \"aaaaaaaa-aaaa-3aaa-8aaa-aaaaaaaaaaaa\"\npinned: false\narchived: false\nhidden: false\nisList: false\nmarkdown: true\ncolor: \"Default\"\nnotebook: \"\"\nmodified: 1718500000\naliases: [Groceries]\n---\nMilk\nEggs\n"
+    }
+  ]
+}

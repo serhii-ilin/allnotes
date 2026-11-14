@@ -1,0 +1,78 @@
+{
+  "about": "Reading front matter and body — vault-format.md §4.2–4.6, §4.8. Absent fields are null.",
+  "cases": [
+    {
+      "name": "Obsidian-style front matter",
+      "input": "---\ntitle: 'It''s mine'\ntags:\n  - a\n  - \"b c\"\npinned: True\ncolor: Teal\ncreated: 2024-06-15T12:00:00+02:00\nreminders:\n  - at: 2030-01-01T10:00:00Z\n    name: \"Wake\"\n  - name: no date\nfoo: bar\n---\nText\n",
+      "expected": {
+        "id": null,
+        "title": "It's mine",
+        "tags": [
+          "a",
+          "b c"
+        ],
+        "pinned": null,
+        "color": "Teal",
+        "created": 1718445600,
+        "reminders": [
+          {
+            "name": "Wake",
+            "date": 1893492000
+          }
+        ],
+        "preservedYaml": "foo: bar",
+        "body": "Text\n"
+      }
+    },
+    {
+      "name": "no front matter",
+      "input": "Just text\n",
+      "expected": {
+        "id": null,
+        "title": null,
+        "tags": null,
+        "pinned": null,
+        "color": null,
+        "created": null,
+        "reminders": null,
+        "preservedYaml": "",
+        "body": "Just text\n"
+      }
+    },
+    {
+      "name": "empty reminders and inline tags with a quoted comma",
+      "input": "---\nallnotes-id: abc\ntags: [\"x, y\", z]\nreminders: []\ncreated: 1700000000\n---\n",
+      "expected": {
+        "id": "abc",
+        "title": null,
+        "tags": [
+          "x, y",
+          "z"
+        ],
+        "pinned": null,
+        "color": null,
+        "created": 1700000000,
+        "reminders": [],
+        "preservedYaml": "",
+        "body": ""
+      }
+    }
+  ],
+  "checklists": [
+    {
+      "name": "markers and continuation lines (continuation is glued without a space: FC-05)",
+      "body": "- [ ] one\n  continued\n* [X] two\nstray",
+      "path": "List.md",
+      "expected": [
+        {
+          "content": "onecontinued",
+          "isDone": false
+        },
+        {
+          "content": "twostray",
+          "isDone": true
+        }
+      ]
+    }
+  ]
+}
